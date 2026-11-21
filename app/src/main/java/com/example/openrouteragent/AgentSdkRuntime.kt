@@ -15,7 +15,11 @@ import android.webkit.WebViewClient
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -26,6 +30,7 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val ORIGIN = "https://agent-runtime.invalid"
@@ -34,7 +39,8 @@ private const val MAX_HISTORY_BYTES = 6_000_000
 private const val RUN_TIMEOUT_MILLIS = 15 * 60_000L
 
 data class ToolApproval(
-    val decision: String, val name: String, val arguments: String, val url: String, val asksUser: Boolean = false
+    val decision: String, val name: String, val arguments: String, val url: String, val asksUser: Boolean = false,
+    val phone: Boolean = false,
 )
 data class SdkRunResult(val result: AgentRunResult, val history: String?, val state: String? = null)
 
@@ -47,6 +53,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         val idleSeconds: Long,
         val onUpdate: (List<RunUpdate>) -> Unit,
         val onApproval: (ToolApproval) -> Unit,
+        val phone: PhoneController?,
+        val phoneScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -55,6 +63,7 @@ internal class AgentSdkRuntime(private val context: Context) {
     private var view: WebView? = null
     private var ready = CompletableDeferred<Unit>()
     private var activeRun: ActiveRun? = null
+    private val phoneApprovals = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
 
     // Request interception runs on WebView worker threads.
     @Volatile private var approvedToolOrigins: Set<Triple<String, String, Int>> = emptySet()
@@ -75,7 +84,9 @@ internal class AgentSdkRuntime(private val context: Context) {
                 .map { it.value }).mapNotNull { it.toHttpUrlOrNull() }
                 .map { Triple(it.scheme, it.host, it.port) }.toSet()
         val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
-            settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval)
+            settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval,
+            phone = if (settings.phoneControl && settings.sdk.toolChoice != "none") PhoneController(
+                AccessibilityPhoneDevice(context), context.packageName, settings.phoneBlockedApps) else null)
         try {
             val runtime = view ?: createWebView()
             try {
@@ -104,9 +115,32 @@ internal class AgentSdkRuntime(private val context: Context) {
         } finally {
             if (!run.completion.isCompleted) view?.let { dispatch(it, "stop", run.id) }
             transport.cancelRun(run.id)
+            run.phoneScope.cancel()
+            phoneApprovals.values.forEach { it.complete(false) }
+            phoneApprovals.clear()
+            if (run.phone != null) PhoneControlService.connected?.let { service ->
+                service.status(null)
+                // Bring the reply into view after the agent worked in another app.
+                if (run.phone.acted) service.showAgentApp()
+            }
             approvedToolOrigins = emptySet()
             if (activeRun?.id == run.id) activeRun = null
             if (!ready.isCompleted || ready.isCancelled) destroy()
+        }
+    }
+
+    private suspend fun askPhoneApproval(run: ActiveRun, approval: PhoneApproval): Boolean {
+        val decision = PHONE_DECISION + UUID.randomUUID()
+        val answer = CompletableDeferred<Boolean>()
+        phoneApprovals[decision] = answer
+        try {
+            withContext(Dispatchers.Main) {
+                if (activeRun?.id != run.id) answer.complete(false)
+                else run.onApproval(ToolApproval(decision, approval.title, approval.details, "", phone = true))
+            }
+            return answer.await()
+        } finally {
+            phoneApprovals.remove(decision)
         }
     }
 
@@ -129,6 +163,11 @@ internal class AgentSdkRuntime(private val context: Context) {
     }
 
     fun decide(decision: String, accept: Boolean, answer: String) {
+        // Phone approvals are decided here in Kotlin, so the JavaScript runtime never holds the gate.
+        if (decision.startsWith(PHONE_DECISION)) {
+            phoneApprovals.remove(decision)?.complete(accept)
+            return
+        }
         val run = activeRun ?: return
         view?.let { dispatch(it, "decide", run.id, decision, accept, answer) }
     }
@@ -234,6 +273,30 @@ internal class AgentSdkRuntime(private val context: Context) {
         }
 
         @JavascriptInterface
+        fun phone(runId: String, requestId: String, json: String) {
+            main.post {
+                val run = activeRun ?: return@post
+                if (runtime !== view || run.id != runId || run.completion.isCompleted) return@post
+                val controller = run.phone
+                run.phoneScope.launch {
+                    val result = try {
+                        controller?.handle(JSONObject(json)) { approval -> askPhoneApproval(run, approval) }
+                            ?: JSONObject().put("ok", false).put("error", "Phone control is off in Settings.")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        JSONObject().put("ok", false).put("error", "The phone action failed: ${e.message ?: e}")
+                    }
+                    main.post {
+                        if (runtime === view && activeRun?.id == runId) {
+                            dispatch(runtime, "phone", runId, requestId, result.toString())
+                        }
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun readHttp(runId: String, requestId: String) = transport.read(runId, requestId)
 
         @JavascriptInterface
@@ -288,6 +351,8 @@ internal class AgentSdkRuntime(private val context: Context) {
     }
 }
 
+private const val PHONE_DECISION = "phone:"
+
 /** The SDK wraps transport failures as "Unexpected HTTP client error: Error: <text>". Keep only the text. */
 internal fun sdkErrorText(message: String): String =
     message.replace(Regex("^Unexpected HTTP client error:\\s*(Error:\\s*)?"), "")
@@ -317,6 +382,7 @@ internal fun runtimeOptions(
         .put("shell", config.enableShellSandbox).put("containerId", workspace.containerId)
         .put("domains", JSONArray(config.sandboxDomains())).put("webSearch", config.enableWebSearch)
         .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
+        .put("phoneControl", config.phoneControl)
         .put("extraTools", JSONArray(config.extraToolsJson.ifBlank { "[]" }))
         .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)
         .put("maxSteps", config.maxSteps).put("maxCost", config.maxCost)
