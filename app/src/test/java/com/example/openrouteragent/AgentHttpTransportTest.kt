@@ -8,6 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.InetAddress
 import java.util.Base64
 import java.util.Collections
 import java.util.concurrent.LinkedBlockingQueue
@@ -199,11 +200,14 @@ class AgentHttpTransportTest {
     }
 
     private fun withTransport(idleSeconds: Long? = null, block: (MockWebServer, Run) -> Unit) {
+        // Bind and address the server by IP literal. "localhost" can also resolve to ::1, and after a
+        // failed connection OkHttp tries the next address, where nothing is listening.
+        val loopback = InetAddress.getByName("127.0.0.1")
         val server = MockWebServer()
-        server.start()
+        server.start(loopback, 0)
         val logs = Collections.synchronizedList(mutableListOf<String>())
         val transport = AgentHttpTransport(
-            endpoint = server.url("/api/v1/responses"),
+            endpoint = server.url("/api/v1/responses").newBuilder().host(loopback.hostAddress).build(),
             policy = StreamPolicy(connectTimeoutSeconds = 5, baseDelayMillis = 20, maxDelayMillis = 100),
             encode = { bytes, size -> Base64.getEncoder().encodeToString(bytes.copyOf(size)) },
             log = { logs += it },
