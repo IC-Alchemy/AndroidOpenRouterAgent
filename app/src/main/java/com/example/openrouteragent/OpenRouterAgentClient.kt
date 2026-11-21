@@ -1,0 +1,267 @@
+package com.example.openrouteragent
+
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resumeWithException
+
+private const val PREVIEW_LIMIT = 64 * 1024L
+
+data class ContainerFilePage(val files: List<ContainerFileRef>, val after: String?)
+data class FilePreview(val text: String?, val truncated: Boolean = false)
+
+class OpenRouterAgentClient(
+    private val baseUrl: HttpUrl = "https://openrouter.ai/api/v1/".toHttpUrl(),
+    private val http: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(25, TimeUnit.SECONDS)
+        .writeTimeout(35, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.MINUTES)
+        .callTimeout(12, TimeUnit.MINUTES)
+        .retryOnConnectionFailure(false)
+        .followRedirects(false)
+        .build()
+) {
+    suspend fun availableModels(apiKey: String): List<CatalogModel> =
+        execute(request(apiKey, endpoint("models", "user")).build(), apiKey) { parseModelCatalog(it.bodyText()) }
+
+    suspend fun validateKey(apiKey: String) {
+        execute(request(apiKey, endpoint("key")).build(), apiKey) { Unit }
+    }
+
+    suspend fun listFiles(apiKey: String, containerId: String, after: String?): ContainerFilePage {
+        val url = endpoint("containers", containerId, "files").newBuilder()
+            .addQueryParameter("limit", "100")
+            .apply { if (after != null) addQueryParameter("after", after) }
+            .build()
+        return execute(request(apiKey, url).build(), apiKey) {
+            val body = JSONObject(it.bodyText())
+            val files = body.optJSONArray("data").objects().mapNotNull { file ->
+                parseFile(file)
+            }.toList()
+            val next = body.string("last_id").takeIf { body.optBoolean("has_more") && it != after }
+            ContainerFilePage(files, next)
+        }
+    }
+
+    suspend fun previewFile(apiKey: String, containerId: String, fileId: String): FilePreview =
+        execute(fileRequest(apiKey, containerId, fileId), apiKey) { response ->
+            val body = response.body ?: throw IOException("OpenRouter returned an empty file response.")
+            val source = body.source()
+            val truncated = source.request(PREVIEW_LIMIT + 1)
+            val bytes = source.readByteArray(minOf(source.buffer.size, PREVIEW_LIMIT))
+            val characters = CharBuffer.allocate(bytes.size)
+            val decoder = Charsets.UTF_8.newDecoder()
+            val result = decoder.decode(ByteBuffer.wrap(bytes), characters, !truncated)
+            characters.flip()
+            val text = characters.toString()
+            val binary = result.isError || text.any { it < ' ' && it !in "\t\n\r\u000C" }
+            FilePreview(if (binary) null else text, truncated)
+        }
+
+    suspend fun downloadFile(apiKey: String, containerId: String, fileId: String, openDestination: () -> OutputStream) {
+        execute(fileRequest(apiKey, containerId, fileId), apiKey) { response ->
+            val body = response.body ?: throw IOException("OpenRouter returned an empty file response.")
+            openDestination().use { destination ->
+                body.byteStream().use { it.copyTo(destination) }
+            }
+        }
+    }
+
+    private fun fileRequest(apiKey: String, containerId: String, fileId: String): Request =
+        request(apiKey, endpoint("containers", containerId, "files", fileId, "content")).build()
+
+    private fun endpoint(vararg segments: String): HttpUrl =
+        baseUrl.newBuilder().apply { segments.forEach { addPathSegment(it) } }.build()
+
+    private fun request(apiKey: String, url: HttpUrl): Request.Builder {
+        require(apiKey.isNotBlank()) { "Add your OpenRouter API key in Settings." }
+        return Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer ${apiKey.trim()}")
+            .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
+    }
+
+    private suspend fun <T> execute(request: Request, apiKey: String, read: (Response) -> T): T =
+        suspendCancellableCoroutine { continuation ->
+            val call = http.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use {
+                        if (!continuation.isActive) return
+                        val result = runCatching {
+                            if (!it.isSuccessful) throw apiError(it, apiKey)
+                            read(it)
+                        }
+                        continuation.resumeWith(result)
+                    }
+                }
+            })
+        }
+
+    private fun apiError(response: Response, apiKey: String): IOException {
+        val raw = response.peekBody(8192).string()
+        val body = runCatching { JSONObject(raw) }.getOrNull()
+        val detail = body?.optJSONObject("error")?.string("message") ?: body?.string("message")
+        val fallback = when (response.code) {
+            401 -> "Check your API key in Settings."
+            402 -> "Check your OpenRouter credit balance."
+            403 -> "Check workspace tool permissions."
+            429 -> "Rate limit reached. Wait a moment before retrying."
+            else -> response.message
+        }
+        val message = (detail ?: fallback).replace(apiKey.trim(), "[API key]").take(500)
+        return IOException("OpenRouter HTTP ${response.code}. $message")
+    }
+
+    private fun Response.bodyText(): String =
+        body?.string()?.takeIf { it.isNotBlank() } ?: throw IOException("OpenRouter returned an empty response.")
+}
+
+internal fun parseAgentResult(raw: String): AgentRunResult {
+    val root = JSONObject(raw)
+    val status = root.string("status")
+    val error = root.optJSONObject("error")
+    if (error != null || status in setOf("failed", "cancelled", "canceled", "queued", "in_progress")) {
+        val detail = error?.string("message") ?: status ?: "unknown error"
+        throw IOException("OpenRouter run did not complete. ${detail.take(500)}")
+    }
+
+    val finalText = mutableListOf<String>()
+    val intermediateText = mutableListOf<String>()
+    val summary = mutableListOf<String>()
+    val citations = mutableListOf<WebCitation>()
+    val shellSteps = mutableListOf<ShellExecutionStep>()
+    val calls = mutableMapOf<String, Pair<List<String>, String?>>()
+    val searchQueries = mutableListOf<String>()
+    var containerId: String? = null
+    for (item in root.optJSONArray("output").objects()) {
+        when (item.string("type")) {
+            "message" -> {
+                val parts = item.optJSONArray("content").objects()
+                val text = parts.mapNotNull { part ->
+                    when (part.string("type")) {
+                        "output_text", "text" -> part.string("text")
+                        "refusal" -> part.string("refusal")
+                        else -> null
+                    }
+                }.joinToString("\n").takeIf { it.isNotBlank() }
+                if (text != null) {
+                    if (item.string("phase") == "commentary") intermediateText.add(text) else finalText.add(text)
+                }
+                parts.flatMap { it.optJSONArray("annotations").objects() }.forEach { annotation ->
+                    val source = annotation.optJSONObject("url_citation") ?: annotation
+                    val url = source.string("url")
+                    if (url != null && url.toHttpUrlOrNull() != null) {
+                        citations.add(WebCitation(source.string("title") ?: url, url))
+                    }
+                }
+            }
+            "reasoning" -> item.optJSONArray("summary").objects().mapNotNull { it.string("text") }.forEach(summary::add)
+            "openrouter:shell", "shell_call", "shell_call_output" -> {
+                val outputs = item.optJSONArray("output").objects().toList()
+                val action = item.optJSONObject("action")
+                val callId = item.string("call_id") ?: item.string("id")
+                val prior = calls[callId]
+                val commands = action?.optJSONArray("commands").strings().toList().ifEmpty { prior?.first.orEmpty() }
+                val id = item.string("container_id")
+                    ?: action?.optJSONObject("environment")?.string("container_id")
+                    ?: outputs.firstNotNullOfOrNull { it.string("container_id") }
+                    ?: prior?.second ?: containerId
+                val files = (fileRefs(item.optJSONArray("files")) + outputs.flatMap { fileRefs(it.optJSONArray("files")) })
+                    .distinctBy { it.fileId }
+                containerId = id
+                if (item.string("type") == "shell_call" && outputs.isEmpty() && files.isEmpty() && callId != null) {
+                    calls[callId] = commands to id
+                } else {
+                    val results = outputs.mapIndexed { index, output ->
+                        val outcome = output.optJSONObject("outcome")
+                        val label = when (val type = outcome?.string("type")) {
+                            "exit" -> if (outcome.has("exit_code")) "exit ${outcome.optInt("exit_code")}" else "exit"
+                            else -> type ?: output.string("outcome") ?: "done"
+                        }
+                        ShellCommandResult(
+                            output.string("command") ?: commands.getOrElse(index) { "Command ${index + 1}" },
+                            limitedOutput(output.optString("stdout")), limitedOutput(output.optString("stderr")), label
+                        )
+                    }
+                    if (callId != null) calls.remove(callId)
+                    if (commands.isNotEmpty() || results.isNotEmpty() || files.isNotEmpty()) {
+                        shellSteps.add(ShellExecutionStep(id, commands, results, files))
+                    }
+                }
+            }
+            "openrouter:web_search", "web_search_call" -> {
+                val action = item.optJSONObject("action")
+                val query = action?.string("query") ?: item.string("query")
+                if (query != null) searchQueries.add(query)
+                searchQueries.addAll(action?.optJSONArray("queries").strings())
+            }
+        }
+    }
+    calls.values.forEach { (commands, id) ->
+        if (commands.isNotEmpty()) shellSteps.add(ShellExecutionStep(id, commands, emptyList(), emptyList()))
+    }
+    val usage = root.optJSONObject("usage")?.let {
+        TokenUsage(it.optInt("input_tokens"), it.optInt("output_tokens"), it.optInt("total_tokens"),
+            it.optDouble("cost").takeIf { cost -> cost.isFinite() }, it.optInt("cached_tokens"))
+    }
+    val text = finalText.ifEmpty { intermediateText }.joinToString("\n\n").ifBlank {
+        root.string("output_text") ?: when {
+            shellSteps.isNotEmpty() -> "The sandbox returned tool results."
+            else -> "OpenRouter did not return a text answer."
+        }
+    }
+    val reason = root.optJSONObject("incomplete_details")?.string("reason")
+    val notice = when {
+        root.optBoolean("stopped_for_repetition") -> "The agent stopped after detecting repeated steps."
+        status == "incomplete" -> "OpenRouter returned a partial response${reason?.let { " (${it.replace('_', ' ')})" }.orEmpty()}."
+        else -> null
+    }
+    return AgentRunResult(text, summary.joinToString("\n").ifBlank { null }, shellSteps,
+        searchQueries.distinct(), citations.distinctBy { it.url }, containerId, usage, root.string("model"),
+        notice)
+}
+
+private fun limitedOutput(text: String): String =
+    if (text.length > 24_000) text.take(24_000) + "\n[Output shortened]" else text
+
+private fun parseFile(file: JSONObject): ContainerFileRef? {
+    val id = file.string("file_id") ?: file.string("id") ?: return null
+    val path = file.string("path") ?: file.string("filename") ?: id
+    return ContainerFileRef(id, path, file.optLong("bytes", -1).takeIf { it >= 0 })
+}
+
+private fun fileRefs(array: JSONArray?): List<ContainerFileRef> {
+    if (array == null) return emptyList()
+    return (0 until array.length()).mapNotNull { index ->
+        when (val file = array.opt(index)) {
+            is JSONObject -> parseFile(file)
+            is String -> file.takeIf { it.startsWith("cfile_") }?.let { ContainerFileRef(it, it) }
+            else -> null
+        }
+    }
+}
+
+private fun JSONObject.string(key: String): String? = (opt(key) as? String)?.takeIf { it.isNotBlank() }
+private fun JSONArray?.objects(): Sequence<JSONObject> =
+    if (this == null) emptySequence() else (0 until length()).asSequence().mapNotNull { optJSONObject(it) }
+private fun JSONArray?.strings(): Sequence<String> =
+    if (this == null) emptySequence() else (0 until length()).asSequence().mapNotNull { opt(it) as? String }

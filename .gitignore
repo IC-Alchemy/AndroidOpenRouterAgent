@@ -33,3 +33,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Bundled SDK development dependencies
+agent-runtime/node_modules/

@@ -1,0 +1,18 @@
+{
+  "name": "sandbox-agent-runtime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@openrouter/agent": "1.2.2",
+    "@openrouter/mcp": "1.1.7",
+    "@openrouter/sdk": "1.5.126",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

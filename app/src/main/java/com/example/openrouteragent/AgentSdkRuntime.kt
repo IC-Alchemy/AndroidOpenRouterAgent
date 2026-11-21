@@ -1,0 +1,321 @@
+package com.example.openrouteragent
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import kotlinx.serialization.json.Json
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.IOException
+import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
+
+private const val ORIGIN = "https://agent-runtime.invalid"
+private const val ENTRY_URL = "$ORIGIN/index.html"
+private const val MAX_HISTORY_BYTES = 6_000_000
+
+data class ToolApproval(
+    val decision: String, val name: String, val arguments: String, val url: String, val asksUser: Boolean = false
+)
+data class SdkRunResult(val result: AgentRunResult, val history: String?, val state: String? = null)
+
+internal class AgentSdkRuntime(private val context: Context) {
+    private data class ActiveRun(
+        val id: String,
+        val completion: CompletableDeferred<SdkRunResult>,
+        val apiKey: String,
+        val onUpdate: (List<RunUpdate>) -> Unit,
+        val onApproval: (ToolApproval) -> Unit,
+    )
+
+    private val main = Handler(Looper.getMainLooper())
+    private val transport = AgentHttpTransport()
+    private var host: FrameLayout? = null
+    private var view: WebView? = null
+    private var ready = CompletableDeferred<Unit>()
+    private var activeRun: ActiveRun? = null
+
+    // Request interception runs on WebView worker threads.
+    @Volatile private var approvedToolOrigins: Set<Triple<String, String, Int>> = emptySet()
+
+    suspend fun run(
+        settings: AgentConfig,
+        workspace: Workspace,
+        prompt: String,
+        model: CatalogModel,
+        catalog: List<CatalogModel>,
+        guide: SavedAgentSkill?,
+        onUpdate: (List<RunUpdate>) -> Unit,
+        onApproval: (ToolApproval) -> Unit,
+    ): SdkRunResult = withContext(Dispatchers.Main.immediate) {
+        check(activeRun == null)
+        approvedToolOrigins = if (settings.sdk.toolChoice == "none") emptySet() else
+            (listOf(settings.mcpUrl) + settings.customTools.filter { it.enabled && it.handler == "webhook" }
+                .map { it.value }).mapNotNull { it.toHttpUrlOrNull() }
+                .map { Triple(it.scheme, it.host, it.port) }.toSet()
+        val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, onUpdate, onApproval)
+        try {
+            val runtime = view ?: createWebView()
+            try {
+                withTimeout(15_000) { ready.await() }
+            } catch (e: TimeoutCancellationException) {
+                throw IOException("The Agent SDK did not start. Update Android System WebView and retry.", e)
+            }
+            activeRun = run
+            val request = withContext(Dispatchers.Default) {
+                runtimeOptions(settings, workspace, prompt, model, catalog, guide).put("id", run.id)
+            }
+            runtime.evaluateJavascript(
+                "typeof globalThis.AgentRuntime?.start === 'function' && " +
+                    "(globalThis.AgentRuntime.start($request), true)"
+            ) { accepted ->
+                if (accepted != "true") run.completion.completeExceptionally(
+                    IOException("Android could not start the Agent SDK request."))
+            }
+            try {
+                withTimeout(15 * 60_000L) { run.completion.await() }
+            } catch (e: TimeoutCancellationException) {
+                throw IOException("The agent run timed out after 15 minutes.", e)
+            }
+        } finally {
+            if (!run.completion.isCompleted) view?.let { dispatch(it, "stop", run.id) }
+            transport.cancelRun(run.id)
+            approvedToolOrigins = emptySet()
+            if (activeRun?.id == run.id) activeRun = null
+            if (!ready.isCompleted || ready.isCancelled) destroy()
+        }
+    }
+
+    fun attach(container: FrameLayout) {
+        if (host === container) return
+        host = container
+        view?.let { bindView(it, container) }
+    }
+
+    fun detach(container: FrameLayout) {
+        if (host !== container) return
+        view?.let(container::removeView)
+        host = null
+    }
+
+    private fun bindView(runtime: WebView, container: FrameLayout) {
+        (runtime.parent as? ViewGroup)?.removeView(runtime)
+        container.addView(runtime, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
+
+    fun decide(decision: String, accept: Boolean, answer: String) {
+        val run = activeRun ?: return
+        view?.let { dispatch(it, "decide", run.id, decision, accept, answer) }
+    }
+
+    fun destroy() {
+        activeRun?.let { transport.cancelRun(it.id); it.completion.cancel() }
+        view?.let {
+            it.removeJavascriptInterface("AndroidAgent")
+            it.stopLoading()
+            (it.parent as? ViewGroup)?.removeView(it)
+            it.destroy()
+        }
+        view = null
+        ready = CompletableDeferred()
+    }
+
+    @SuppressLint("SetJavaScriptEnabled") // The only document and script are packaged read-only assets.
+    private fun createWebView(): WebView {
+        val runtime = WebView(context)
+        ready = CompletableDeferred()
+        view = runtime
+        runtime.isFocusable = false
+        runtime.importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        runtime.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        host?.let { bindView(runtime, it) }
+        runtime.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = false
+            allowFileAccess = false
+            allowContentAccess = false
+            javaScriptCanOpenWindowsAutomatically = false
+        }
+        runtime.addJavascriptInterface(EventBridge(runtime), "AndroidAgent")
+        runtime.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(webView: WebView, request: WebResourceRequest): Boolean = true
+
+            override fun shouldInterceptRequest(webView: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val url = request.url.toString()
+                if (request.isForMainFrame) return if (url == ENTRY_URL) asset("index.html", "text/html") else denied()
+                if (url == "$ORIGIN/agent.js") return asset("agent.js", "application/javascript")
+                val target = url.toHttpUrlOrNull() ?: return denied()
+                return if (target.isHttps && Triple(target.scheme, target.host, target.port) in approvedToolOrigins) {
+                    null
+                } else denied()
+            }
+
+            override fun onPageStarted(webView: WebView, url: String, favicon: Bitmap?) {
+                if (url != ENTRY_URL) webView.stopLoading()
+            }
+
+            override fun onRenderProcessGone(webView: WebView, detail: RenderProcessGoneDetail): Boolean {
+                if (webView === view) {
+                    val error = IOException("Android restarted the Agent SDK runtime. Try the run again.")
+                    activeRun?.completion?.completeExceptionally(error)
+                    ready.completeExceptionally(error)
+                    view = null
+                    (webView.parent as? ViewGroup)?.removeView(webView)
+                    webView.destroy()
+                }
+                return true
+            }
+
+            override fun onReceivedError(webView: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) ready.completeExceptionally(IOException("Android could not load the Agent SDK."))
+            }
+        }
+        runtime.loadUrl(ENTRY_URL)
+        return runtime
+    }
+
+    private fun asset(name: String, type: String): WebResourceResponse =
+        WebResourceResponse(type, "UTF-8", context.assets.open("agent/$name"))
+
+    private fun denied() = WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
+        emptyMap(), ByteArrayInputStream(ByteArray(0)))
+
+    private fun dispatch(runtime: WebView, method: String, vararg args: Any) {
+        val values = args.joinToString(",") { if (it is String) JSONObject.quote(it) else it.toString() }
+        runtime.evaluateJavascript("globalThis.AgentRuntime?.$method($values); void 0", null)
+    }
+
+    private inner class EventBridge(private val runtime: WebView) {
+        @JavascriptInterface
+        fun requestHttp(runId: String, requestId: String, json: String) {
+            val body = if (json.length <= MAX_HISTORY_BYTES * 2) {
+                runCatching { JSONObject(json).getString("body") }.getOrNull()
+            } else null
+            main.post {
+                val run = activeRun ?: return@post
+                if (runtime !== view || run.id != runId || run.completion.isCompleted) return@post
+                if (body == null) {
+                    dispatch(runtime, "http", runId, requestId, "error", "The OpenRouter request is too large or invalid.")
+                    return@post
+                }
+                transport.start(runId, requestId, run.apiKey, body) { kind, value ->
+                    main.post {
+                        if (runtime === view && activeRun?.id == runId) {
+                            dispatch(runtime, "http", runId, requestId, kind, value)
+                        }
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun readHttp(runId: String, requestId: String) = transport.read(runId, requestId)
+
+        @JavascriptInterface
+        fun cancelHttp(runId: String, requestId: String) = transport.cancel(runId, requestId)
+
+        @JavascriptInterface
+        fun post(json: String) {
+            try {
+                if (json.length > MAX_HISTORY_BYTES * 2) throw IOException("The agent response is too large.")
+                val event = JSONObject(json)
+                val id = event.optString("id")
+                val handler: (ActiveRun) -> Unit = when (event.optString("type")) {
+                    "ready" -> {
+                        main.post { if (runtime === view) ready.complete(Unit) }
+                        return
+                    }
+                    "updates" -> {
+                        val updates = parseRunUpdates(event.getJSONArray("value"))
+                        ({ run: ActiveRun -> run.onUpdate(updates) })
+                    }
+                    "approval" -> {
+                        val value = event.getJSONObject("value")
+                        val approval = ToolApproval(value.getString("decision"), value.getString("name"),
+                            value.getJSONObject("args").toString(2), value.optString("url"), value.optBoolean("asksUser"))
+                        ({ run: ActiveRun -> run.onApproval(approval) })
+                    }
+                    "done" -> {
+                        val value = event.getJSONObject("value")
+                        val history = value.optJSONArray("history")?.toString()?.takeIf { it.length <= MAX_HISTORY_BYTES }
+                        val state = (value.opt("state") as? String)?.takeIf { it.length <= MAX_HISTORY_BYTES }
+                        val result = SdkRunResult(parseAgentResult(value.getJSONObject("response").toString()), history, state)
+                        ({ run: ActiveRun -> run.completion.complete(result); Unit })
+                    }
+                    "error" -> {
+                        val error = IOException(event.getString("value"))
+                        ({ run: ActiveRun -> run.completion.completeExceptionally(error); Unit })
+                    }
+                    else -> return
+                }
+                main.post {
+                    val run = activeRun ?: return@post
+                    if (runtime === view && run.id == id && !run.completion.isCompleted) handler(run)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                main.post {
+                    if (runtime === view) activeRun?.completion?.completeExceptionally(
+                        if (e is IOException) e else IOException("Android received an invalid Agent SDK event.", e))
+                }
+            }
+        }
+    }
+}
+
+internal fun runtimeOptions(
+    config: AgentConfig, workspace: Workspace, prompt: String, model: CatalogModel,
+    catalog: List<CatalogModel> = listOf(model), guide: SavedAgentSkill? = null,
+): JSONObject {
+    val transcript = JSONArray()
+    workspace.messages.filter { !it.isError && it.text.isNotBlank() }.forEach {
+        transcript.put(JSONObject().put("type", "message").put("role", if (it.isUser) "user" else "assistant")
+            .put("content", it.text))
+    }
+    val history = if (workspace.sdkState != null) JSONArray()
+        else workspace.sdkHistory?.let { runCatching { JSONArray(it) }.getOrNull() } ?: transcript
+    val chosen = (listOf(model.id, config.sdk.followUpModel.trim()) +
+        config.sdk.fallbackModels.split(',').map(String::trim)).filter(String::isNotBlank).toSet()
+    val modelDetails = JSONObject()
+    catalog.filter { it.id in chosen }.forEach {
+        modelDetails.put(it.id, JSONObject().put("tools", it.supportsTools).put("parameters", JSONArray(it.parameters)))
+    }
+    val effectiveTools = config.customTools.filter { it.enabled && config.sdk.toolChoice != "none" }
+    val skills = (listOfNotNull(guide) + config.savedSkills).filter { it.enabled }
+    return JSONObject().put("apiKey", config.apiKey).put("model", model.id).put("history", history)
+        .put("prompt", prompt).put("instructions", config.systemInstructions)
+        .put("sessionId", workspace.sessionId ?: workspace.id).put("state", workspace.sdkState)
+        .put("shell", config.enableShellSandbox).put("containerId", workspace.containerId)
+        .put("domains", JSONArray(config.sandboxDomains())).put("webSearch", config.enableWebSearch)
+        .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
+        .put("extraTools", JSONArray(config.extraToolsJson.ifBlank { "[]" }))
+        .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)
+        .put("maxSteps", config.maxSteps).put("maxCost", config.maxCost)
+        .put("temperature", config.temperature.takeIf { "temperature" in model.parameters })
+        .put("baseTemperature", config.temperature)
+        .put("sdk", JSONObject(Json.encodeToString(SdkSettings.serializer(), config.sdk)))
+        .put("modelDetails", modelDetails)
+        .put("customTools", JSONArray(effectiveTools.map {
+            JSONObject(Json.encodeToString(CustomAgentTool.serializer(), it))
+        }))
+        .put("skills", JSONArray(skills.map { JSONObject(Json.encodeToString(SavedAgentSkill.serializer(), it)) }))
+}

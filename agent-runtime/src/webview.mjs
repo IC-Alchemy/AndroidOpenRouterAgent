@@ -1,0 +1,99 @@
+import { runAgent } from './runtime.mjs';
+import { createNativeTransport } from './native-fetch.mjs';
+
+const bridge = globalThis.AndroidAgent;
+const runs = new Map();
+const emit = (id, type, value) => bridge.post(JSON.stringify({ id, type, value }));
+
+async function start(options) {
+  if (runs.has(options.id)) return;
+  const run = { controller: new AbortController(), decisions: new Map() };
+  runs.set(options.id, run);
+  let nextDecision = 0;
+  let updates = [];
+  let flushTimer;
+  let lastFlush = 0;
+  const sanitize = value => {
+    let text = String(value ?? '');
+    if (options.apiKey) text = text.replaceAll(options.apiKey, '[API key]');
+    if (options.mcpToken) text = text.replaceAll(options.mcpToken, '[MCP token]');
+    return text;
+  };
+  const flush = () => {
+    if (flushTimer !== undefined) clearTimeout(flushTimer);
+    flushTimer = undefined;
+    if (!updates.length) return;
+    if (!run.controller.signal.aborted) emit(options.id, 'updates', updates);
+    updates = [];
+    lastFlush = Date.now();
+  };
+  const update = event => {
+    if (run.controller.signal.aborted) return;
+    const previous = updates.at(-1);
+    if (previous?.kind === event.kind && ['text', 'reasoning'].includes(event.kind)) previous.text += event.text;
+    else updates.push(event);
+    const elapsed = Date.now() - lastFlush;
+    if (elapsed >= 45 || updates.length >= 40) flush();
+    else if (flushTimer === undefined) flushTimer = setTimeout(flush, 45 - elapsed);
+  };
+  const askUser = (name, args, url, asksUser) => new Promise(resolve => {
+    if (run.controller.signal.aborted) return resolve(asksUser ? null : false);
+    const decision = String(++nextDecision);
+    run.decisions.set(decision, (accepted, answer) => resolve(asksUser ? (accepted ? answer : null) : accepted));
+    flush();
+    emit(options.id, 'approval', { decision, name, args, url, asksUser });
+  });
+  run.transport = createNativeTransport(options.id, bridge, phase => update({ kind: 'phase', phase }));
+  try {
+    const value = await runAgent(options, {
+      fetcher: run.transport.fetcher,
+      text: text => update({ kind: 'text', text }),
+      update: event => {
+        if (event.kind === 'reasoning' && options.sdk?.showReasoning === false) return;
+        update(event.detail ? { ...event, detail: sanitize(event.detail) } : event);
+      },
+      register: result => { run.result = result; },
+      approval: (name, args, url) => askUser(name, args, url, false),
+      ask: (name, args) => askUser(name, args, '', true),
+    }, run.controller.signal);
+    flush();
+    if (!run.controller.signal.aborted) {
+      const { response, history, state } = value;
+      emit(options.id, 'done', state.length <= 6_000_000 ? { response, state } : { response, history });
+    }
+  } catch (error) {
+    flush();
+    if (!run.controller.signal.aborted) {
+      const message = error?.body?.error?.message ?? error?.message ?? error;
+      emit(options.id, 'error', sanitize(message).slice(0, 800));
+    }
+  } finally {
+    run.transport.abort();
+    runs.delete(options.id);
+  }
+}
+
+globalThis.AgentRuntime = Object.freeze({
+  start,
+  http(id, requestId, kind, value) {
+    runs.get(id)?.transport.receive(requestId, kind, value);
+  },
+  stop(id) {
+    const run = runs.get(id);
+    if (!run) return;
+    run.controller.abort();
+    run.transport.abort();
+    for (const resolve of run.decisions.values()) resolve(false);
+    run.decisions.clear();
+    run.result?.cancel().catch(() => {});
+  },
+  decide(id, decision, accepted, answer) {
+    const run = runs.get(id);
+    const resolve = run?.decisions.get(decision);
+    if (resolve) {
+      run.decisions.delete(decision);
+      resolve(accepted, answer);
+    }
+  },
+});
+bridge.post('{"type":"ready"}');
