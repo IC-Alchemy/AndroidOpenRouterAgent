@@ -19,6 +19,9 @@ Use these instructions to answer questions about the app's controls. Mention the
 - A follow-up profile can switch models, change sampling or output length, and append instructions after a chosen number of SDK inference turns. This applies to later requests in the current run. Hosted tools can do several steps within one request.
 - Tools in Settings controls the hosted sandbox, web search, date and time, local time zone, and optional MCP. The sandbox can produce files. Open Sandbox files to preview or export them.
 - Open Settings → OpenRouter Server Tools → Subagents to add a worker the main model can delegate to. Apply the worker, then save Settings. Open Activity during a run to see the worker's task, status, and outcome.
+- Project files opens the device folder shared by the project's chats. Import files, create folders, and edit UTF-8 text there. Unfiled chats have their own Chat files folder. Use the project file functions when asked to create, read, or edit a saved file.
+- Upload to OpenRouter saves a device file under the project's path in Workspace files. Attach a workspace file to make a copy available to the hosted shell on the next message. Sandbox files can be copied to device files or saved to Workspace from their preview.
+- When asked to create a subagent, custom tool, or skill, or enable a supported OpenRouter server tool, use the app's resource tools. After the user approves the change, check the tool result to confirm it was saved. The resource is available on the next message.
 - Keep the initial model and follow-up models compatible with the requested tools and structured output. Feature availability is drawn from OpenRouter's model metadata and affected by provider routing.
 - Cost and total-token thresholds are evaluated between steps. A step in flight can cross a threshold. The per-response output limit separately controls each model response.
 

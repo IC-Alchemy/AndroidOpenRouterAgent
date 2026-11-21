@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
 import { OpenRouter } from '@openrouter/agent';
 import { buildCall, buildTools, runAgent } from '../src/runtime.mjs';
 
@@ -46,6 +48,125 @@ function answer(id, text) {
   return { type: 'message', id, role: 'assistant', status: 'completed',
     content: [{ type: 'output_text', text, annotations: [] }] };
 }
+
+async function bundledRuntime(AndroidAgent) {
+  const browser = {
+    Promise, fetch: () => { throw new Error('The model request must use the Android HTTP bridge.'); },
+    URL, URLSearchParams, Headers, Request, Response, TextDecoder, TextEncoder, ReadableStream, TransformStream,
+    AbortController, AbortSignal, DOMException, atob, Uint8Array, setTimeout, clearTimeout, setInterval,
+    clearInterval, queueMicrotask, performance, console, Intl, crypto: globalThis.crypto, AndroidAgent,
+  };
+  const bundle = await readFile(new URL('../../app/src/main/assets/agent/agent.js', import.meta.url), 'utf8');
+  runInNewContext(bundle, browser);
+  return browser.AgentRuntime;
+}
+
+test('the bundled SDK waits for Android to save a file and a subagent before reporting success',
+  { timeout: 5000 }, async () => {
+    const events = [];
+    const requests = [];
+    const responses = new Map();
+    const fileArgs = { path: 'notes/plan.md', text: 'Initial plan.' };
+    const subagentArgs = { name: 'Editor', model: 'mock/worker', advancedJson: '{"maxToolCalls":3}' };
+    const call = (name, args, index) => ({ type: 'function_call', id: 'item_' + index, call_id: 'call_' + index,
+      name, arguments: JSON.stringify(args), status: 'completed' });
+    const outputs = [call('write_project_file', fileArgs, 1), call('create_subagent', subagentArgs, 2),
+      answer('msg_created', 'The file and subagent are saved.')];
+    const runtime = await bundledRuntime({
+      post(message) {
+        const event = JSON.parse(message);
+        events.push(event);
+        if (event.type === 'approval') queueMicrotask(() => {
+          runtime.decide(event.id, event.value.decision, true, '');
+        });
+        if (event.type === 'app_request') queueMicrotask(() => {
+          const { request, name, args } = event.value;
+          const result = name === 'write_project_file' ? { path: args.path, created: true } :
+            { type: 'subagent', name: args.name };
+          runtime.appResult(event.id, request, true, result);
+        });
+      },
+      requestHttp(id, requestId, payload) {
+        requests.push(JSON.parse(JSON.parse(payload).body));
+        const round = requests.length;
+        responses.set(requestId, Buffer.from(stream(round, outputs[round - 1])).toString('base64'));
+        queueMicrotask(() => runtime.http(id, requestId, 'headers', { status: 200, contentType: 'text/event-stream' }));
+      },
+      readHttp(id, requestId) {
+        const response = responses.get(requestId);
+        responses.delete(requestId);
+        queueMicrotask(() => runtime.http(id, requestId, response ? 'chunk' : 'end', response ?? null));
+      },
+      cancelHttp() {},
+    });
+    await runtime.start({ ...base, id: 'app-actions', appActions: true, projectFolder: 'projects/test' });
+    assert.equal(requests.length, 3);
+    const actions = events.filter(event => event.type === 'app_request').map(event =>
+      [event.value.name, event.value.args]);
+    assert.deepEqual(actions, [['write_project_file', fileArgs], ['create_subagent', subagentArgs]]);
+    const approvals = events.filter(event => event.type === 'approval');
+    assert.equal(approvals.length, 1);
+    assert.equal(approvals[0].value.savesSettings, true);
+    assert.deepEqual(approvals[0].value.args, subagentArgs);
+    assert.match(requests[1].input.find(item => item.type === 'function_call_output').output, /notes\/plan.md/);
+    assert.match(requests[2].input.find(item => item.call_id === 'call_2' && item.type === 'function_call_output').output,
+      /\"name\":\"Editor\"/);
+    assert.ok(events.some(event => event.type === 'done'));
+  });
+
+test('a project run uses project file functions and attaches workspace files to its own sandbox', async () => {
+  const calls = [];
+  const requests = [];
+  const fetcher = async request => {
+    requests.push(await request.json());
+    const round = requests.length;
+    const output = round === 1
+      ? { type: 'function_call', id: 'fc_file', call_id: 'read_file', status: 'completed',
+        name: 'read_project_file', arguments: '{"path":"notes/plan.md"}' }
+      : answer('msg_file', 'The plan is ready.');
+    return new Response(stream(round, output), { headers: { 'Content-Type': 'text/event-stream' } });
+  };
+  const opts = { ...base, appActions: true, projectFolder: 'projects/project-1', workspaceFiles: true,
+    shell: true, containerId: 'studio_project_mock', domains: ['example.com'],
+    fileIds: ['or_file_a12345678', 'or_file_b98765432'] };
+  const events = { text() {}, fetcher, appAction: async (name, args) => {
+    calls.push([name, args]);
+    return { path: args.path, text: 'Plan contents' };
+  }};
+  await runAgent(opts, events, new AbortController().signal);
+  assert.deepEqual(calls, [['read_project_file', { path: 'notes/plan.md' }]]);
+  assert.equal(requests.length, 2);
+  for (const request of requests) {
+    assert.ok(!request.tools.some(tool => tool.type === 'openrouter:files'));
+    assert.match(request.instructions, /projects\/project-1\/outputs/);
+    assert.deepEqual(request.tools.find(tool => tool.type === 'openrouter:shell').parameters.environment, {
+      type: 'container_reference', container_id: 'studio_project_mock',
+      file_ids: ['or_file_a12345678', 'or_file_b98765432'],
+      network_policy: { type: 'allowlist', allowed_domains: ['example.com'] },
+    });
+  }
+  const output = requests[1].input.find(item => item.type === 'function_call_output');
+  assert.match(output.output, /Plan contents/);
+});
+
+test('the workspace Files tool goes on the wire for unfiled chats and is disabled with tools off', async () => {
+  const requests = [];
+  const opts = { ...base, workspaceFiles: true, fileIds: ['or_file_a12345678'], shell: true };
+  const events = { text() {}, fetcher: async request => {
+    requests.push(await request.json());
+    return new Response(stream(1, answer('msg_files', 'Done.')),
+      { headers: { 'Content-Type': 'text/event-stream' } });
+  }};
+  const signal = new AbortController().signal;
+  await runAgent(opts, events, signal);
+  await runAgent({ ...opts, sdk: { toolChoice: 'none' } }, events, signal);
+  assert.deepEqual(requests[0].tools.find(tool => tool.type === 'openrouter:files'), { type: 'openrouter:files' });
+  assert.deepEqual(requests[0].tools.find(tool => tool.type === 'openrouter:shell').parameters.environment, {
+    type: 'container_auto', file_ids: ['or_file_a12345678'],
+  });
+  assert.equal(requests[1].tool_choice, 'none');
+  assert.ok(!requests[1].tools?.length);
+});
 
 test('named subagents stay in order and the SDK resumes a worker across inherited function calls',
   { timeout: 5000 }, async () => {
@@ -324,8 +445,6 @@ test('the official SDK gates MCP execution and feeds approved tool results back'
 });
 
 test('the bundled SDK sends text, summaries and files across the native bridge before finalization', { timeout: 5000 }, async () => {
-  const { readFile } = await import('node:fs/promises');
-  const { runInNewContext } = await import('node:vm');
   const events = [];
   const requests = [];
   let read = 0;
@@ -354,12 +473,7 @@ test('the bundled SDK sends text, summaries and files across the native bridge b
     wire('response.output_item.added', 3, { item: { ...worker, status: 'in_progress', outcome: undefined },
       output_index: 3 });
 
-  const browserGlobals = {
-    Promise, fetch: () => { throw new Error('The model request must use the Android HTTP bridge.'); },
-    URL, URLSearchParams, Headers, Request, Response, TextDecoder, TextEncoder, ReadableStream, TransformStream,
-    AbortController, AbortSignal, DOMException, atob, Uint8Array, setTimeout, clearTimeout, setInterval,
-    clearInterval, queueMicrotask, performance, console, Intl, crypto: globalThis.crypto,
-    AndroidAgent: {
+  const runtime = await bundledRuntime({
       post(text) {
         const event = JSON.parse(text);
         events.push(event);
@@ -372,24 +486,21 @@ test('the bundled SDK sends text, summaries and files across the native bridge b
         const payload = JSON.parse(json);
         assert.equal(payload.authorization, undefined);
         requests.push(JSON.parse(payload.body));
-        queueMicrotask(() => browserGlobals.AgentRuntime.http(id, requestId, 'headers',
+        queueMicrotask(() => runtime.http(id, requestId, 'headers',
           { status: 200, contentType: 'text/event-stream' }));
       },
       readHttp(id, requestId) {
         const turn = ++read;
-        if (turn === 1) queueMicrotask(() => browserGlobals.AgentRuntime.http(id, requestId, 'chunk',
+        if (turn === 1) queueMicrotask(() => runtime.http(id, requestId, 'chunk',
           Buffer.from(start).toString('base64')));
-        if (turn === 2) finalAllowed.then(() => browserGlobals.AgentRuntime.http(id, requestId, 'chunk',
+        if (turn === 2) finalAllowed.then(() => runtime.http(id, requestId, 'chunk',
           Buffer.from(stream(1, [shell, worker])).toString('base64')));
-        if (turn > 2) queueMicrotask(() => browserGlobals.AgentRuntime.http(id, requestId, 'end', null));
+        if (turn > 2) queueMicrotask(() => runtime.http(id, requestId, 'end', null));
       },
       cancelHttp() {},
-    },
-  };
-  const bundle = await readFile(new URL('../../app/src/main/assets/agent/agent.js', import.meta.url), 'utf8');
-  runInNewContext(bundle, browserGlobals);
+  });
   assert.equal(events[0]?.type, 'ready');
-  const run = browserGlobals.AgentRuntime.start({ ...base, id: 'fixture', shell: true, webSearch: true,
+  const run = runtime.start({ ...base, id: 'fixture', shell: true, webSearch: true,
     dateTime: true, domains: ['pypi.org'], extraTools: [{ type: worker.type,
       parameters: { name: worker.name, model: worker.model } }] });
   await Promise.race([observed, run.then(() => { throw new Error(JSON.stringify(events)); })]);

@@ -163,7 +163,10 @@ export function streamObserver(events) {
     }
     if (item.type?.startsWith('openrouter:') || /_call$/.test(item.type ?? '')) {
       phase('tools');
-      tool(id, item.type, item.status ?? (ready ? 'completed' : 'running'), item.error || item.action?.query);
+      const detail = item.type === 'openrouter:files'
+        ? [item.operation, item.filename].filter(Boolean).join(' ') || undefined
+        : item.action?.query;
+      tool(id, item.type, item.error ? 'failed' : item.status ?? (ready ? 'completed' : 'running'), item.error || detail);
       if (item.files?.length) {
         events.update?.({ kind: 'files', containerId: item.containerId,
           files: item.files.map(file => ({ id: file.fileId, name: file.filename })).filter(file => file.id && file.name) });

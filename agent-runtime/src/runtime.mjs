@@ -4,6 +4,8 @@ import { HTTPClient } from '@openrouter/sdk/lib/http';
 import { customTool, sdkParameters, skillLoader } from './customization.mjs';
 import { streamObserver } from './stream-events.mjs';
 import { discardUnfinishedSubagents, subagentConfig, subagentType } from './subagent.mjs';
+import { fileInstructions, projectFileTools } from './project-files.mjs';
+import { resourceActionNames, resourceActionTools } from './resource-actions.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
 
@@ -22,14 +24,16 @@ export function buildTools(options, events, signal) {
     const environment = options.containerId
       ? { type: 'container_reference', containerId: options.containerId }
       : { type: 'container_auto' };
-    if (!options.containerId && options.domains?.length) {
+    if ((!options.containerId || options.projectFolder) && options.domains?.length) {
       environment.networkPolicy = { type: 'allowlist', allowedDomains: options.domains };
     }
+    if (options.fileIds?.length) environment.fileIds = options.fileIds;
     tools.push(serverTool({ type: 'openrouter:shell', parameters: { engine: 'openrouter', environment } }));
   }
   if (options.webSearch) tools.push(serverTool({ type: 'openrouter:web_search' }));
   if (options.dateTime) tools.push(serverTool({ type: 'openrouter:datetime' }));
   if (options.webFetch) tools.push(serverTool({ type: 'openrouter:web_fetch' }));
+  if (options.workspaceFiles && !options.projectFolder) tools.push(serverTool({ type: 'openrouter:files' }));
   if (options.deviceTools) {
     tools.push(tool({
       name: 'device_time_zone',
@@ -58,6 +62,14 @@ export function buildTools(options, events, signal) {
   const skill = skillLoader(options);
   if (skill) tools.push(skill);
   for (const spec of options.customTools ?? []) tools.push(customTool(spec, events, signal));
+  if (options.appActions && events.appAction && options.modelDetails?.[options.model]?.tools !== false) {
+    const names = new Set(tools.map(item => item.function?.name));
+    const local = [...projectFileTools(events.appAction), ...resourceActionTools({
+      ...events,
+      approval: events.approval && ((label, args, url) => events.approval(label, args, url, true)),
+    }, signal)];
+    tools.push(...local.filter(item => !names.has(item.function.name)));
+  }
   return tools;
 }
 
@@ -76,8 +88,16 @@ export function buildCall(options, tools, approval, signal, observe) {
   const finalResponse = options.sdk?.finalResponse;
   const webhooks = new Map((options.customTools ?? []).filter(tool => tool.handler === 'webhook')
     .map(tool => [tool.name, tool.value]));
+  const hasShell = tools.some(item => item.config?.type === 'openrouter:shell');
+  const fileGuidance = fileInstructions(hasShell ? options.projectFolder : undefined,
+    tools.some(item => item.function?.name === 'list_project_files'), hasShell ? options.attachmentNames : undefined);
+  const creationGuidance = options.appActions && tools.some(item => resourceActionNames.includes(item.function?.name))
+    ? 'When the user asks to create a subagent, custom tool, or skill, or to enable an OpenRouter server tool, use the app functions to save it. ' +
+      'Only say it was saved after the app confirms. Saved changes take effect on the next message.'
+    : '';
+  const instructions = [options.instructions, fileGuidance, creationGuidance].filter(Boolean).join('\n\n');
   return {
-    ...sdkParameters(options, tools.length > 0),
+    ...sdkParameters({ ...options, instructions }, tools.length > 0),
     input: [...(options.state ? [] : options.history), { type: 'message', role: 'user', content: options.prompt }],
     tools,
     signal,

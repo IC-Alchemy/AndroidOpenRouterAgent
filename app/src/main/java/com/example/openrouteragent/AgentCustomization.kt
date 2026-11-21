@@ -1,6 +1,8 @@
 package com.example.openrouteragent
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import org.yaml.snakeyaml.LoaderOptions
@@ -18,12 +20,14 @@ data class CustomAgentTool(
     val value: String = "",
     val enabled: Boolean = true,
 ) {
-    fun problem(): String? = when {
+    fun problem(): String? = problem(false)
+
+    internal fun problem(strictSchema: Boolean): String? = when {
         !Regex("[a-z][a-z0-9_]{0,62}").matches(name) || name.startsWith("remote_") ||
             name in setOf("load_skill", "device_time_zone") ->
             "Use a unique name with lowercase letters, digits, and underscores."
         description.isBlank() || description.length > 1024 -> "Enter a purpose of 1–1,024 characters."
-        schema.length > 8192 || !validInputSchema(schema) -> "Enter a JSON object schema with supported properties."
+        schema.length > 8192 || !validInputSchema(schema, strictSchema) -> "Enter a JSON object schema with supported properties."
         handler == "webhook" && value.toHttpUrlOrNull()?.let {
             it.isHttps && it.username.isEmpty() && it.password.isEmpty() &&
                 it.query == null && it.fragment == null
@@ -35,26 +39,56 @@ data class CustomAgentTool(
     }
 }
 
-private fun validInputSchema(text: String): Boolean = runCatching {
+private fun validInputSchema(text: String, strict: Boolean): Boolean = runCatching {
     fun field(item: JSONObject, depth: Int): Boolean {
-        if (depth > 5) return false
+        if (depth > 5 || (strict && !validSchemaKeywords(item))) return false
         return when (item.optString("type")) {
             "string", "integer", "number", "boolean" -> true
             "array" -> item.optJSONObject("items")?.let { field(it, depth + 1) } == true
             "object" -> {
                 val properties = item.optJSONObject("properties") ?: return false
                 val required = item.optJSONArray("required")
+                if (strict && item.has("required") && required == null) return false
+                val additional = item.optJSONObject("additionalProperties")
+                if (strict && additional != null && !field(additional, depth + 1)) return false
+                val seen = mutableSetOf<String>()
                 properties.length() <= 24 && properties.keys().asSequence().all { key ->
                     Regex("[a-zA-Z][a-zA-Z0-9_]{0,63}").matches(key) &&
                         properties.optJSONObject(key)?.let { field(it, depth + 1) } == true
-                } && (required == null || (0 until required.length()).all { properties.has(required.getString(it)) })
+                } && (required == null || (0 until required.length()).all {
+                    val name = if (strict) required.opt(it) as? String ?: return@all false else required.getString(it)
+                    properties.has(name) && (!strict || seen.add(name))
+                })
             }
             else -> false
         }
     }
+    if (strict && Json.parseToJsonElement(text) !is JsonObject) return@runCatching false
     val schema = JSONObject(text)
     schema.optString("type") == "object" && field(schema, 0)
 }.getOrDefault(false)
+
+private fun validSchemaKeywords(field: JSONObject): Boolean {
+    val fieldType = field.optString("type")
+    return field.keys().asSequence().all { key ->
+        val value = field.opt(key)
+        val number = (value as? Number)?.toDouble()?.takeIf(Double::isFinite)
+        when (key) {
+            "type", "description", "title", "\$schema" -> value is String
+            "properties" -> fieldType == "object" && value is JSONObject
+            "required" -> fieldType == "object" && field.optJSONArray(key) != null
+            "additionalProperties" -> fieldType == "object" && (value is Boolean || value is JSONObject)
+            "items" -> fieldType == "array" && value is JSONObject
+            "pattern" -> fieldType == "string" && value is String
+            "minLength", "maxLength", "minItems", "maxItems" ->
+                fieldType == (if (key.endsWith("Length")) "string" else "array") &&
+                    number != null && number in 0.0..9_007_199_254_740_991.0 && number % 1 == 0.0
+            "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf" ->
+                fieldType in setOf("number", "integer") && number != null && (key != "multipleOf" || number > 0.0)
+            else -> false
+        }
+    }
+}
 
 @Serializable
 data class SavedAgentSkill(

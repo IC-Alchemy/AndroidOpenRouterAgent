@@ -20,6 +20,7 @@ data class AgentConfig(
     val enableWebSearch: Boolean = true,
     val enableDateTime: Boolean = true,
     val webFetch: Boolean = false,
+    val enableWorkspaceFiles: Boolean = false,
     val deviceTools: Boolean = false,
     val mcpUrl: String = "",
     val mcpToken: String = "",
@@ -176,5 +177,5 @@ data class InterruptedTurn(val prompt: String, val reply: String, val reasoningS
 
 fun AgentConfig.agentToolsEnabled(): Boolean =
     sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||
-        customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
+        enableWorkspaceFiles || customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
         (extraToolsJson.isNotBlank() && extraToolsJson.replace(Regex("\\s"), "") != "[]"))

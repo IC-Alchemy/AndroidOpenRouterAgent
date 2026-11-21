@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -26,6 +27,7 @@ import java.util.UUID
 
 class AgentViewModel(application: Application) : AndroidViewModel(application) {
     val client = OpenRouterAgentClient()
+    internal val files = OpenRouterFiles(application, client)
     private val storage = AgentStorage(application)
     private val sdk = AgentSdkRuntime(application)
     private val chatClient = CompatibleChatClient()
@@ -47,6 +49,15 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         val projectId = library.chats.firstOrNull { it.id == workspace.id }?.projectId
         return library.projects.firstOrNull { it.id == projectId }
     }
+    internal val sandboxId: String? get() = if (usesOpenRouter) {
+        chatProject?.let { projectSandboxId(it.id, config) } ?: workspace.containerId
+    } else null
+    private data class AttachmentSelection(val area: ProjectFileArea, val account: String, val files: List<WorkspaceFileRef>)
+    private var attachmentSelection by mutableStateOf<AttachmentSelection?>(null)
+    internal val attachedFiles: List<WorkspaceFileRef> get() = attachmentSelection
+        ?.takeIf { it.area == fileArea() && it.account == workspaceTag(config) }?.files.orEmpty()
+    internal val canAttachWorkspaceFiles: Boolean get() = usesOpenRouter && providerReady && activePrompt == null &&
+        config.enableShellSandbox && config.sdk.toolChoice != "none"
     var promptText by mutableStateOf("")
     var isLoading by mutableStateOf(true)
         private set
@@ -179,6 +190,35 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
 
     internal fun detachRuntime(host: FrameLayout) = sdk.detach(host)
 
+    internal fun fileArea(projectId: String? = chatProject?.id) = ProjectFileArea(projectId, workspace.id)
+
+    internal fun toggleWorkspaceFile(file: WorkspaceFileRef) {
+        require(canAttachWorkspaceFiles) { "Turn on the hosted shell to attach workspace files." }
+        val area = fileArea()
+        require(file.filename.startsWith(area.remotePrefix)) { "Save a copy in this project before attaching it." }
+        val selection = attachedFiles
+        val next = if (selection.any { it.id == file.id }) selection.filterNot { it.id == file.id } else {
+            require(selection.size < MAX_WORKSPACE_ATTACHMENTS) { "Attach up to 20 files per message." }
+            selection + file
+        }
+        attachmentSelection = AttachmentSelection(area, workspaceTag(config), next)
+    }
+
+    internal fun detachWorkspaceFile(fileId: String) {
+        val selection = attachmentSelection ?: return
+        attachmentSelection = selection.copy(files = selection.files.filterNot { it.id == fileId })
+    }
+
+    internal fun clearWorkspaceAttachments() {
+        if (activePrompt == null) attachmentSelection = null
+    }
+
+    internal suspend fun prepareFileArea(area: ProjectFileArea) {
+        if (area.projectId == null && workspace.id == area.chatId && library.chats.none { it.id == area.chatId }) {
+            saveWorkspace(scopedWorkspace(workspace))
+        }
+    }
+
     fun retryTurn(toolsOff: Boolean = false) {
         val prompt = retryPrompt ?: return
         send(prompt, toolsOff)
@@ -193,8 +233,19 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val priorWorkspace = workspace
+        val area = fileArea()
+        val attachments = if (active == null && !toolsOff) attachedFiles else emptyList()
+        if (attachments.isNotEmpty() && !canAttachWorkspaceFiles) {
+            turnError = "Turn on the hosted shell or remove the file attachments before sending."
+            return
+        }
+        val runFiles = OpenRouterRunFiles(
+            projectFolder = area.relativeRoot.takeIf { area.projectId != null },
+            projectSandbox = area.projectId?.let { projectSandboxId(it, config) },
+            attachments = attachments,
+        )
         val currentConfig = if (toolsOff) config.copy(enableShellSandbox = false, enableWebSearch = false,
-            enableDateTime = false, webFetch = false, deviceTools = false, mcpUrl = "", mcpToken = "",
+            enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false, mcpUrl = "", mcpToken = "",
             extraToolsJson = "", customTools = emptyList(),
             sdk = config.sdk.copy(discoverSkills = false, toolChoice = "none")) else config
         activePrompt = prompt
@@ -208,11 +259,15 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val sdkResult = if (active == null) {
                     sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
-                        onUpdate = ::updateProgress, onApproval = { approvals = approvals + it })
+                        onUpdate = ::updateProgress, onApproval = { approvals = approvals + it }, files = runFiles,
+                        onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
+                            executeAppAction(area, name, args)
+                        })
                 } else {
                     SdkRunResult(chatClient.run(active, currentConfig, priorWorkspace, prompt, model.id, ::updateProgress), null)
                 }
                 val result = sdkResult.result
+                if (attachments.isNotEmpty()) attachmentSelection = null
                 val messages = priorWorkspace.messages + listOf(
                     ChatEntry(isUser = true, text = prompt),
                     ChatEntry(
@@ -231,7 +286,8 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 val finished = scopedWorkspace(priorWorkspace.copy(
                     messages = messages,
-                    containerId = result.discoveredContainerId ?: priorWorkspace.containerId,
+                    containerId = if (area.projectId != null) priorWorkspace.containerId
+                        else result.discoveredContainerId ?: priorWorkspace.containerId,
                     sdkHistory = sdkResult.history,
                     sdkState = sdkResult.state,
                     interruptedTurn = null,
@@ -256,6 +312,21 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                 progress = null
                 approvals = emptyList()
             }
+        }
+    }
+
+    private suspend fun executeAppAction(area: ProjectFileArea, name: String, args: JSONObject): JSONObject {
+        if (name in projectFileActions) {
+            if (name == "write_project_file" || name == "edit_project_file") prepareFileArea(area)
+            return withContext(Dispatchers.IO) { files.store.performAction(area, name, args) }
+        }
+        return settingsMutex.withLock {
+            val change = prepareResourceAction(config, name, args)
+            withContext(NonCancellable) {
+                withContext(Dispatchers.IO) { storage.saveConfig(change.config) }
+                config = change.config
+            }
+            change.result
         }
     }
 
@@ -316,7 +387,11 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addProject(name: String) = chatAction {
-        withContext(Dispatchers.IO) { chats.addProject(name) }
+        val area = fileArea(UUID.randomUUID().toString())
+        withContext(Dispatchers.IO) {
+            files.store.ensure(area)
+            chats.addProject(name, checkNotNull(area.projectId))
+        }
     }
 
     fun renameProject(id: String, name: String) = chatAction {
@@ -328,6 +403,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun detachSandbox() = chatAction {
+        if (chatProject != null) return@chatAction
         val reset = scopedWorkspace(workspace.copy(sessionId = UUID.randomUUID().toString(),
             containerId = null, sdkHistory = null, sdkState = null))
         saveWorkspace(reset)

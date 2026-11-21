@@ -12,10 +12,18 @@ private val configurableServerTools = setOf(
     "openrouter:web_fetch", "openrouter:image_generation", "openrouter:experimental__search_models",
     "openrouter:advisor", SUBAGENT_TOOL_TYPE, "openrouter:fusion"
 )
+private val workerServerTools = configurableServerTools - SUBAGENT_TOOL_TYPE +
+    setOf("openrouter:shell", "openrouter:web_search", "openrouter:datetime", "openrouter:files")
 private val subagentNamePattern = Regex("[A-Za-z0-9 _-]{1,64}")
 private val workerToolTypePattern = Regex("openrouter:[a-z][a-z0-9_]*")
 private val reasoningEfforts = setOf("none", "minimal", "low", "medium", "high", "xhigh", "max")
 private val basicSubagentFields = setOf("name", "model", "instructions")
+private val subagentFields = basicSubagentFields + setOf(
+    "tools", "maxToolCalls", "maxCompletionTokens", "temperature", "reasoning",
+    "inheritFunctions", "inheritedFunctionNames",
+)
+private val reasoningFields = setOf("effort", "maxTokens")
+private val workerToolFields = setOf("type", "parameters", "additionalProperties")
 private val formattedJson = Json { prettyPrint = true }
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
@@ -68,7 +76,7 @@ internal fun hostedToolsError(json: String): String? {
     return null
 }
 
-internal fun subagentError(tool: JsonObject): String? {
+internal fun subagentError(tool: JsonObject, strict: Boolean = false): String? {
     if ("parameters" !in tool) return null
     val settings = tool.subagentParameters() ?: return "Enter a JSON object for subagent parameters."
     val name = settings.stringValue("name")?.trim()
@@ -76,6 +84,14 @@ internal fun subagentError(tool: JsonObject): String? {
     val reasoning = settings["reasoning"] as? JsonObject
     val workerTools = settings["tools"] as? JsonArray
     val inheritedNames = settings["inheritedFunctionNames"] as? JsonArray
+    if (strict) {
+        (settings.keys - subagentFields).firstOrNull()?.let { return "Unknown subagent setting “$it”." }
+        (reasoning?.keys.orEmpty() - reasoningFields).firstOrNull()?.let { return "Unknown reasoning setting “$it”." }
+        workerTools?.forEach { workerTool ->
+            ((workerTool as? JsonObject)?.keys.orEmpty() - workerToolFields).firstOrNull()
+                ?.let { return "Unknown worker tool setting “$it”." }
+        }
+    }
     return when {
         "name" in settings && (name == null || !subagentNamePattern.matches(name)) ->
             "Use 1–64 letters, digits, spaces, underscores, or dashes for the name."
@@ -83,8 +99,8 @@ internal fun subagentError(tool: JsonObject): String? {
             "Enter an OpenRouter worker model ID without spaces."
         "instructions" in settings && settings.stringValue("instructions") == null ->
             "Enter worker instructions as text."
-        "tools" in settings && (workerTools == null || workerTools.any { !isWorkerServerTool(it as? JsonObject) }) ->
-            "Worker tools must be OpenRouter server tool objects. Use function inheritance for client functions."
+        "tools" in settings && (workerTools == null || workerTools.any { !isWorkerServerTool(it as? JsonObject, strict) }) ->
+            "Choose supported OpenRouter server tool objects. Use function inheritance for client functions."
         "maxToolCalls" in settings && !settings.wholeNumberIn("maxToolCalls", 1..25L) ->
             "Set maxToolCalls to a whole number from 1 to 25."
         "maxCompletionTokens" in settings && !settings.wholeNumberIn("maxCompletionTokens", 1..MAX_SAFE_INTEGER) ->
@@ -107,11 +123,13 @@ internal fun subagentError(tool: JsonObject): String? {
     }
 }
 
-private fun isWorkerServerTool(tool: JsonObject?): Boolean {
+private fun isWorkerServerTool(tool: JsonObject?, strict: Boolean): Boolean {
     val type = tool?.stringValue("type") ?: return false
+    val extendedFields = tool["additionalProperties"] as? JsonObject
     return type != SUBAGENT_TOOL_TYPE && workerToolTypePattern.matches(type) &&
         ("parameters" !in tool || tool["parameters"] is JsonObject) &&
-        ("additionalProperties" !in tool || tool["additionalProperties"] is JsonObject)
+        ("additionalProperties" !in tool || extendedFields != null) &&
+        (!strict || (type in workerServerTools && extendedFields?.keys.orEmpty().none { it in workerToolFields }))
 }
 
 private fun JsonObject.numberValue(key: String) = (get(key) as? JsonPrimitive)

@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,10 +108,15 @@ internal fun ContainerFilePreviewDialog(
     title: String,
     isExporting: Boolean,
     onDismiss: () -> Unit,
-    onExport: () -> Unit
+    onExport: () -> Unit,
+    onSaveCopy: (suspend () -> String)? = null,
+    onPromote: (suspend () -> WorkspaceFileRef)? = null
 ) {
     var preview by remember(containerId, fileId) { mutableStateOf<FilePreview?>(null) }
     var error by remember(containerId, fileId) { mutableStateOf<String?>(null) }
+    val operation = remember(apiKey, containerId, fileId) { FileDialogOperation(apiKey) }
+    val scope = rememberCoroutineScope()
+    val working = isExporting || operation.busy != null
     LaunchedEffect(containerId, fileId, apiKey) {
         try {
             preview = client.previewFile(apiKey, containerId, fileId)
@@ -122,10 +128,19 @@ internal fun ContainerFilePreviewDialog(
     }
 
     AlertDialog(
-        onDismissRequest = { if (!isExporting) onDismiss() },
+        onDismissRequest = { if (!working) onDismiss() },
         title = { Text(title, maxLines = 2) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FileDialogStatus(operation)
+                if (onSaveCopy != null || onPromote != null) FileActionRow {
+                    if (onSaveCopy != null) TextButton(enabled = !working, onClick = {
+                        operation.run(scope, "Copying file…") { "Copied to ${onSaveCopy()}." }
+                    }) { Text("Copy to device files") }
+                    if (onPromote != null) TextButton(enabled = !working, onClick = {
+                        operation.run(scope, "Saving to Workspace…") { "Saved ${onPromote().filename} to Workspace." }
+                    }) { Text("Save to Workspace") }
+                }
                 val result = preview
                 when {
                     error != null -> Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
@@ -142,10 +157,10 @@ internal fun ContainerFilePreviewDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !isExporting, onClick = onExport) {
+            TextButton(enabled = !working, onClick = onExport) {
                 Text(if (isExporting) "Saving…" else "Save file")
             }
         },
-        dismissButton = { TextButton(enabled = !isExporting, onClick = onDismiss) { Text("Close") } }
+        dismissButton = { TextButton(enabled = !working, onClick = onDismiss) { Text("Close") } }
     )
 }

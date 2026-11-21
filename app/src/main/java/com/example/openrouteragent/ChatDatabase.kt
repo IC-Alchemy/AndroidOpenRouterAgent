@@ -140,9 +140,9 @@ internal class ChatDatabase(context: Context) : SQLiteOpenHelper(
         writableDatabase.delete("chats", "provider=?", arrayOf(provider))
     }
 
-    fun addProject(name: String) {
+    fun addProject(name: String, id: String = UUID.randomUUID().toString()) {
         writableDatabase.insertOrThrow("projects", null, ContentValues().apply {
-            put("id", UUID.randomUUID().toString())
+            put("id", id)
             put("name", libraryName(name))
         })
     }
