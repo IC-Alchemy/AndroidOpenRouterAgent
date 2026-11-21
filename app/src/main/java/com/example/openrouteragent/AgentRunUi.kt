@@ -9,14 +9,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,7 +63,7 @@ internal fun AgentRunStatus(
     val idle = ((now - progress.lastEvent) / 1_000).coerceAtLeast(0)
     val runningTime = ((now - progress.started) / 1_000).coerceAtLeast(0)
     val status = if (waitingForApproval) "Waiting for your approval" else progress.status(providerName)
-    Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 4.dp)) {
+    OutlinedSection(Modifier.widthIn(max = 840.dp).padding(horizontal = 14.dp, vertical = 6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
@@ -93,23 +90,20 @@ internal fun AgentRunStatus(
 internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, onRetry: (() -> Unit)? = null,
     onRetryWithoutTools: (() -> Unit)? = null, onActivity: (() -> Unit)? = null) {
     if (!interrupted && progress.answer.isBlank() && progress.summary.isBlank()) return
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (interrupted) Text("Run interrupted", style = MaterialTheme.typography.titleSmall)
-            if (progress.answer.isNotBlank()) {
-                SelectionContainer { Text(progress.answer, style = MaterialTheme.typography.bodyMedium) }
-            } else if (progress.summary.isNotBlank()) {
-                Text("Reasoning summary", style = MaterialTheme.typography.labelMedium)
-                Text(progress.summary.takeLast(420), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, overflow = TextOverflow.Ellipsis)
+    OutlinedSection(title = if (interrupted) "Run interrupted" else null) {
+        if (progress.answer.isNotBlank()) {
+            CopyableText(progress.answer, style = MaterialTheme.typography.bodyMedium)
+        } else if (progress.summary.isNotBlank()) {
+            Text("Reasoning summary", style = MaterialTheme.typography.labelMedium)
+            CopyableText(progress.summary.takeLast(420), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, keepSelectionOnReplacement = true)
+        }
+        if (interrupted) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                onRetry?.let { TextButton(onClick = it) { Text("Retry") } }
+                onRetryWithoutTools?.let { TextButton(onClick = it) { Text("Retry without tools") } }
             }
-            if (interrupted) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    onRetry?.let { TextButton(onClick = it) { Text("Retry") } }
-                    onRetryWithoutTools?.let { TextButton(onClick = it) { Text("Retry without tools") } }
-                }
-                onActivity?.let { TextButton(onClick = it) { Text("Run activity") } }
-            }
+            onActivity?.let { TextButton(onClick = it) { Text("Run activity") } }
         }
     }
 }
@@ -129,19 +123,23 @@ internal fun RunActivityDialog(
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (progress.summary.isNotBlank()) {
-                    Text("Reasoning summary", style = MaterialTheme.typography.labelLarge)
-                    SelectionContainer { Text(progress.summary, style = MaterialTheme.typography.bodySmall) }
-                    HorizontalDivider()
+                    OutlinedSection(title = "Reasoning summary") {
+                        CopyableText(progress.summary, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 progress.tools.forEach {
                     ToolActivityRow(ToolActivity(it.name, it.status, it.detail))
                 }
-                progress.files.forEach { file ->
-                    TextButton(onClick = { onFile(file) }) { Text(file.file.path) }
+                if (progress.files.isNotEmpty()) OutlinedSection(title = "Sandbox files") {
+                    progress.files.forEach { file ->
+                        TextButton(onClick = { onFile(file) }) { Text(file.file.path) }
+                    }
                 }
-                progress.sources.forEach { source ->
-                    TextButton(onClick = { runCatching { uriHandler.openUri(source.url) } }) {
-                        Text(source.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (progress.sources.isNotEmpty()) OutlinedSection(title = "Sources") {
+                    progress.sources.forEach { source ->
+                        TextButton(onClick = { runCatching { uriHandler.openUri(source.url) } }) {
+                            Text(source.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
                 progress.usage?.let { Text(it.display(), style = MaterialTheme.typography.labelSmall) }
@@ -157,13 +155,9 @@ internal fun RunActivityDialog(
 
 @Composable
 internal fun ToolActivityRow(activity: ToolActivity) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("${activity.name} · ${activity.status.replace('_', ' ')}",
-            style = MaterialTheme.typography.labelMedium)
+    OutlinedSection(title = "${activity.name} · ${activity.status.replace('_', ' ')}") {
         activity.detail?.takeIf { it.isNotBlank() }?.let {
-            SelectionContainer {
-                Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-            }
+            CopyableText(it, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
         }
     }
 }
@@ -182,6 +176,7 @@ private fun AgentProgress.status(providerName: String = "OpenRouter"): String = 
     "mcp" -> "Connecting to MCP server"
     "requesting" -> "Preparing model request"
     "connecting" -> "Connecting to $providerName"
+    "retrying" -> "Retrying $providerName" + detail?.let { " · $it" }.orEmpty()
     "connected" -> "Connected · waiting for model events"
     "waiting" -> "Waiting for the model"
     "reasoning" -> "Model is reasoning"

@@ -12,7 +12,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -217,12 +216,11 @@ internal fun ProvidersSheet(
 @Composable
 private fun ProviderRow(name: String, model: String, active: Boolean, working: Boolean,
     action: () -> Unit, edit: (() -> Unit)? = null) {
-    Column {
-        HorizontalDivider()
+    OutlinedSection(highlighted = active) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
                 Text(name, style = MaterialTheme.typography.titleMedium)
-                Text(model, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                CopyableText(model, style = MaterialTheme.typography.bodySmall)
             }
             edit?.let { TextButton(enabled = !working, onClick = it) { Text("Edit") } }
             TextButton(enabled = !working && !active, onClick = action) { Text(if (active) "Active" else "Use") }

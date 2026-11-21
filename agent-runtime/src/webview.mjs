@@ -55,7 +55,8 @@ async function start(options) {
       reject(error);
     }
   });
-  run.transport = createNativeTransport(options.id, bridge, phase => update({ kind: 'phase', phase }));
+  run.transport = createNativeTransport(options.id, bridge,
+    (phase, detail) => update({ kind: 'phase', phase, detail }));
   try {
     const value = await runAgent(options, {
       fetcher: run.transport.fetcher,

@@ -550,6 +550,39 @@ test('the native transport aborts a pending read and frees its HTTP exchange', a
   assert.equal(cancelled, 1);
 });
 
+test('native retry notices update progress and do not end the request', async () => {
+  const { createNativeTransport } = await import('../src/native-fetch.mjs');
+  const phases = [];
+  let adapter;
+  adapter = createNativeTransport('run', {
+    requestHttp: (_, id) => queueMicrotask(() => {
+      adapter.receive(id, 'retry', 'HTTP 429 · retry 1 of 3 in 1 s');
+      adapter.receive(id, 'headers', { status: 200, contentType: 'text/event-stream' });
+    }),
+    readHttp: (_, id) => queueMicrotask(() => adapter.receive(id, 'end', null)),
+    cancelHttp: () => {},
+  }, (phase, detail) => phases.push([phase, detail]));
+  const response = await adapter.fetcher('https://openrouter.ai/api/v1/responses', { method: 'POST', body: '{}' });
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), '');
+  assert.deepEqual(phases, [['connecting', undefined], ['retrying', 'HTTP 429 · retry 1 of 3 in 1 s'],
+    ['connected', undefined]]);
+});
+
+test('hosted shell runs get non-interactive guidance that reflects sandbox network access', () => {
+  const instructions = opts => buildCall({ ...base, shell: true, instructions: 'Base.', ...opts }, [], async () => false,
+    new AbortController().signal).instructions({ numberOfTurns: 0 });
+  const offline = instructions({});
+  assert.match(offline, /^Base\./);
+  assert.match(offline, /no stdin/);
+  assert.match(offline, /test -f/);
+  assert.match(offline, /timeout 120/);
+  assert.match(offline, /network access is off/);
+  assert.match(instructions({ domains: ['pypi.org', 'github.com'] }), /limited to pypi\.org, github\.com/);
+  const noShell = buildCall({ ...base, instructions: 'Base.' }, [], async () => false, new AbortController().signal);
+  assert.equal(noShell.instructions({ numberOfTurns: 0 }), 'Base.');
+});
+
 test('custom tools, progressive skill loading, and dynamic model settings work on real SDK follow-ups',
   { timeout: 7000 }, async () => {
   const requests = [];

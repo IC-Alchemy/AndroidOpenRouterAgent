@@ -65,6 +65,7 @@ internal fun readFilePreview(source: BufferedSource): FilePreview {
     val binary = result.isError || text.any { it < ' ' && it !in "\t\n\r\u000C" }
     return FilePreview(if (binary) null else text, truncated)
 }
+internal class ApiStatusException(val code: Int, message: String) : IOException(message)
 
 class OpenRouterAgentClient(
     private val baseUrl: HttpUrl = "https://openrouter.ai/api/v1/".toHttpUrl(),
@@ -75,8 +76,17 @@ class OpenRouterAgentClient(
         .callTimeout(12, TimeUnit.MINUTES)
         .retryOnConnectionFailure(false)
         .followRedirects(false)
-        .build()
+        .build(),
+    /** Listing and previewing sandbox files should answer quickly; exports keep the long limits above. */
+    private val previewTimeoutSeconds: Long = 30,
+    private val log: (String) -> Unit = { runCatching { android.util.Log.i("AgentFiles", it) } },
 ) {
+    private val quick: OkHttpClient = http.newBuilder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(previewTimeoutSeconds, TimeUnit.SECONDS)
+        .callTimeout(previewTimeoutSeconds * 2, TimeUnit.SECONDS)
+        .build()
+
     suspend fun availableModels(apiKey: String): List<CatalogModel> =
         execute(request(apiKey, endpoint("models", "user")).build(), apiKey) { parseModelCatalog(it.bodyText()) }
 
@@ -169,7 +179,7 @@ class OpenRouterAgentClient(
             .addQueryParameter("limit", "100")
             .apply { if (after != null) addQueryParameter("after", after) }
             .build()
-        return execute(request(apiKey, url).build(), apiKey) {
+        return execute(request(apiKey, url).build(), apiKey, quick) {
             val body = JSONObject(it.bodyText())
             val files = body.optJSONArray("data").objects().mapNotNull { file ->
                 parseFile(file)
@@ -179,8 +189,35 @@ class OpenRouterAgentClient(
         }
     }
 
-    suspend fun previewFile(apiKey: String, containerId: String, fileId: String): FilePreview =
-        execute(fileRequest(apiKey, containerId, fileId), apiKey, ::readFilePreview)
+    /**
+     * Reads at most 64 KB of a hosted sandbox file. The file lives in OpenRouter's container, not on the
+     * phone, so "missing" is an HTTP 404 and a hang is bounded by [previewTimeoutSeconds].
+     */
+    suspend fun previewFile(apiKey: String, containerId: String, fileId: String, path: String = fileId): FilePreview {
+        val where = "container=$containerId file=$fileId path=$path"
+        log("preview-start $where")
+        val started = System.nanoTime()
+        return try {
+            execute(fileRequest(apiKey, containerId, fileId), apiKey, quick) { response ->
+                val body = response.body ?: throw IOException("OpenRouter returned an empty file response.")
+                val preview = readFilePreview(body.source())
+                log("preview-done $where exists=true size=${body.contentLength()} " +
+                    "truncated=${preview.truncated} encoding=${if (preview.text == null) "binary" else "utf-8"} " +
+                    "ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}")
+                preview
+            }
+        } catch (e: ApiStatusException) {
+            log("preview-failed $where status=${e.code}")
+            if (e.code != 404) throw e
+            throw java.io.FileNotFoundException("The sandbox file $path no longer exists in container $containerId. " +
+                "Hosted sandbox files are deleted when the container expires, and the model may have cited a file " +
+                "it never wrote. Run the command again to recreate it, or open Sandbox files to see what exists.")
+        } catch (e: java.io.InterruptedIOException) {
+            log("preview-timeout $where after=${previewTimeoutSeconds}s")
+            throw IOException("OpenRouter did not return the sandbox file $path within $previewTimeoutSeconds s. " +
+                "Close the preview and try again, or save the file instead.", e)
+        }
+    }
 
     suspend fun downloadFile(apiKey: String, containerId: String, fileId: String, openDestination: () -> OutputStream) {
         execute(fileRequest(apiKey, containerId, fileId), apiKey) { copyFileContent(it, openDestination) }
@@ -212,9 +249,11 @@ class OpenRouterAgentClient(
             .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
     }
 
-    private suspend fun <T> execute(request: Request, apiKey: String, read: (Response) -> T): T =
+    private suspend fun <T> execute(
+        request: Request, apiKey: String, client: OkHttpClient = http, read: (Response) -> T,
+    ): T =
         suspendCancellableCoroutine { continuation ->
-            val call = http.newCall(request)
+            val call = client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -246,7 +285,7 @@ class OpenRouterAgentClient(
             else -> response.message
         }
         val message = (detail ?: fallback).replace(apiKey.trim(), "[API key]").take(500)
-        return IOException("OpenRouter HTTP ${response.code}. $message")
+        return ApiStatusException(response.code, "OpenRouter HTTP ${response.code}. $message")
     }
 
     private fun Response.bodyText(): String =
