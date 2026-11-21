@@ -171,7 +171,7 @@ internal fun TokenUsage.display(): String = buildString {
     }
 }
 
-private fun AgentProgress.status(providerName: String = "OpenRouter"): String = when (phase) {
+internal fun AgentProgress.status(providerName: String = "OpenRouter"): String = when (phase) {
     "starting" -> "Starting agent"
     "mcp" -> "Connecting to MCP server"
     "requesting" -> "Preparing model request"

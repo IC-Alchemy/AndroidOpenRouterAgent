@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Background runs: a data-sync foreground service streams the agent's network response while the app is
+         not on screen, and notifications show progress, approvals and finished replies. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".AgentApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
@@ -20,6 +26,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".AgentRunService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".RunActionReceiver"
+            android:exported="false" />
         <!-- The OpenRouter sign-in page links here. It closes at once, returning to the open app. -->
         <activity
             android:name=".SignInReturnActivity"

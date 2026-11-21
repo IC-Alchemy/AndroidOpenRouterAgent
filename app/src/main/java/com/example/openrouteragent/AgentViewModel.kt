@@ -174,6 +174,29 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         val pending = approval ?: return
         approvals = approvals.drop(1)
         sdk.decide(pending.decision, approve, answer)
+        notifyBackground()
+    }
+
+    private val app get() = getApplication<Application>()
+
+    /** Mirrors the live status, or a pending approval, into the ongoing run notification. */
+    private fun notifyBackground(force: Boolean = false) {
+        val prompt = activePrompt ?: return
+        val pending = approval
+        val notice = if (pending != null) RunNotice(
+            title = if (pending.asksUser) "The agent has a question" else "Allow ${pending.name}?",
+            text = if (pending.asksUser) "${pending.name}. Open the app to answer."
+                else (pending.url.ifBlank { pending.arguments }).take(400),
+            approval = pending,
+        ) else RunNotice("Working on: ${replyPreview(prompt, 60)}",
+            progress?.status(providerName) ?: "Working")
+        RunNotifications.update(app, notice, force)
+    }
+
+    private fun finishBackground(title: String, text: String) {
+        AgentRunService.stop(app)
+        RunNotifications.reset()
+        if (!AppVisibility.visible) RunNotifications.finished(app, title, text)
     }
 
     internal fun attachRuntime(host: FrameLayout) = sdk.attach(host)
@@ -214,16 +237,22 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         interrupted = null
         retryPrompt = null
         progress = AgentProgress(SystemClock.elapsedRealtime())
+        RunNotifications.reset()
+        notifyBackground(force = true)
+        AgentRunService.start(app)
 
         running = viewModelScope.launch {
+            var finishedTitle = "Reply ready"
+            var finishedText = "The agent finished."
             try {
                 val sdkResult = if (active == null) {
                     sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
-                        onUpdate = ::updateProgress, onApproval = { approvals = approvals + it })
+                        onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() })
                 } else {
                     SdkRunResult(chatClient.run(active, currentConfig, priorWorkspace, prompt, model.id, ::updateProgress), null)
                 }
                 val result = sdkResult.result
+                finishedText = replyPreview(result.assistantText)
                 val messages = priorWorkspace.messages + listOf(
                     ChatEntry(isUser = true, text = prompt),
                     ChatEntry(
@@ -257,21 +286,27 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                     storageError = "Android could not save this reply. It is still open on this screen."
                 }
             } catch (e: CancellationException) {
+                finishedTitle = "Run stopped"
+                finishedText = turnError ?: "The run was stopped."
                 if (turnError != null) keepInterrupted(prompt, turnError)
                 throw e
             } catch (e: Exception) {
                 turnError = if (active == null) e.userMessage(currentConfig.apiKey) else providerMessage(active, e)
+                finishedTitle = "The agent could not finish"
+                finishedText = turnError ?: "The run failed."
                 keepInterrupted(prompt, turnError)
             } finally {
                 activePrompt = null
                 progress = null
                 approvals = emptyList()
+                finishBackground(finishedTitle, finishedText)
             }
         }
     }
 
     private fun updateProgress(updates: List<RunUpdate>) {
         progress = progress?.apply(updates, SystemClock.elapsedRealtime())
+        notifyBackground()
     }
 
     private suspend fun keepInterrupted(prompt: String, error: String?) {
@@ -472,6 +507,21 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearExportMessage() {
         exportMessage = null
+    }
+
+    init {
+        // Notification buttons reach the process-wide view model through this handler.
+        RunCommands.handler = { command, decision ->
+            viewModelScope.launch {
+                when (command) {
+                    RunCommands.STOP -> cancelTurn()
+                    RunCommands.ALLOW, RunCommands.DENY ->
+                        if (approval?.decision == decision && approval?.asksUser == false) {
+                            decideTool(command == RunCommands.ALLOW)
+                        }
+                }
+            }
+        }
     }
 
     var signInBusy by mutableStateOf(false)

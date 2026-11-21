@@ -119,6 +119,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CancellationException
@@ -129,7 +130,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val agent: AgentViewModel = viewModel()
+            // The process-wide store keeps a run going after this activity is closed.
+            val agent: AgentViewModel = viewModel(viewModelStoreOwner = application as AgentApplication,
+                factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application))
             val appearance = agent.config.sdk.theme
             val dark = appearance == "oled" || (appearance == "system" && isSystemInDarkTheme())
             SideEffect {
@@ -140,6 +143,17 @@ class MainActivity : ComponentActivity() {
             }
             OpenRouterAgentTheme(darkTheme = dark) { OpenRouterAgentScreen(agent) }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AppVisibility.visibleActivities++
+        RunNotifications.clearFinished(this)
+    }
+
+    override fun onStop() {
+        AppVisibility.visibleActivities--
+        super.onStop()
     }
 }
 
@@ -216,6 +230,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     val usesOpenRouter = agent.usesOpenRouter
     val providerName = agent.providerName
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    NotificationPermissionPrompt(agent.activePrompt != null)
     // Reopen Settings when an OpenRouter sign-in finishes while the sheet is closed.
     LaunchedEffect(agent.signInKey) { if (agent.signInKey != null) showSettings = true }
     var showConfigure by remember { mutableStateOf(false) }
@@ -1361,6 +1376,21 @@ private fun SettingsBottomSheet(
                 }
             }
         }
+    }
+}
+
+/** Asks once, when the first run starts, so background progress and replies can be shown. */
+@Composable
+private fun NotificationPermissionPrompt(running: Boolean) {
+    if (android.os.Build.VERSION.SDK_INT < 33) return
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(running) {
+        if (!running || RunNotifications.canPost(context)) return@LaunchedEffect
+        val prefs = context.getSharedPreferences("ui_state", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("asked_notifications", false)) return@LaunchedEffect
+        prefs.edit().putBoolean("asked_notifications", true).apply()
+        launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 
