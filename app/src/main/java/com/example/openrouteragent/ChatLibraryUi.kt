@@ -45,7 +45,7 @@ private const val UNFILED_CHATS = "unfiled"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ChatLibrarySheet(agent: AgentViewModel, onClose: () -> Unit) {
+internal fun ChatLibrarySheet(agent: AgentViewModel, onProjectFiles: (String) -> Unit, onClose: () -> Unit) {
     val library = agent.library
     val busy = agent.isWorkingChat
     var filter by rememberSaveable { mutableStateOf(agent.chatProject?.id ?: ALL_CHATS) }
@@ -85,6 +85,9 @@ internal fun ChatLibrarySheet(agent: AgentViewModel, onClose: () -> Unit) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(project.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (agent.usesOpenRouter) {
+                        TextButton(enabled = !busy, onClick = { onProjectFiles(project.id) }) { Text("Project files") }
+                    }
                     IconButton(enabled = !busy, onClick = { projectsMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Manage project")
                     }

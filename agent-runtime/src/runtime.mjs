@@ -3,6 +3,9 @@ import { OpenRouter, deserializeConversationState, serializeConversationState,
 import { HTTPClient } from '@openrouter/sdk/lib/http';
 import { customTool, sdkParameters, skillLoader } from './customization.mjs';
 import { streamObserver } from './stream-events.mjs';
+import { discardUnfinishedSubagents, subagentConfig, subagentType } from './subagent.mjs';
+import { fileInstructions, projectFileTools } from './project-files.mjs';
+import { resourceActionNames, resourceActionTools } from './resource-actions.mjs';
 import { phoneTools } from './phone.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
@@ -12,7 +15,6 @@ const allowedServerTools = new Set([
   'openrouter:image_generation',
   'openrouter:experimental__search_models',
   'openrouter:advisor',
-  'openrouter:subagent',
   'openrouter:fusion',
 ]);
 
@@ -23,14 +25,16 @@ export function buildTools(options, events, signal) {
     const environment = options.containerId
       ? { type: 'container_reference', containerId: options.containerId }
       : { type: 'container_auto' };
-    if (!options.containerId && options.domains?.length) {
+    if ((!options.containerId || options.projectFolder) && options.domains?.length) {
       environment.networkPolicy = { type: 'allowlist', allowedDomains: options.domains };
     }
+    if (options.fileIds?.length) environment.fileIds = options.fileIds;
     tools.push(serverTool({ type: 'openrouter:shell', parameters: { engine: 'openrouter', environment } }));
   }
   if (options.webSearch) tools.push(serverTool({ type: 'openrouter:web_search' }));
   if (options.dateTime) tools.push(serverTool({ type: 'openrouter:datetime' }));
   if (options.webFetch) tools.push(serverTool({ type: 'openrouter:web_fetch' }));
+  if (options.workspaceFiles && !options.projectFolder) tools.push(serverTool({ type: 'openrouter:files' }));
   if (options.deviceTools) {
     tools.push(tool({
       name: 'device_time_zone',
@@ -44,7 +48,14 @@ export function buildTools(options, events, signal) {
   }
   if (options.phoneControl && events?.phone) tools.push(...phoneTools(events.phone));
   const seen = new Set(tools.map(t => t.config?.type));
+  const subagentNames = new Set();
   for (const item of options.extraTools ?? []) {
+    if (item?.type === subagentType) {
+      const config = subagentConfig(item, subagentNames);
+      const id = config.parameters?.name ?? '';
+      tools.push(serverTool(config, { id: 'server:openrouter:subagent:' + id }));
+      continue;
+    }
     if (!item || !allowedServerTools.has(item.type)) throw new Error('Unsupported additional server tool.');
     if (seen.has(item.type)) throw new Error('Each additional server tool can appear once.');
     seen.add(item.type);
@@ -53,6 +64,14 @@ export function buildTools(options, events, signal) {
   const skill = skillLoader(options);
   if (skill) tools.push(skill);
   for (const spec of options.customTools ?? []) tools.push(customTool(spec, events, signal));
+  if (options.appActions && events.appAction && options.modelDetails?.[options.model]?.tools !== false) {
+    const names = new Set(tools.map(item => item.function?.name));
+    const local = [...projectFileTools(events.appAction), ...resourceActionTools({
+      ...events,
+      approval: events.approval && ((label, args, url) => events.approval(label, args, url, true)),
+    }, signal)];
+    tools.push(...local.filter(item => !names.has(item.function.name)));
+  }
   return tools;
 }
 
@@ -71,8 +90,16 @@ export function buildCall(options, tools, approval, signal, observe) {
   const finalResponse = options.sdk?.finalResponse;
   const webhooks = new Map((options.customTools ?? []).filter(tool => tool.handler === 'webhook')
     .map(tool => [tool.name, tool.value]));
+  const hasShell = tools.some(item => item.config?.type === 'openrouter:shell');
+  const fileGuidance = fileInstructions(hasShell ? options.projectFolder : undefined,
+    tools.some(item => item.function?.name === 'list_project_files'), hasShell ? options.attachmentNames : undefined);
+  const creationGuidance = options.appActions && tools.some(item => resourceActionNames.includes(item.function?.name))
+    ? 'When the user asks to create a subagent, custom tool, or skill, or to enable an OpenRouter server tool, use the app functions to save it. ' +
+      'Only say it was saved after the app confirms. Saved changes take effect on the next message.'
+    : '';
+  const instructions = [options.instructions, fileGuidance, creationGuidance].filter(Boolean).join('\n\n');
   return {
-    ...sdkParameters(options, tools.length > 0),
+    ...sdkParameters({ ...options, instructions }, tools.length > 0),
     input: [...(options.state ? [] : options.history), { type: 'message', role: 'user', content: options.prompt }],
     tools,
     signal,
@@ -149,7 +176,8 @@ export async function runAgent(options, events, signal, createClient = opts => n
       appTitle: 'OpenRouter Sandbox Agent',
       ...(events.fetcher ? { httpClient: new HTTPClient({ fetcher: events.fetcher }) } : {}),
     });
-    const loadedState = options.state ? deserializeConversationState(options.state) : null;
+    const loadedState = options.state ? discardUnfinishedSubagents(deserializeConversationState(options.state)) : null;
+    const previousMessages = loadedState?.messages ?? discardUnfinishedSubagents({ messages: options.history }).messages;
     let savedState = loadedState;
     const state = {
       load: async () => savedState,
@@ -157,7 +185,7 @@ export async function runAgent(options, events, signal, createClient = opts => n
     };
     observe.phase('requesting');
     result = client.callModel({
-      ...buildCall(options, tools, events.approval, signal, observe),
+      ...buildCall({ ...options, history: previousMessages }, tools, events.approval, signal, observe),
       state,
     }, { signal, retries: { strategy: 'none' } });
     events.register?.(result);
@@ -176,8 +204,9 @@ export async function runAgent(options, events, signal, createClient = opts => n
         }
       })(),
     ]);
-    observe.phase('finishing');
     const response = await result.getResponse();
+    observe.settleSubagents('incomplete');
+    observe.phase('finishing');
     const [usage, finalState, repetition] = await Promise.all([
       result.getUsage(), result.getState(), result.getDoomLoopVerdict(),
     ]);
@@ -185,12 +214,12 @@ export async function runAgent(options, events, signal, createClient = opts => n
       const key = item.id ?? (item.callId ? item.type + ':' + item.callId : ++itemNumber);
       items.set(key, item);
     }
-    const previousMessages = Array.isArray(loadedState?.messages) ? loadedState.messages : options.history;
     const history = Array.isArray(finalState.messages) && finalState.messages.length >= previousMessages.length + 1
       ? finalState.messages
       : [...previousMessages,
           { type: 'message', role: 'user', content: options.prompt },
           ...Array.from(items.values()).filter(item => item.type === 'message')];
+    const conversation = discardUnfinishedSubagents({ ...finalState, messages: history });
     return {
       response: normalize({
         status: response.status,
@@ -208,9 +237,12 @@ export async function runAgent(options, events, signal, createClient = opts => n
           cachedTokens: usage.cachedTokens,
         },
       }),
-      history,
-      state: serializeConversationState({ ...finalState, messages: history }),
+      history: conversation.messages,
+      state: serializeConversationState(conversation),
     };
+  } catch (error) {
+    observe.settleSubagents(signal.aborted ? 'cancelled' : 'failed');
+    throw error;
   } finally {
     if (signal.aborted) await result?.cancel().catch(() => {});
     if (mcp) await mcp.close().catch(() => {});

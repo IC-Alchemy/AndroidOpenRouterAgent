@@ -123,6 +123,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -197,7 +199,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     val listState = rememberLazyListState()
     val config = agent.config
     val messages = agent.workspace.messages
-    val activeContainerId = agent.workspace.containerId
+    val activeContainerId = agent.sandboxId.takeIf { config.apiKey.isNotBlank() }
     val activePrompt = agent.activePrompt
     val isRunning = activePrompt != null
     val runProgress = agent.progress
@@ -223,6 +225,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var showModels by rememberSaveable { mutableStateOf(false) }
     val model = agent.selectedModel
     var showChatLibrary by rememberSaveable { mutableStateOf(false) }
+    var deviceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var workspaceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
     var browserContainer by rememberSaveable { mutableStateOf<String?>(null) }
     var previewContainer by rememberSaveable { mutableStateOf<String?>(null) }
@@ -333,6 +337,16 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showSettings = true
                                     })
                                     if (usesOpenRouter) {
+                                        DropdownMenuItem(text = { Text("Device files") }, onClick = {
+                                            showConfigure = false
+                                            deviceFilesTarget = "all"
+                                        })
+                                        if (agent.chatProject != null && agent.providerReady) {
+                                            DropdownMenuItem(text = { Text("All workspace files") }, onClick = {
+                                                showConfigure = false
+                                                workspaceFilesTarget = "all"
+                                            })
+                                        }
                                         DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
                                             showConfigure = false
                                             showSdkSettings = true
@@ -374,6 +388,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 if (!agent.isLoading && usesOpenRouter) {
                     StatusCapabilitiesBar(
                         config = config, activeContainerId = activeContainerId, canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
+                        inProject = agent.chatProject != null, attachmentCount = agent.attachedFiles.size,
+                        onOpenProjectFiles = { deviceFilesTarget = "current" },
+                        onOpenWorkspaceFiles = if (agent.providerReady) ({ workspaceFilesTarget = "current" }) else null,
+                        onClearAttachments = agent::clearWorkspaceAttachments,
                         onOpenFiles = { browserContainer = activeContainerId },
                         onResetContainer = agent::detachSandbox
                     )
@@ -470,6 +488,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (approval.url.isNotBlank()) CopyableText(approval.url)
+                    if (approval.savesSettings) Text("The change will be saved and available for future messages.")
                     if (approval.phone) {
                         Text("The agent wants to do this on your phone. Check the app, the recipient and the text. " +
                             "If anything changes before it runs, nothing is done and you are asked again.",
@@ -486,6 +505,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     enabled = !approval.asksUser || answer.isNotBlank()) {
                     Text(when {
                         approval.asksUser -> "Send answer"
+                        approval.savesSettings -> "Save change"
                         approval.phone -> "Do it"
                         else -> "Allow once"
                     })
@@ -498,9 +518,51 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             },
         )
     }
-    if (showChatLibrary) ChatLibrarySheet(agent) {
+    if (showChatLibrary) ChatLibrarySheet(agent, onProjectFiles = { id ->
+        deviceFilesTarget = id
+        showChatLibrary = false
+    }) {
         following = true
         showChatLibrary = false
+    }
+    val currentArea = agent.fileArea()
+    val localTarget = deviceFilesTarget
+    if (!agent.isLoading && usesOpenRouter && localTarget != null) {
+        val area = when (localTarget) {
+            "all" -> null
+            "current" -> currentArea
+            else -> agent.fileArea(localTarget)
+        }
+        val project = agent.library.projects.firstOrNull { it.id == area?.projectId }
+        ProjectFilePanel(agent, area, when {
+            project != null -> "Files in ${project.name}"
+            area == null -> "Device files"
+            else -> "Chat files"
+        }) { deviceFilesTarget = null }
+    }
+    val cloudTarget = workspaceFilesTarget
+    if (!agent.isLoading && usesOpenRouter && agent.providerReady && cloudTarget != null) {
+        val apiKey = config.apiKey
+        val prefix = if (cloudTarget == "all") "" else currentArea.remotePrefix
+        WorkspaceFilesDialog(
+            client = agent.client, apiKey = apiKey, prefix = prefix,
+            onDismiss = { workspaceFilesTarget = null },
+            onCopyToProject = { file ->
+                agent.prepareFileArea(currentArea)
+                agent.files.copyWorkspaceFile(apiKey, currentArea, file)
+            },
+            isAttached = { id -> agent.attachedFiles.any { it.id == id } },
+            onToggleAttachment = (agent::toggleWorkspaceFile).takeIf {
+                agent.canAttachWorkspaceFiles && prefix == currentArea.remotePrefix
+            },
+            localPreview = { agent.files.previewUpload(apiKey, it) },
+            localExport = { file, uri -> agent.files.exportUpload(apiKey, file, uri) },
+            onSaveRevision = { file, text -> agent.files.saveWorkspaceRevision(apiKey, file, text) },
+            onDeleted = { file ->
+                agent.detachWorkspaceFile(file.id)
+                scope.launch { agent.files.forgetUpload(apiKey, file) }
+            },
+        )
     }
     val browsing = browserContainer
     if (!agent.isLoading && browsing != null && previewFileId == null) {
@@ -519,9 +581,49 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 pendingExportContainer = previewing
                 pendingExportFile = fileId
                 export.launch(filename)
-            }
+            },
+            onSaveCopy = {
+                agent.prepareFileArea(currentArea)
+                agent.files.copySandboxFile(config.apiKey, currentArea, previewing, fileId, previewPath)
+            },
+            onPromote = {
+                agent.files.saveSandboxToWorkspace(config.apiKey, currentArea, previewing, fileId, previewPath)
+            },
         )
     }
+}
+
+@Composable
+private fun ProjectFilePanel(
+    agent: AgentViewModel,
+    area: ProjectFileArea?,
+    title: String,
+    close: () -> Unit,
+) {
+    val files = agent.files
+    val apiKey = agent.config.apiKey
+    val upload: (suspend (String) -> WorkspaceFileRef)? = if (area != null && apiKey.isNotBlank()) {
+        { path -> files.upload(apiKey, area, path) }
+    } else null
+    ProjectFilesDialog(
+        title = title, onDismiss = close,
+        list = { withContext(Dispatchers.IO) { files.store.list(area, it) } },
+        createFolder = { path ->
+            if (area != null) agent.prepareFileArea(area)
+            withContext(Dispatchers.IO) { files.store.createFolder(area, path) }
+        },
+        preview = { withContext(Dispatchers.IO) { files.store.preview(area, it) } },
+        writeText = { path, text, original ->
+            if (area != null) agent.prepareFileArea(area)
+            withContext(Dispatchers.IO) { files.store.writeText(area, path, text, original) }
+        },
+        importFile = { uri, folder ->
+            if (area != null) agent.prepareFileArea(area)
+            files.importFile(area, uri, folder)
+        },
+        exportFile = { path, uri -> files.exportFile(area, path, uri) },
+        upload = upload,
+    )
 }
 
 // =============================================================================
@@ -533,10 +635,14 @@ private fun StatusCapabilitiesBar(
     config: AgentConfig,
     activeContainerId: String?,
     canDetach: Boolean,
+    inProject: Boolean,
+    attachmentCount: Int,
+    onOpenProjectFiles: () -> Unit,
+    onOpenWorkspaceFiles: (() -> Unit)?,
+    onClearAttachments: () -> Unit,
     onOpenFiles: () -> Unit,
     onResetContainer: () -> Unit
 ) {
-    if (!config.enableShellSandbox && !config.enableWebSearch) return
     Surface(
         modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
         shape = MaterialTheme.shapes.medium,
@@ -552,10 +658,20 @@ private fun StatusCapabilitiesBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            AssistChip(onClick = onOpenProjectFiles, label = { Text(if (inProject) "Project files" else "Chat files") },
+                modifier = Modifier.heightIn(min = 48.dp))
+            if (onOpenWorkspaceFiles != null) {
+                AssistChip(onClick = onOpenWorkspaceFiles, label = {
+                    Text(if (attachmentCount == 0) "Workspace files" else "Workspace files · $attachmentCount attached")
+                }, modifier = Modifier.heightIn(min = 48.dp))
+                if (attachmentCount > 0) TextButton(onClick = onClearAttachments, enabled = canDetach) {
+                    Text("Clear attachments")
+                }
+            }
             if (config.enableShellSandbox) {
                 if (activeContainerId != null) {
                     AssistChip(onClick = onOpenFiles, label = { Text("Sandbox files") }, modifier = Modifier.heightIn(min = 48.dp))
-                    TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
+                    if (!inProject) TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
                 } else StatusPill("Hosted shell", MaterialTheme.colorScheme.primary)
             }
             if (config.enableWebSearch) {
@@ -1143,6 +1259,7 @@ private fun SettingsBottomSheet(
     var allowedDomains by remember { mutableStateOf(initialConfig.allowedDomainsCsv) }
     var instructions by remember { mutableStateOf(initialConfig.systemInstructions) }
     var webFetch by remember { mutableStateOf(initialConfig.webFetch) }
+    var workspaceFiles by remember { mutableStateOf(initialConfig.enableWorkspaceFiles) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
     var phoneControl by remember { mutableStateOf(initialConfig.phoneControl) }
     var phoneBlockedApps by remember { mutableStateOf(initialConfig.phoneBlockedApps) }
@@ -1151,7 +1268,7 @@ private fun SettingsBottomSheet(
     var temperature by remember { mutableStateOf(initialConfig.temperature?.toString().orEmpty()) }
     var mcpUrl by remember { mutableStateOf(initialConfig.mcpUrl) }
     var mcpToken by remember { mutableStateOf(initialConfig.mcpToken) }
-    var toolsJson by remember { mutableStateOf(initialConfig.extraToolsJson) }
+    var toolsJson by rememberSaveable { mutableStateOf(initialConfig.extraToolsJson) }
     var advanced by rememberSaveable { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -1159,7 +1276,8 @@ private fun SettingsBottomSheet(
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
-        enableDateTime = enableDateTime, webFetch = webFetch, deviceTools = deviceTools, phoneControl = phoneControl,
+        enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
+        deviceTools = deviceTools, phoneControl = phoneControl,
         phoneBlockedApps = phoneBlockedApps.trim(), allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
@@ -1255,6 +1373,9 @@ private fun SettingsBottomSheet(
                     )
 
                     SettingsToggleRow("Web fetch", "Reads pages supplied by URL.", webFetch, { webFetch = it })
+                    SettingsToggleRow("Workspace files tool", "Lets unfiled chats work with files in your OpenRouter workspace.",
+                        workspaceFiles, { workspaceFiles = it })
+                    SubagentsSettings(toolsJson, enabled = !working, onChange = { toolsJson = it; error = null })
                     SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
                         { deviceTools = it })
                     SettingsToggleRow("Phone control",
@@ -1317,9 +1438,9 @@ private fun SettingsBottomSheet(
                                 keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                                 singleLine = true)
                         }
-                        CopyableOutlinedTextField(toolsJson, { toolsJson = it }, label = { Text("Additional server tools (JSON)") },
-                            supportingText = { Text("Supports model search, image generation, advisor, subagent, and fusion.") },
-                            modifier = Modifier.fillMaxWidth(), minLines = 2)
+                        CopyableOutlinedTextField(toolsJson, { toolsJson = it; error = null }, label = { Text("Additional server tools (JSON)") },
+                            supportingText = { Text("Supports web fetch, model search, image generation, advisor, subagent, and fusion.") },
+                            modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 8)
                     }
                 }
 
@@ -1422,4 +1543,3 @@ private fun SettingsToggleRow(
         Switch(checked = checked, onCheckedChange = null)
     }
 }
-

@@ -17,10 +17,11 @@ import android.widget.FrameLayout
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -40,6 +41,7 @@ private const val RUN_TIMEOUT_MILLIS = 15 * 60_000L
 
 data class ToolApproval(
     val decision: String, val name: String, val arguments: String, val url: String, val asksUser: Boolean = false,
+    val savesSettings: Boolean = false,
     val phone: Boolean = false,
 )
 data class SdkRunResult(val result: AgentRunResult, val history: String?, val state: String? = null)
@@ -53,6 +55,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         val idleSeconds: Long,
         val onUpdate: (List<RunUpdate>) -> Unit,
         val onApproval: (ToolApproval) -> Unit,
+        val actions: CoroutineScope,
+        val onAppAction: (suspend (String, JSONObject) -> JSONObject)?,
         val phone: PhoneController?,
         val phoneScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
@@ -77,6 +81,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         guide: SavedAgentSkill?,
         onUpdate: (List<RunUpdate>) -> Unit,
         onApproval: (ToolApproval) -> Unit,
+        files: OpenRouterRunFiles = OpenRouterRunFiles(),
+        onAppAction: (suspend (String, JSONObject) -> JSONObject)? = null,
     ): SdkRunResult = withContext(Dispatchers.Main.immediate) {
         check(activeRun == null)
         approvedToolOrigins = if (settings.sdk.toolChoice == "none") emptySet() else
@@ -85,6 +91,7 @@ internal class AgentSdkRuntime(private val context: Context) {
                 .map { Triple(it.scheme, it.host, it.port) }.toSet()
         val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
             settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval,
+            CoroutineScope(coroutineContext + SupervisorJob(coroutineContext[Job])), onAppAction,
             phone = if (settings.phoneControl && settings.sdk.toolChoice != "none") PhoneController(
                 AccessibilityPhoneDevice(context), context.packageName, settings.phoneBlockedApps) else null)
         try {
@@ -96,7 +103,7 @@ internal class AgentSdkRuntime(private val context: Context) {
             }
             activeRun = run
             val request = withContext(Dispatchers.Default) {
-                runtimeOptions(settings, workspace, prompt, model, catalog, guide).put("id", run.id)
+                runtimeOptions(settings, workspace, prompt, model, catalog, guide, files, onAppAction != null).put("id", run.id)
             }
             runtime.evaluateJavascript(
                 "typeof globalThis.AgentRuntime?.start === 'function' && " +
@@ -114,6 +121,7 @@ internal class AgentSdkRuntime(private val context: Context) {
             }
         } finally {
             if (!run.completion.isCompleted) view?.let { dispatch(it, "stop", run.id) }
+            run.actions.cancel()
             transport.cancelRun(run.id)
             run.phoneScope.cancel()
             phoneApprovals.values.forEach { it.complete(false) }
@@ -320,8 +328,33 @@ internal class AgentSdkRuntime(private val context: Context) {
                     "approval" -> {
                         val value = event.getJSONObject("value")
                         val approval = ToolApproval(value.getString("decision"), value.getString("name"),
-                            value.getJSONObject("args").toString(2), value.optString("url"), value.optBoolean("asksUser"))
+                            value.getJSONObject("args").toString(2), value.optString("url"), value.optBoolean("asksUser"),
+                            value.optBoolean("savesSettings"))
                         ({ run: ActiveRun -> run.onApproval(approval) })
+                    }
+                    "app_request" -> {
+                        val value = event.getJSONObject("value")
+                        val request = value.getString("request")
+                        val action = value.getString("name")
+                        val args = value.getJSONObject("args")
+                        ({ run: ActiveRun ->
+                            run.actions.launch {
+                                try {
+                                    val callback = run.onAppAction ?: throw IOException("App tools are unavailable.")
+                                    val result = callback(action, args)
+                                    if (activeRun === run && runtime === view) {
+                                        dispatch(runtime, "appResult", run.id, request, true, result)
+                                    }
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    if (activeRun === run && runtime === view) {
+                                        dispatch(runtime, "appResult", run.id, request, false, error.userMessage(run.apiKey))
+                                    }
+                                }
+                            }
+                            Unit
+                        })
                     }
                     "done" -> {
                         val value = event.getJSONObject("value")
@@ -360,6 +393,7 @@ internal fun sdkErrorText(message: String): String =
 internal fun runtimeOptions(
     config: AgentConfig, workspace: Workspace, prompt: String, model: CatalogModel,
     catalog: List<CatalogModel> = listOf(model), guide: SavedAgentSkill? = null,
+    files: OpenRouterRunFiles = OpenRouterRunFiles(), appActions: Boolean = false,
 ): JSONObject {
     val transcript = JSONArray()
     workspace.messages.filter { !it.isError && it.text.isNotBlank() }.forEach {
@@ -379,9 +413,13 @@ internal fun runtimeOptions(
     return JSONObject().put("apiKey", config.apiKey).put("model", model.id).put("history", history)
         .put("prompt", prompt).put("instructions", config.systemInstructions)
         .put("sessionId", workspace.sessionId ?: workspace.id).put("state", workspace.sdkState)
-        .put("shell", config.enableShellSandbox).put("containerId", workspace.containerId)
+        .put("shell", config.enableShellSandbox).put("containerId", files.projectSandbox ?: workspace.containerId)
         .put("domains", JSONArray(config.sandboxDomains())).put("webSearch", config.enableWebSearch)
         .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
+        .put("workspaceFiles", config.enableWorkspaceFiles).put("projectFolder", files.projectFolder)
+        .put("appActions", appActions)
+        .put("fileIds", JSONArray(files.attachments.map { it.id }))
+        .put("attachmentNames", JSONArray(files.attachments.map { it.id.takeLast(8) + "-" + it.filename.substringAfterLast('/') }))
         .put("phoneControl", config.phoneControl)
         .put("extraTools", JSONArray(config.extraToolsJson.ifBlank { "[]" }))
         .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)

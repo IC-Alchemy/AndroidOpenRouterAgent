@@ -8,7 +8,7 @@ const emit = (id, type, value) => bridge.post(JSON.stringify({ id, type, value }
 
 async function start(options) {
   if (runs.has(options.id)) return;
-  const run = { controller: new AbortController(), decisions: new Map() };
+  const run = { controller: new AbortController(), decisions: new Map(), appRequests: new Map() };
   runs.set(options.id, run);
   let nextDecision = 0;
   let updates = [];
@@ -37,12 +37,24 @@ async function start(options) {
     if (elapsed >= 45 || updates.length >= 40) flush();
     else if (flushTimer === undefined) flushTimer = setTimeout(flush, 45 - elapsed);
   };
-  const askUser = (name, args, url, asksUser) => new Promise(resolve => {
+  const askUser = (name, args, url, asksUser, savesSettings = false) => new Promise(resolve => {
     if (run.controller.signal.aborted) return resolve(asksUser ? null : false);
     const decision = String(++nextDecision);
     run.decisions.set(decision, (accepted, answer) => resolve(asksUser ? (accepted ? answer : null) : accepted));
     flush();
-    emit(options.id, 'approval', { decision, name, args, url, asksUser });
+    emit(options.id, 'approval', { decision, name, args, url, asksUser, savesSettings });
+  });
+  const appAction = (name, args) => new Promise((resolve, reject) => {
+    const { signal } = run.controller;
+    if (signal.aborted) return reject(signal.reason);
+    const request = String(++nextDecision);
+    run.appRequests.set(request, { resolve, reject });
+    try {
+      emit(options.id, 'app_request', { request, name, args });
+    } catch (error) {
+      run.appRequests.delete(request);
+      reject(error);
+    }
   });
   run.transport = createNativeTransport(options.id, bridge,
     (phase, detail) => update({ kind: 'phase', phase, detail }));
@@ -56,8 +68,9 @@ async function start(options) {
         update(event.detail ? { ...event, detail: sanitize(event.detail) } : event);
       },
       register: result => { run.result = result; },
-      approval: (name, args, url) => askUser(name, args, url, false),
+      approval: (name, args, url, savesSettings) => askUser(name, args, url, false, savesSettings),
       ask: (name, args) => askUser(name, args, '', true),
+      appAction,
       phone: run.phone ? request => { flush(); return run.phone.call(request); } : undefined,
     }, run.controller.signal);
     flush();
@@ -73,6 +86,8 @@ async function start(options) {
     }
   } finally {
     run.transport.abort();
+    for (const { reject } of run.appRequests.values()) reject(new Error('The agent run ended.'));
+    run.appRequests.clear();
     run.phone?.dispose();
     runs.delete(options.id);
   }
@@ -93,6 +108,8 @@ globalThis.AgentRuntime = Object.freeze({
     run.transport.abort();
     for (const resolve of run.decisions.values()) resolve(false);
     run.decisions.clear();
+    for (const { reject } of run.appRequests.values()) reject(run.controller.signal.reason);
+    run.appRequests.clear();
     run.result?.cancel().catch(() => {});
   },
   decide(id, decision, accepted, answer) {
@@ -102,6 +119,14 @@ globalThis.AgentRuntime = Object.freeze({
       run.decisions.delete(decision);
       resolve(accepted, answer);
     }
+  },
+  appResult(id, request, ok, value) {
+    const run = runs.get(id);
+    const pending = run?.appRequests.get(request);
+    if (!pending) return;
+    run.appRequests.delete(request);
+    if (ok) pending.resolve(value);
+    else pending.reject(new Error(value));
   },
 });
 bridge.post('{"type":"ready"}');
