@@ -77,7 +77,7 @@ class PhoneControlService : AccessibilityService() {
             val bounds = Rect().also(node::getBoundsInScreen)
             val text = node.text?.toString().orEmpty().trim()
             val description = node.contentDescription?.toString().orEmpty().trim()
-            val hint = (if (Build.VERSION.SDK_INT >= 26) node.hintText?.toString() else null).orEmpty().trim()
+            val hint = node.hintText?.toString().orEmpty().trim()
             val interactive = node.isClickable || node.isLongClickable || node.isEditable || node.isScrollable ||
                 node.isCheckable
             if (interactive || text.isNotEmpty() || description.isNotEmpty()) {
