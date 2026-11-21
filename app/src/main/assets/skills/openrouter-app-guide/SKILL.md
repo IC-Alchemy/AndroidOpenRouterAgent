@@ -9,7 +9,7 @@ Use these instructions to answer questions about the app's controls. Mention the
 
 ## Get started
 
-1. Open Settings and enter an OpenRouter key.
+1. Open Settings and tap Sign in with OpenRouter, approve the key in the browser, return to the app, and tap Save. You can also paste a key.
 2. Tap Models to find a model from the authenticated catalog. Switch off tools if you want to use a model that only supports text.
 3. Send a prompt. The status above the composer distinguishes connecting, waiting, reasoning, tool use, and an answer in progress. Activity shows progress, sources, and reported usage when available.
 
@@ -20,6 +20,16 @@ Use these instructions to answer questions about the app's controls. Mention the
 - Tools in Settings controls the hosted sandbox, web search, date and time, local time zone, and optional MCP. The sandbox can produce files. Open Sandbox files to preview or export them.
 - Keep the initial model and follow-up models compatible with the requested tools and structured output. Feature availability is drawn from OpenRouter's model metadata and affected by provider routing.
 - Cost and total-token thresholds are evaluated between steps. A step in flight can cross a threshold. The per-response output limit separately controls each model response.
+
+## Work in the background
+
+In version 2.5 and later, a run continues when the user switches apps, locks the phone, or closes the app from recents. The ongoing notification shows the current step and has Stop. Tool approvals can be answered there with Allow once or Deny. A notification shows the reply when a run finishes while the app is not on screen. A force stop or restart still ends the run.
+
+## Mini apps and voice
+
+Ask the agent for a small app, such as a tracker, calculator or game. It saves a single HTML file that the user opens from Configure → Mini apps. There the user can add it to the home screen, share it as a file, or delete it. Each app runs on its own, keeps its own data, and can only reach public HTTPS APIs. Apps shared by someone else have no internet access. To change an app, ask the agent; it keeps the app's data. Mini apps can be switched off in Settings.
+
+Tap the microphone in the composer to dictate. The Ask agent Quick Settings tile opens the app ready to listen.
 
 ## Organize chats and projects
 
