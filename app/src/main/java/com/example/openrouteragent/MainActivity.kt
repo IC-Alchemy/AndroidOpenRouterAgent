@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -100,6 +101,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -213,6 +216,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     val usesOpenRouter = agent.usesOpenRouter
     val providerName = agent.providerName
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    // Reopen Settings when an OpenRouter sign-in finishes while the sheet is closed.
+    LaunchedEffect(agent.signInKey) { if (agent.signInKey != null) showSettings = true }
     var showConfigure by remember { mutableStateOf(false) }
     var showSdkSettings by rememberSaveable { mutableStateOf(false) }
     var customizeTab by rememberSaveable { mutableStateOf<String?>(null) }
@@ -438,7 +443,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         ProvidersSheet(config, editActiveProvider, { showProviders = false }, agent::saveSettings, agent::discoverModels)
     }
     if (showSettings) {
-        SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey)
+        SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey, agent)
     }
     if (showSdkSettings) {
         SdkSettingsSheet(config, agent.availableModels, { showSdkSettings = false }, agent::saveSettings)
@@ -1114,10 +1119,16 @@ private fun SettingsBottomSheet(
     initialConfig: AgentConfig,
     onDismiss: () -> Unit,
     onSave: suspend (AgentConfig) -> Unit,
-    onValidate: suspend (String) -> Unit
+    onValidate: suspend (String) -> Unit,
+    agent: AgentViewModel,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var apiKey by remember { mutableStateOf(initialConfig.apiKey) }
+    var signedIn by remember { mutableStateOf(false) }
+    val signInContext = LocalContext.current
+    LaunchedEffect(agent.signInKey) {
+        agent.takeSignInKey()?.let { apiKey = it; signedIn = true }
+    }
     var showApiKey by remember { mutableStateOf(false) }
     var enableShell by remember { mutableStateOf(initialConfig.enableShellSandbox) }
     var enableWeb by remember { mutableStateOf(initialConfig.enableWebSearch) }
@@ -1206,6 +1217,26 @@ private fun SettingsBottomSheet(
                         }) { Text("Test key") }
                     }
                     testResult?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                    if (agent.signInBusy) {
+                        Text("Finish signing in on the OpenRouter page in your browser, then return here.",
+                            style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = agent::cancelSignIn) { Text("Cancel sign-in") }
+                    } else {
+                        FilledTonalButton(enabled = !working, onClick = {
+                            signedIn = false
+                            agent.signInWithOpenRouter { url ->
+                                runCatching {
+                                    signInContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        .addCategory(Intent.CATEGORY_BROWSABLE))
+                                }.isSuccess
+                            }
+                        }) { Text(if (apiKey.isBlank()) "Sign in with OpenRouter" else "Sign in again with OpenRouter") }
+                    }
+                    agent.signInError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (signedIn && apiKey.isNotBlank()) {
+                        Text("Signed in. OpenRouter created a key for this app. Tap Save to connect.",
+                            color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                    }
                     if (initialConfig.apiKey.isNotBlank() && apiKey.trim() != initialConfig.apiKey) {
                         Text("Changing the key starts a new conversation.",
                             style = MaterialTheme.typography.bodySmall)

@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -472,6 +473,45 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     fun clearExportMessage() {
         exportMessage = null
     }
+
+    var signInBusy by mutableStateOf(false)
+        private set
+    var signInError by mutableStateOf<String?>(null)
+        private set
+    /** A key from OpenRouter sign-in that the Settings sheet has not taken yet. */
+    var signInKey by mutableStateOf<String?>(null)
+        private set
+    private var signInJob: Job? = null
+    private val signInHttp by lazy { OkHttpClient() }
+
+    /** Starts OpenRouter's OAuth PKCE sign-in. [open] shows the authorization page in a browser. */
+    fun signInWithOpenRouter(open: (String) -> Boolean) {
+        if (signInBusy) return
+        signInError = null
+        signInKey = null
+        signInJob = viewModelScope.launch {
+            signInBusy = true
+            try {
+                OpenRouterSignIn(signInHttp, getApplication<Application>().packageName).use { attempt ->
+                    if (!open(attempt.authorizeUrl)) throw IOException("No browser is available to open OpenRouter.")
+                    signInKey = attempt.awaitKey()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                signInError = e.message ?: "Sign-in failed. Try again."
+            } finally {
+                signInBusy = false
+            }
+        }
+    }
+
+    fun cancelSignIn() {
+        signInJob?.cancel()
+        signInJob = null
+    }
+
+    fun takeSignInKey(): String? = signInKey.also { signInKey = null }
 
     override fun onCleared() {
         sdk.destroy()

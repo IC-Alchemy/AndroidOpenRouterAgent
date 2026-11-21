@@ -20,5 +20,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The OpenRouter sign-in page links here. It closes at once, returning to the open app. -->
+        <activity
+            android:name=".SignInReturnActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="icalchemy-openrouteragent" android:host="signed-in" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
