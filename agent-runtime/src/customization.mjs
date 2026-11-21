@@ -22,10 +22,16 @@ export function skillLoader(options) {
   });
 }
 
-export function customTool(toolSpec, events, signal) {
-  const { name, description, handler, value } = toolSpec;
+export function customInputSchema(toolSpec) {
+  const { name } = toolSpec;
   const inputSchema = z.fromJSONSchema(JSON.parse(toolSpec.schema));
   if (!(inputSchema instanceof z.ZodObject)) throw new Error(`The input schema for ${name} must describe an object.`);
+  return inputSchema;
+}
+
+export function customTool(toolSpec, events, signal) {
+  const { name, description, handler, value } = toolSpec;
+  const inputSchema = customInputSchema(toolSpec);
   if (handler === 'template') {
     return tool({
       name, description, inputSchema,
@@ -59,11 +65,16 @@ export function customTool(toolSpec, events, signal) {
   throw new Error(`Unknown custom handler for ${name}.`);
 }
 
-async function postWebhook(url, args, signal, fetcher) {
+export function webhookEndpoint(url) {
   const endpoint = new URL(url);
-  if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+  if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || /[?#]/.test(endpoint.href)) {
     throw new Error('The webhook needs a fixed HTTPS endpoint without credentials.');
   }
+  return endpoint;
+}
+
+async function postWebhook(url, args, signal, fetcher) {
+  const endpoint = webhookEndpoint(url);
   const controller = new AbortController();
   const abort = () => controller.abort(signal.reason);
   signal.addEventListener('abort', abort, { once: true });

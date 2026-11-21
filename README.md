@@ -8,7 +8,7 @@ The app embeds OpenRouter’s official TypeScript Agent SDK in a bundled, isolat
 2. Open **Settings** and tap **Sign in with OpenRouter**. Approve the key on the OpenRouter page, return to the app, and tap **Save**. You can also paste an [OpenRouter API key](https://openrouter.ai/settings/keys) instead. The app loads the key’s allowed text models from `GET /api/v1/models/user`. Tap **Models** to search or refresh the list. When tools are enabled, the picker shows models that advertise tool calling.
 3. Try “Use the sandbox to save the Python version to outputs/version.txt.” Follow the live response and tool activity. Open **Sandbox files** to preview and export the result.
 
-SQLite stores saved chats on the phone, including OpenRouter agent state and tool results for follow-up turns. Android Keystore protects provider keys and the optional MCP token. Shell commands run in OpenRouter’s hosted container. Shell egress is off by default, and changing the allowlist starts a fresh container. OpenRouter’s [container retention](https://openrouter.ai/docs/guides/features/containers) applies to hosted files.
+SQLite stores saved chats on the phone, including OpenRouter agent state and tool results for follow-up turns. Android Keystore protects provider keys and the optional MCP token. Shell commands run in OpenRouter’s hosted container. Shell egress is off by default, and changing the allowlist starts a fresh container. OpenRouter’s [container retention](https://openrouter.ai/docs/guides/features/containers) applies to sandbox files.
 
 ## Sign in with OpenRouter
 
@@ -36,6 +36,15 @@ Open **Chats** in the header. Use **New chat** to start another conversation, or
 
 Chats are scoped to the selected provider and credential. Reopening an OpenRouter chat restores its SDK conversation state, tool results, and hosted sandbox reference. The app imports the old saved conversation for each matching provider when you first open that provider. Storage stays on the device.
 
+### Work with files
+
+- **Project files** opens an editable device folder shared by the project's chats. You can also open it from the selected project in **Chats**. Create folders and text files, import files from Android, and preview or export them. Unfiled chats have their own **Chat files** folder. **Configure → Device files** can reopen folders retained after a project or chat is removed.
+- Ask a tool-capable OpenRouter model to list, read, create, or edit files in the current folder. For example, “Create `notes/plan.md` with a three-step plan,” then “Change the deadline in `notes/plan.md` to Friday.” The app writes the file and confirms the path. Text editing supports complete UTF-8 files up to 64 KiB.
+- **Upload to OpenRouter** publishes a device file through the Files API. Uploaded project files appear under `projects/<project-id>/` with their relative folders preserved. **Workspace files** lists those files within the project. **Configure → All workspace files** opens the account's full list from a project. Open a workspace file to preview, export, copy, delete, or edit it as a new revision. OpenRouter makes server-generated files downloadable. The app retains a local copy of each upload made from this device. [OpenRouter Files API](https://openrouter.ai/docs/guides/features/files-api)
+- Use **Attach to chat** on a workspace file to give the hosted shell a writable copy on the next message. Up to 20 files may be attached per message. **Sandbox files** opens the hosted container. Each project has a separate sandbox shared by its chats. From a sandbox preview, use **Copy to device files** to edit a local copy, or **Save to Workspace** to keep it through the Files API. Ask in chat to edit the original sandbox file. [OpenRouter containers](https://openrouter.ai/docs/guides/features/containers)
+
+**Workspace files tool** in Settings gives unfiled OpenRouter chats the hosted `openrouter:files` tool. OpenRouter scopes that tool to the entire workspace. Project chats use app file functions scoped to their project folder. [OpenRouter Files server tool](https://openrouter.ai/docs/guides/features/server-tools/files)
+
 ## Providers
 
 Open **Configure → Providers** or tap the provider name in the header. The **OpenUncensored** preset uses `https://api.openuncensored.com/v1`, the model `deepseek-v4.1-flash-1017-uncensored`, and quality routing. Tap **Use**, enter your OpenUncensored API key, and tap **Save and use**.
@@ -49,8 +58,20 @@ Custom providers support text chat and pinned skills. Select OpenRouter to use t
 - **Settings** controls hosted shell, search, date and time, web fetch, and the local device time-zone tool. The SDK dispatches local tools and feeds their results back to the model.
 - **Advanced agent settings** includes a step limit, an optional USD stop threshold, and temperature for models that advertise that parameter. The SDK and provider check the threshold between steps. A step in progress can take the total above the threshold.
 - The app supports one HTTPS remote MCP server with no authentication or a separate bearer token. The server must accept cross-origin requests from `https://agent-runtime.invalid`. The app shows the tool name, endpoint, and arguments before each call and offers **Allow once** or **Decline**. Tool discovery occurs on connection.
-- **Additional server tools** accepts an array of SDK configuration objects using camelCase fields. Supported types include `openrouter:web_fetch`, `openrouter:image_generation`, `openrouter:experimental__search_models`, `openrouter:advisor`, `openrouter:subagent`, and `openrouter:fusion`. For example, `[{"type":"openrouter:advisor","parameters":{"model":"<allowed-model-id>"}}]`. Some tools require model-specific parameters or workspace permissions.
+- **Additional server tools** accepts an array of SDK configuration objects using camelCase fields. Supported types include `openrouter:web_fetch`, `openrouter:image_generation`, `openrouter:experimental__search_models`, `openrouter:advisor`, `openrouter:subagent`, and `openrouter:fusion`. For example, `[{"type":"openrouter:advisor","parameters":{"model":"<allowed-model-id>"}}]`. Existing subagent entries in this field also appear in the Subagents editor.
 - **Stop waiting** aborts the local agent run and restores the draft. A submitted hosted tool may continue on OpenRouter.
+
+### Delegate work to subagents
+
+1. Select OpenRouter as the provider. Open **Settings → OpenRouter Server Tools → Subagents → Add subagent**.
+2. Enter an optional name, worker model ID, and instructions. You can add several uniquely named workers and one unnamed default worker. If you leave the model blank, OpenRouter uses the main model.
+3. Tap **Apply**, then **Save** in Settings. In chat, try asking the main model to delegate a focused task, such as extracting action items from meeting notes and returning them as a checklist. The model decides when to delegate. **Activity** shows each worker's task, status, result or error, and any inherited function calls.
+
+Use **Advanced worker settings** to set `maxToolCalls` (1–25), `maxCompletionTokens`, `temperature` (0–2), or `reasoning` (`effort` and `maxTokens`). Add hosted tools in `tools`, for example `{"tools":[{"type":"openrouter:web_search"}],"maxToolCalls":3}`. Parameters nested inside those tool definitions use their own API field names.
+
+The experimental `inheritedFunctionNames` list gives the worker access to specific enabled Android function tools by name. For example, use `{"inheritedFunctionNames":["device_time_zone"]}` with the local time-zone tool enabled. Use `"inheritFunctions":true` to inherit all the functions available in the request. Inherited webhook and MCP calls still ask for approval in the app. OpenRouter resumes the worker after Android returns the tool result.
+
+The worker sees the task description supplied by the main model. Worker usage is included in the run's reported totals and billed at the worker model's rates. Workspace tool permissions apply. [OpenRouter Subagent documentation](https://openrouter.ai/docs/guides/features/server-tools/subagent)
 
 ## Build and test
 
@@ -90,6 +111,8 @@ Touch and hold to select text in chat messages, tool output, file previews, or t
 Open the **Configure** gear. **Custom tools** registers validated SDK functions with a JSON object schema. Supported handlers are templates, questions answered in the app, and HTTPS JSON webhooks. Webhooks ask for approval before a request and publish a live progress event. They need a CORS-enabled endpoint. Tool results become part of the agent conversation.
 
 **Skills & app guide** saves text instructions with a name and description. Import or export the Markdown `SKILL.md` form. The import uses the name, description, and Markdown body, and opens the skill disabled for review. A tool-capable model sees enabled skills by name and description and can load their full text on demand. Pin a skill to include its instructions on each run. The built-in app guide is readable offline.
+
+You can also ask in chat to create a subagent, custom tool, or skill, or to enable a supported OpenRouter server tool. For example, “Create a subagent named Editor to review Markdown for clarity.” Review the proposed settings and tap **Save change**. The app validates and saves the resource to the same settings used by the configuration screens. It becomes available on the next message. Custom tools can use templates, ask for an answer, or POST to a fixed HTTPS webhook that requires approval when called.
 
 **SDK settings** separates generation, routing, follow-up behavior, advanced fields, and display.
 

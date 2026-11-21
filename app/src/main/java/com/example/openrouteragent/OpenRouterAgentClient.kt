@@ -6,11 +6,20 @@ import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okio.Buffer
+import okio.BufferedSink
+import okio.BufferedSource
+import okio.source
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -18,10 +27,44 @@ import java.nio.CharBuffer
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 
-private const val PREVIEW_LIMIT = 64 * 1024L
+internal const val FILE_PREVIEW_LIMIT = 64 * 1024L
+internal const val WORKSPACE_FILE_MAX_BYTES = 100L * 1024 * 1024
+private val workspaceFileIdPattern = Regex("or_file_[A-Za-z0-9_-]+")
+private val containerIdPattern = Regex("[A-Za-z0-9_-]{1,40}")
+private val containerFileIdPattern = Regex("cfile_[A-Za-z0-9_-]+")
 
 data class ContainerFilePage(val files: List<ContainerFileRef>, val after: String?)
 data class FilePreview(val text: String?, val truncated: Boolean = false)
+internal data class WorkspaceFileRef(
+    val id: String,
+    val filename: String,
+    val mimeType: String?,
+    val sizeBytes: Long?,
+    val downloadable: Boolean,
+    val createdAt: String? = null
+)
+internal data class WorkspaceFilePage(val files: List<WorkspaceFileRef>, val cursor: String?)
+
+internal fun workspaceFilePathError(path: String): String? = when {
+    path.length !in 1..255 -> "File paths must contain 1 to 255 characters."
+    path.split('/').any { it.isEmpty() || it == "." || it == ".." } ->
+        "Enter a relative file path without empty, . or .. segments."
+    path.any { it in "<>:\"|?*\\" || it.isISOControl() } || !Charsets.UTF_8.newEncoder().canEncode(path) ->
+        "The file path contains characters that OpenRouter does not allow."
+    else -> null
+}
+
+internal fun readFilePreview(source: BufferedSource): FilePreview {
+    val truncated = source.request(FILE_PREVIEW_LIMIT + 1)
+    val bytes = source.readByteArray(minOf(source.buffer.size, FILE_PREVIEW_LIMIT))
+    val characters = CharBuffer.allocate(bytes.size)
+    val decoder = Charsets.UTF_8.newDecoder()
+    val result = decoder.decode(ByteBuffer.wrap(bytes), characters, !truncated)
+    characters.flip()
+    val text = characters.toString()
+    val binary = result.isError || text.any { it < ' ' && it !in "\t\n\r\u000C" }
+    return FilePreview(if (binary) null else text, truncated)
+}
 internal class ApiStatusException(val code: Int, message: String) : IOException(message)
 
 class OpenRouterAgentClient(
@@ -51,6 +94,86 @@ class OpenRouterAgentClient(
         execute(request(apiKey, endpoint("key")).build(), apiKey) { Unit }
     }
 
+    internal suspend fun listWorkspaceFiles(apiKey: String, cursor: String?): WorkspaceFilePage {
+        val url = endpoint("files").newBuilder()
+            .addQueryParameter("limit", "100")
+            .apply { if (cursor != null) addQueryParameter("cursor", cursor) }
+            .build()
+        return execute(request(apiKey, url).build(), apiKey) {
+            val body = JSONObject(it.bodyText())
+            val data = body.getJSONArray("data")
+            val files = List(data.length()) { index -> parseWorkspaceFile(data.getJSONObject(index)) }
+            val next = if (body.optBoolean("has_more")) {
+                body.string("cursor")?.takeIf { it != cursor }
+                    ?: throw IOException("OpenRouter did not return a new workspace files cursor.")
+            } else null
+            WorkspaceFilePage(files, next)
+        }
+    }
+
+    internal suspend fun workspaceFile(apiKey: String, fileId: String): WorkspaceFileRef =
+        executeWorkspaceFileRequest(request(apiKey, workspaceFileEndpoint(fileId)).build(), apiKey)
+
+    internal suspend fun uploadWorkspaceFile(apiKey: String, filename: String, file: File): WorkspaceFileRef {
+        workspaceFilePathError(filename)?.let { throw IllegalArgumentException(it) }
+        require(file.isFile) { "The file to upload is unavailable." }
+        val size = file.length()
+        require(size > 0) { "OpenRouter cannot upload an empty file." }
+        require(size <= WORKSPACE_FILE_MAX_BYTES) { "OpenRouter limits uploads to 100 MiB." }
+        val part = object : RequestBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength() = size
+            override fun writeTo(sink: BufferedSink) {
+                file.source().use { source ->
+                    sink.write(source, size)
+                    if (source.read(Buffer(), 1) != -1L) throw IOException("The upload file size changed.")
+                }
+            }
+        }
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", filename, part)
+            .build()
+        return executeWorkspaceFileRequest(request(apiKey, endpoint("files")).post(body).build(), apiKey)
+    }
+
+    internal suspend fun previewWorkspaceFile(apiKey: String, fileId: String): FilePreview =
+        execute(request(apiKey, workspaceFileEndpoint(fileId, "content")).build(), apiKey, read = ::readFilePreview)
+
+    internal suspend fun downloadWorkspaceFile(apiKey: String, fileId: String, openDestination: () -> OutputStream) =
+        execute(request(apiKey, workspaceFileEndpoint(fileId, "content")).build(), apiKey) {
+            copyFileContent(it, openDestination)
+        }
+
+    internal suspend fun deleteWorkspaceFile(apiKey: String, fileId: String) {
+        execute(request(apiKey, workspaceFileEndpoint(fileId)).delete().build(), apiKey) { Unit }
+    }
+
+    internal suspend fun promoteContainerFile(apiKey: String, containerId: String, fileId: String): WorkspaceFileRef {
+        require(containerIdPattern.matches(containerId)) { "Invalid sandbox container ID." }
+        require(containerFileIdPattern.matches(fileId)) { "Invalid sandbox file ID." }
+        val url = endpoint("containers", containerId, "files", fileId, "promote")
+        return executeWorkspaceFileRequest(request(apiKey, url).post(ByteArray(0).toRequestBody()).build(), apiKey)
+    }
+
+    private fun workspaceFileEndpoint(fileId: String, vararg suffix: String): HttpUrl {
+        require(workspaceFileIdPattern.matches(fileId)) { "Invalid workspace file ID." }
+        return endpoint("files", fileId, *suffix)
+    }
+
+    private suspend fun executeWorkspaceFileRequest(request: Request, apiKey: String): WorkspaceFileRef =
+        execute(request, apiKey) { parseWorkspaceFile(JSONObject(it.bodyText())) }
+
+    private fun parseWorkspaceFile(file: JSONObject): WorkspaceFileRef {
+        val id = file.string("id")?.takeIf(workspaceFileIdPattern::matches)
+            ?: throw IOException("OpenRouter returned an invalid workspace file ID.")
+        val filename = (file.opt("filename") as? String)?.takeIf { it.isNotEmpty() }
+            ?: throw IOException("OpenRouter returned a workspace file without a filename.")
+        return WorkspaceFileRef(
+            id, filename, file.string("mime_type"), file.optLong("size_bytes", -1).takeIf { it >= 0 },
+            file.optBoolean("downloadable"), file.string("created_at")
+        )
+    }
+
     suspend fun listFiles(apiKey: String, containerId: String, after: String?): ContainerFilePage {
         val url = endpoint("containers", containerId, "files").newBuilder()
             .addQueryParameter("limit", "100")
@@ -77,19 +200,11 @@ class OpenRouterAgentClient(
         return try {
             execute(fileRequest(apiKey, containerId, fileId), apiKey, quick) { response ->
                 val body = response.body ?: throw IOException("OpenRouter returned an empty file response.")
-                val source = body.source()
-                val truncated = source.request(PREVIEW_LIMIT + 1)
-                val bytes = source.readByteArray(minOf(source.buffer.size, PREVIEW_LIMIT))
-                val characters = CharBuffer.allocate(bytes.size)
-                val decoder = Charsets.UTF_8.newDecoder()
-                val result = decoder.decode(ByteBuffer.wrap(bytes), characters, !truncated)
-                characters.flip()
-                val text = characters.toString()
-                val binary = result.isError || text.any { it < ' ' && it !in "\t\n\r\u000C" }
-                log("preview-done $where exists=true size=${body.contentLength()} read=${bytes.size} " +
-                    "truncated=$truncated encoding=${if (binary) "binary" else "utf-8"} " +
+                val preview = readFilePreview(body.source())
+                log("preview-done $where exists=true size=${body.contentLength()} " +
+                    "truncated=${preview.truncated} encoding=${if (preview.text == null) "binary" else "utf-8"} " +
                     "ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)}")
-                FilePreview(if (binary) null else text, truncated)
+                preview
             }
         } catch (e: ApiStatusException) {
             log("preview-failed $where status=${e.code}")
@@ -105,11 +220,18 @@ class OpenRouterAgentClient(
     }
 
     suspend fun downloadFile(apiKey: String, containerId: String, fileId: String, openDestination: () -> OutputStream) {
-        execute(fileRequest(apiKey, containerId, fileId), apiKey) { response ->
-            val body = response.body ?: throw IOException("OpenRouter returned an empty file response.")
-            openDestination().use { destination ->
-                body.byteStream().use { it.copyTo(destination) }
-            }
+        execute(fileRequest(apiKey, containerId, fileId), apiKey) { copyFileContent(it, openDestination) }
+    }
+
+    private fun readFilePreview(response: Response): FilePreview {
+        val body = response.body ?: throw IOException("OpenRouter returned an empty file response.")
+        return readFilePreview(body.source())
+    }
+
+    private fun copyFileContent(response: Response, openDestination: () -> OutputStream) {
+        val body = response.body ?: throw IOException("OpenRouter returned an empty file response.")
+        openDestination().use { destination ->
+            body.byteStream().use { it.copyTo(destination) }
         }
     }
 
