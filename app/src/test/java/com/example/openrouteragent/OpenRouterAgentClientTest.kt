@@ -153,6 +153,32 @@ class OpenRouterAgentClientTest {
         assertTrue(failure?.message.orEmpty().contains("Provider failed"))
     }
 
+    @Test
+    fun aMissingSandboxTextFileFailsWithItsPathAndAFix() = withServer { server, client ->
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":{"message":"File not found"}}"""))
+        val error = runCatching { client.previewFile("fake-key", "sess_old", "cfile_gone", "outputs/videos.txt") }
+            .exceptionOrNull()
+        assertTrue(error is java.io.FileNotFoundException)
+        val message = error?.message.orEmpty()
+        assertTrue(message, "outputs/videos.txt" in message && "sess_old" in message)
+        assertTrue(message, "expires" in message && "Run the command again" in message)
+    }
+
+    @Test
+    fun aStalledSandboxFilePreviewFailsAtThePreviewTimeout() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("hello").setBodyDelay(3, java.util.concurrent.TimeUnit.SECONDS))
+            val client = OpenRouterAgentClient(server.url("/api/v1/"), previewTimeoutSeconds = 1)
+            val started = System.nanoTime()
+            val error = runCatching {
+                runBlocking { client.previewFile("fake-key", "sess", "cfile_a", "notes.txt") }
+            }.exceptionOrNull()
+            val elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+            assertTrue("took $elapsed ms", elapsed < 5_000)
+            assertTrue(error?.message.orEmpty(), error?.message.orEmpty().contains("notes.txt"))
+        }
+    }
+
     private fun withServer(block: suspend (MockWebServer, OpenRouterAgentClient) -> Unit) {
         MockWebServer().use { server ->
             runBlocking { block(server, OpenRouterAgentClient(server.url("/api/v1/"))) }

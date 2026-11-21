@@ -43,7 +43,8 @@ async function start(options) {
     flush();
     emit(options.id, 'approval', { decision, name, args, url, asksUser });
   });
-  run.transport = createNativeTransport(options.id, bridge, phase => update({ kind: 'phase', phase }));
+  run.transport = createNativeTransport(options.id, bridge,
+    (phase, detail) => update({ kind: 'phase', phase, detail }));
   try {
     const value = await runAgent(options, {
       fetcher: run.transport.fetcher,

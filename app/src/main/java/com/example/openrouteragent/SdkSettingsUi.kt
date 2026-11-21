@@ -67,6 +67,7 @@ internal fun SdkSettingsSheet(
             "followTemp" to sdk.followUpTemperature?.toString().orEmpty(),
             "followOutput" to sdk.followUpOutputTokens?.toString().orEmpty(), "followInstructions" to sdk.followUpInstructions,
             "timeout" to sdk.toolTimeoutSeconds?.toString().orEmpty(),
+            "idle" to sdk.streamIdleSeconds?.toString().orEmpty(),
             "concurrency" to sdk.toolConcurrency?.toString().orEmpty(), "stopTool" to sdk.stopOnTool,
             "finalResponse" to sdk.finalResponse, "finalDirective" to sdk.finalDirective,
             "theme" to sdk.theme,
@@ -99,6 +100,7 @@ internal fun SdkSettingsSheet(
                 discoverSkills = discoverSkills, theme = value("theme"), detectRepetition = detectRepetition,
                 strictFinalResponse = strictFinal, stopOnTool = value("stopTool").trim(), finalResponse = value("finalResponse"),
                 finalDirective = value("finalDirective").trim(), toolTimeoutSeconds = number("timeout", "Tool timeout"),
+                streamIdleSeconds = number("idle", "Stream idle timeout"),
                 toolConcurrency = number("concurrency", "Tool concurrency"))
             prefs.problem()?.let { throw IllegalArgumentException(it) }
             val ids = (prefs.fallbackModels.split(',') + prefs.followUpModel).map(String::trim)
@@ -192,6 +194,8 @@ internal fun SdkSettingsSheet(
                         Field("budget", "Total token threshold", "Checked between steps.")
                         Field("stopTool", "Stop when this tool is called", "Use the exact name of an SDK function tool.")
                         Field("timeout", "Tool deadline (seconds)", "Bounds each local or MCP tool call.")
+                        Field("idle", "Stream idle timeout (seconds)",
+                            "Fails a run after this long with no data from OpenRouter. Default 90, range 30–600.")
                         Field("concurrency", "Maximum concurrent tool calls")
                         ToggleLine("Detect repeated tool calls and replies", detectRepetition) { detectRepetition = it }
                         Options("finalResponse", "Final answer when a stop condition is met", listOf("" to "SDK default",

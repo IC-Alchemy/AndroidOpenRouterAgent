@@ -31,6 +31,7 @@ import kotlin.coroutines.cancellation.CancellationException
 private const val ORIGIN = "https://agent-runtime.invalid"
 private const val ENTRY_URL = "$ORIGIN/index.html"
 private const val MAX_HISTORY_BYTES = 6_000_000
+private const val RUN_TIMEOUT_MILLIS = 15 * 60_000L
 
 data class ToolApproval(
     val decision: String, val name: String, val arguments: String, val url: String, val asksUser: Boolean = false
@@ -42,6 +43,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         val id: String,
         val completion: CompletableDeferred<SdkRunResult>,
         val apiKey: String,
+        val model: String,
+        val idleSeconds: Long,
         val onUpdate: (List<RunUpdate>) -> Unit,
         val onApproval: (ToolApproval) -> Unit,
     )
@@ -71,7 +74,8 @@ internal class AgentSdkRuntime(private val context: Context) {
             (listOf(settings.mcpUrl) + settings.customTools.filter { it.enabled && it.handler == "webhook" }
                 .map { it.value }).mapNotNull { it.toHttpUrlOrNull() }
                 .map { Triple(it.scheme, it.host, it.port) }.toSet()
-        val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, onUpdate, onApproval)
+        val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
+            settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval)
         try {
             val runtime = view ?: createWebView()
             try {
@@ -91,9 +95,11 @@ internal class AgentSdkRuntime(private val context: Context) {
                     IOException("Android could not start the Agent SDK request."))
             }
             try {
-                withTimeout(15 * 60_000L) { run.completion.await() }
+                withTimeout(RUN_TIMEOUT_MILLIS) { run.completion.await() }
             } catch (e: TimeoutCancellationException) {
-                throw IOException("The agent run timed out after 15 minutes.", e)
+                runCatching { android.util.Log.w("AgentHttp", "run-timeout id=${run.id} model=${run.model}") }
+                throw IOException("The agent run timed out after 15 minutes. Long hosted tool work can " +
+                    "exceed this limit; split the task into smaller steps.", e)
             }
         } finally {
             if (!run.completion.isCompleted) view?.let { dispatch(it, "stop", run.id) }
@@ -217,7 +223,7 @@ internal class AgentSdkRuntime(private val context: Context) {
                     dispatch(runtime, "http", runId, requestId, "error", "The OpenRouter request is too large or invalid.")
                     return@post
                 }
-                transport.start(runId, requestId, run.apiKey, body) { kind, value ->
+                transport.start(runId, requestId, run.apiKey, body, run.model, run.idleSeconds) { kind, value ->
                     main.post {
                         if (runtime === view && activeRun?.id == runId) {
                             dispatch(runtime, "http", runId, requestId, kind, value)
@@ -262,7 +268,7 @@ internal class AgentSdkRuntime(private val context: Context) {
                         ({ run: ActiveRun -> run.completion.complete(result); Unit })
                     }
                     "error" -> {
-                        val error = IOException(event.getString("value"))
+                        val error = IOException(sdkErrorText(event.getString("value")))
                         ({ run: ActiveRun -> run.completion.completeExceptionally(error); Unit })
                     }
                     else -> return
@@ -281,6 +287,10 @@ internal class AgentSdkRuntime(private val context: Context) {
         }
     }
 }
+
+/** The SDK wraps transport failures as "Unexpected HTTP client error: Error: <text>". Keep only the text. */
+internal fun sdkErrorText(message: String): String =
+    message.replace(Regex("^Unexpected HTTP client error:\\s*(Error:\\s*)?"), "")
 
 internal fun runtimeOptions(
     config: AgentConfig, workspace: Workspace, prompt: String, model: CatalogModel,
