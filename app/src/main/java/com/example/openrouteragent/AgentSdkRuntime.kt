@@ -15,7 +15,11 @@ import android.webkit.WebViewClient
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -47,6 +51,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         val idleSeconds: Long,
         val onUpdate: (List<RunUpdate>) -> Unit,
         val onApproval: (ToolApproval) -> Unit,
+        val miniApps: MiniAppTools?,
+        val localScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -75,7 +81,9 @@ internal class AgentSdkRuntime(private val context: Context) {
                 .map { it.value }).mapNotNull { it.toHttpUrlOrNull() }
                 .map { Triple(it.scheme, it.host, it.port) }.toSet()
         val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
-            settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval)
+            settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval,
+            miniApps = if (settings.miniApps && settings.sdk.toolChoice != "none") MiniAppTools(miniAppStore(context))
+                else null)
         try {
             val runtime = view ?: createWebView()
             try {
@@ -104,6 +112,7 @@ internal class AgentSdkRuntime(private val context: Context) {
         } finally {
             if (!run.completion.isCompleted) view?.let { dispatch(it, "stop", run.id) }
             transport.cancelRun(run.id)
+            run.localScope.cancel()
             approvedToolOrigins = emptySet()
             if (activeRun?.id == run.id) activeRun = null
             if (!ready.isCompleted || ready.isCancelled) destroy()
@@ -233,6 +242,34 @@ internal class AgentSdkRuntime(private val context: Context) {
             }
         }
 
+        /** Local tools that run in Kotlin, such as mini apps. Replies arrive through AgentRuntime.local. */
+        @JavascriptInterface
+        fun local(runId: String, requestId: String, json: String) {
+            main.post {
+                val run = activeRun ?: return@post
+                if (runtime !== view || run.id != runId || run.completion.isCompleted) return@post
+                run.localScope.launch {
+                    val result = try {
+                        val request = JSONObject(json)
+                        when (request.optString("tool")) {
+                            "mini_app" -> run.miniApps?.handle(request)
+                                ?: JSONObject().put("ok", false).put("error", "Mini apps are off in Settings.")
+                            else -> JSONObject().put("ok", false).put("error", "Unknown local tool.")
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        JSONObject().put("ok", false).put("error", "The tool failed: ${e.message ?: e}")
+                    }
+                    main.post {
+                        if (runtime === view && activeRun?.id == runId) {
+                            dispatch(runtime, "local", runId, requestId, result.toString())
+                        }
+                    }
+                }
+            }
+        }
+
         @JavascriptInterface
         fun readHttp(runId: String, requestId: String) = transport.read(runId, requestId)
 
@@ -317,6 +354,7 @@ internal fun runtimeOptions(
         .put("shell", config.enableShellSandbox).put("containerId", workspace.containerId)
         .put("domains", JSONArray(config.sandboxDomains())).put("webSearch", config.enableWebSearch)
         .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
+        .put("miniApps", config.miniApps)
         .put("extraTools", JSONArray(config.extraToolsJson.ifBlank { "[]" }))
         .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)
         .put("maxSteps", config.maxSteps).put("maxCost", config.maxCost)

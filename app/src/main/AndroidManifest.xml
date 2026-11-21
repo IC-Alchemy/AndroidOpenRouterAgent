@@ -33,6 +33,52 @@
         <receiver
             android:name=".RunActionReceiver"
             android:exported="false" />
+        <!-- Each mini app opens as its own document in recents. -->
+        <activity
+            android:name=".MiniAppActivity"
+            android:documentLaunchMode="intoExisting"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <!-- Receives a mini app shared as one .html file. -->
+        <activity
+            android:name=".MiniAppImportActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="Add mini app"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="text/html" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/html" />
+            </intent-filter>
+        </activity>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/shared_files" />
+        </provider>
+        <!-- Quick Settings tile that opens the app ready for voice input. -->
+        <service
+            android:name=".AskTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_mic"
+            android:label="Ask agent"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
         <!-- The OpenRouter sign-in page links here. It closes at once, returning to the open app. -->
         <activity
             android:name=".SignInReturnActivity"

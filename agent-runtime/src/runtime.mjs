@@ -3,6 +3,7 @@ import { OpenRouter, deserializeConversationState, serializeConversationState,
 import { HTTPClient } from '@openrouter/sdk/lib/http';
 import { customTool, sdkParameters, skillLoader } from './customization.mjs';
 import { streamObserver } from './stream-events.mjs';
+import { miniAppTools } from './local-tools.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
 
@@ -40,6 +41,10 @@ export function buildTools(options, events, signal) {
         utcOffsetMinutes: -new Date().getTimezoneOffset(),
       }),
     }));
+  }
+  // Mini apps are optional: they never restrict the model choice, so skip them for models without tool calling.
+  if (options.miniApps && events?.local && options.modelDetails?.[options.model]?.tools !== false) {
+    tools.push(...miniAppTools(events.local));
   }
   const seen = new Set(tools.map(t => t.config?.type));
   for (const item of options.extraTools ?? []) {

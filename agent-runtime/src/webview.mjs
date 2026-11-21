@@ -1,5 +1,6 @@
 import { runAgent } from './runtime.mjs';
 import { createNativeTransport } from './native-fetch.mjs';
+import { createLocalBridge } from './local-tools.mjs';
 
 const bridge = globalThis.AndroidAgent;
 const runs = new Map();
@@ -45,6 +46,7 @@ async function start(options) {
   });
   run.transport = createNativeTransport(options.id, bridge,
     (phase, detail) => update({ kind: 'phase', phase, detail }));
+  run.local = createLocalBridge(options.id, bridge, run.controller.signal);
   try {
     const value = await runAgent(options, {
       fetcher: run.transport.fetcher,
@@ -56,6 +58,7 @@ async function start(options) {
       register: result => { run.result = result; },
       approval: (name, args, url) => askUser(name, args, url, false),
       ask: (name, args) => askUser(name, args, '', true),
+      local: request => { flush(); return run.local.call(request); },
     }, run.controller.signal);
     flush();
     if (!run.controller.signal.aborted) {
@@ -70,6 +73,7 @@ async function start(options) {
     }
   } finally {
     run.transport.abort();
+    run.local.dispose();
     runs.delete(options.id);
   }
 }
@@ -78,6 +82,9 @@ globalThis.AgentRuntime = Object.freeze({
   start,
   http(id, requestId, kind, value) {
     runs.get(id)?.transport.receive(requestId, kind, value);
+  },
+  local(id, requestId, json) {
+    runs.get(id)?.local?.receive(requestId, json);
   },
   stop(id) {
     const run = runs.get(id);

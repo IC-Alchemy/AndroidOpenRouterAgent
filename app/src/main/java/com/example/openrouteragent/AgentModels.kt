@@ -22,6 +22,7 @@ data class AgentConfig(
     val enableDateTime: Boolean = true,
     val webFetch: Boolean = false,
     val deviceTools: Boolean = false,
+    val miniApps: Boolean = true,
     val mcpUrl: String = "",
     val mcpToken: String = "",
     val maxSteps: Int = 12,

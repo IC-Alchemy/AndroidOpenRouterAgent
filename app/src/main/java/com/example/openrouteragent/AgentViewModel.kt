@@ -228,7 +228,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         }
         val priorWorkspace = workspace
         val currentConfig = if (toolsOff) config.copy(enableShellSandbox = false, enableWebSearch = false,
-            enableDateTime = false, webFetch = false, deviceTools = false, mcpUrl = "", mcpToken = "",
+            enableDateTime = false, webFetch = false, deviceTools = false, miniApps = false, mcpUrl = "", mcpToken = "",
             extraToolsJson = "", customTools = emptyList(),
             sdk = config.sdk.copy(discoverSkills = false, toolChoice = "none")) else config
         activePrompt = prompt

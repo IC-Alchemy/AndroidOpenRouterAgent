@@ -102,6 +102,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.compose.ui.res.painterResource
 import android.net.Uri
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -142,6 +144,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
             OpenRouterAgentTheme(darkTheme = dark) { OpenRouterAgentScreen(agent) }
+        }
+        takeVoiceRequest(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeVoiceRequest(intent)
+    }
+
+    private fun takeVoiceRequest(intent: Intent?) {
+        if (intent?.getBooleanExtra(AskTileService.EXTRA_START_VOICE, false) == true) {
+            intent.removeExtra(AskTileService.EXTRA_START_VOICE)
+            VoiceRequests.pending = true
         }
     }
 
@@ -230,6 +245,26 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     val usesOpenRouter = agent.usesOpenRouter
     val providerName = agent.providerName
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showMiniApps by rememberSaveable { mutableStateOf(false) }
+    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val heard = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
+        if (!heard.isNullOrEmpty()) agent.promptText = listOf(agent.promptText.trim(), heard)
+            .filter { it.isNotEmpty() }.joinToString(" ")
+    }
+    val voiceContext = LocalContext.current
+    val listen: () -> Unit = {
+        runCatching { speech.launch(speechIntent()) }.onFailure {
+            android.widget.Toast.makeText(voiceContext, "This phone has no speech recognizer. Install or enable " +
+                "Speech Recognition and Synthesis from Google, or another voice input app.",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    LaunchedEffect(VoiceRequests.pending) {
+        if (VoiceRequests.pending) {
+            VoiceRequests.pending = false
+            if (agent.activePrompt == null) listen()
+        }
+    }
     NotificationPermissionPrompt(agent.activePrompt != null)
     // Reopen Settings when an OpenRouter sign-in finishes while the sheet is closed.
     LaunchedEffect(agent.signInKey) { if (agent.signInKey != null) showSettings = true }
@@ -358,6 +393,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                             customizeTab = "tools"
                                         })
                                     }
+                                    DropdownMenuItem(text = { Text("Mini apps") }, onClick = {
+                                        showConfigure = false
+                                        showMiniApps = true
+                                    })
                                     DropdownMenuItem(text = { Text("Skills & app guide") }, onClick = {
                                         showConfigure = false
                                         customizeTab = "skills"
@@ -380,7 +419,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     AgentInputBar(
                         value = agent.promptText, onValueChange = { agent.promptText = it },
                         isRunning = isRunning, isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat,
-                        error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn
+                        error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
+                        onVoice = listen,
                     )
                 }
             }
@@ -456,6 +496,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
 
     if (showProviders) {
         ProvidersSheet(config, editActiveProvider, { showProviders = false }, agent::saveSettings, agent::discoverModels)
+    }
+    if (showMiniApps) MiniAppsSheet(onDismiss = { showMiniApps = false }) {
+        showMiniApps = false
+        if (agent.activePrompt == null) agent.promptText = "Build me a mini app that "
     }
     if (showSettings) {
         SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey, agent)
@@ -1081,7 +1125,8 @@ private fun AgentInputBar(
     isLoading: Boolean,
     error: String?,
     onSend: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onVoice: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1109,6 +1154,9 @@ private fun AgentInputBar(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { onSend() })
                 )
+                if (!isRunning) IconButton(onClick = onVoice, enabled = !isLoading, modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(R.drawable.ic_mic), contentDescription = "Speak a message")
+                }
                 FilledIconButton(
                     onClick = if (isRunning) onStop else onSend,
                     enabled = isRunning || (!isLoading && value.isNotBlank()),
@@ -1153,6 +1201,7 @@ private fun SettingsBottomSheet(
     var instructions by remember { mutableStateOf(initialConfig.systemInstructions) }
     var webFetch by remember { mutableStateOf(initialConfig.webFetch) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
+    var miniApps by remember { mutableStateOf(initialConfig.miniApps) }
     var maxSteps by remember { mutableStateOf(initialConfig.maxSteps.toString()) }
     var maxCost by remember { mutableStateOf(initialConfig.maxCost?.toString().orEmpty()) }
     var temperature by remember { mutableStateOf(initialConfig.temperature?.toString().orEmpty()) }
@@ -1166,7 +1215,7 @@ private fun SettingsBottomSheet(
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
-        enableDateTime = enableDateTime, webFetch = webFetch, deviceTools = deviceTools, allowSandboxNetwork = allowNetwork,
+        enableDateTime = enableDateTime, webFetch = webFetch, deviceTools = deviceTools, miniApps = miniApps, allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
         mcpToken = mcpToken, extraToolsJson = toolsJson)
@@ -1283,6 +1332,8 @@ private fun SettingsBottomSheet(
                     SettingsToggleRow("Web fetch", "Reads pages supplied by URL.", webFetch, { webFetch = it })
                     SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
                         { deviceTools = it })
+                    SettingsToggleRow("Mini apps", "Lets the agent build small apps you can open, add to your home " +
+                        "screen and share. Find them under Configure → Mini apps.", miniApps, { miniApps = it })
 
                     if (enableShell) {
                         SettingsToggleRow(
@@ -1378,6 +1429,17 @@ private fun SettingsBottomSheet(
         }
     }
 }
+
+/** Set by the Ask tile; the screen starts voice input when it sees it. */
+object VoiceRequests {
+    var pending by mutableStateOf(false)
+}
+
+/** Android's speech recognizer, on the device when possible. */
+private fun speechIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+    .putExtra(RecognizerIntent.EXTRA_PROMPT, "Ask the agent")
+    .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
 
 /** Asks once, when the first run starts, so background progress and replies can be shown. */
 @Composable

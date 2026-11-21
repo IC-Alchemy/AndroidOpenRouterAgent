@@ -479,3 +479,59 @@ test('the ask-me tool pauses the SDK until a user answer arrives', { timeout: 70
     server.close();
   }
 });
+
+test('mini app tools reach Android through the local bridge and carry build guidance', { timeout: 7000 }, async () => {
+  const requests = [];
+  const server = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const bytes of req) chunks.push(bytes);
+    requests.push(JSON.parse(Buffer.concat(chunks)));
+    const item = requests.length === 1 ? {
+      type: 'function_call', name: 'mini_app_save', call_id: 'call_m', id: 'fc_m', status: 'completed',
+      arguments: JSON.stringify({ name: 'Tips', html: '<html><head><title>Tips</title></head></html>' }),
+    } : answer('msg_' + requests.length, 'Saved your app.');
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.end(stream(requests.length, item));
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const createClient = options => new OpenRouter({ ...options, serverURL: 'http://127.0.0.1:' + server.address().port + '/api/v1' });
+    const calls = [];
+    const events = {
+      text: () => {}, approval: async () => false,
+      local: async request => { calls.push(request); return { ok: true, id: 'abc12345', version: 1 }; },
+    };
+    await runAgent({ ...base, miniApps: true, prompt: 'Make me a tip calculator' }, events,
+      new AbortController().signal, createClient);
+    const names = requests[0].tools.map(tool => tool.name ?? tool.type);
+    assert.deepEqual(names.filter(name => name.startsWith('mini_app_')), ['mini_app_list', 'mini_app_read', 'mini_app_save']);
+    assert.match(requests[0].instructions, /one complete HTML file/);
+    assert.equal(calls[0].tool, 'mini_app');
+    assert.equal(calls[0].type, 'save');
+    assert.equal(calls[0].name, 'Tips');
+    const output = requests[1].input.find(item => item.type === 'function_call_output');
+    assert.match(output.output, /abc12345/);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('mini app tools need the setting and a bridge, and the local bridge rejects on cancel', async () => {
+  assert.equal(buildTools({ miniApps: true }, {}).length, 0);
+  assert.equal(buildTools({ miniApps: false }, { local: async () => ({}) }).length, 0);
+  assert.equal(buildTools({ miniApps: true }, { local: async () => ({}) }).length, 3);
+  const textOnly = { miniApps: true, model: 'm/plain', modelDetails: { 'm/plain': { tools: false, parameters: [] } } };
+  assert.equal(buildTools(textOnly, { local: async () => ({}) }).length, 0);
+  const { createLocalBridge } = await import('../src/local-tools.mjs');
+  const sent = [];
+  const controller = new AbortController();
+  const local = createLocalBridge('run', { local: (...args) => sent.push(args) }, controller.signal);
+  const first = local.call({ tool: 'mini_app', type: 'list' });
+  assert.deepEqual(sent[0].slice(0, 2), ['run', '1']);
+  local.receive('1', '{"ok":true,"apps":[]}');
+  assert.deepEqual(await first, { ok: true, apps: [] });
+  const second = local.call({ tool: 'mini_app', type: 'list' });
+  controller.abort(new Error('stopped'));
+  await assert.rejects(second, /stopped/);
+});
