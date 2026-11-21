@@ -112,7 +112,7 @@ internal fun ContainerFilePreviewDialog(
     var error by remember(containerId, fileId) { mutableStateOf<String?>(null) }
     LaunchedEffect(containerId, fileId, apiKey) {
         try {
-            preview = client.previewFile(apiKey, containerId, fileId)
+            preview = client.previewFile(apiKey, containerId, fileId, title)
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Exception) {

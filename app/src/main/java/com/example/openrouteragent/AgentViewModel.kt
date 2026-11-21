@@ -186,7 +186,17 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
 
     fun send(text: String, toolsOff: Boolean = false) {
         val prompt = text.trim()
-        if (isLoading || isSavingSettings || isWorkingChat || activePrompt != null || prompt.isBlank() || !providerReady) return
+        if (isLoading || isSavingSettings || isWorkingChat || activePrompt != null || prompt.isBlank()) return
+        if (!providerReady) {
+            turnError = if (usesOpenRouter) "Add your OpenRouter API key in Settings before sending."
+                else "Enter the $providerName API key in Providers before sending."
+            return
+        }
+        // Reject impossible requests before any network call, keeping the prompt in the composer.
+        commandProblem(prompt)?.let {
+            turnError = it
+            return
+        }
         val active = provider
         val model = selectedModel ?: run {
             turnError = if (catalogLoading) "Loading models…" else "Open Models or enter a model ID in Providers."

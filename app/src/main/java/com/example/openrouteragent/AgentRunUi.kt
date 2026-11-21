@@ -176,6 +176,7 @@ private fun AgentProgress.status(providerName: String = "OpenRouter"): String = 
     "mcp" -> "Connecting to MCP server"
     "requesting" -> "Preparing model request"
     "connecting" -> "Connecting to $providerName"
+    "retrying" -> "Retrying $providerName" + detail?.let { " · $it" }.orEmpty()
     "connected" -> "Connected · waiting for model events"
     "waiting" -> "Waiting for the model"
     "reasoning" -> "Model is reasoning"

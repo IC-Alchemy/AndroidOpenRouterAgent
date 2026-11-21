@@ -134,6 +134,8 @@ data class SdkSettings(
     val strictFinalResponse: Boolean = false,
     val detectRepetition: Boolean = true,
     val toolTimeoutSeconds: Int? = null,
+    /** Seconds without any stream bytes (keepalives included) before a run fails. Null means 90. */
+    val streamIdleSeconds: Int? = null,
     val toolConcurrency: Int? = null,
     val showReasoning: Boolean = true,
     val discoverSkills: Boolean = true,
@@ -152,6 +154,7 @@ data class SdkSettings(
         finalResponse !in setOf("", "off", "custom") || finalDirective.length > 4_000 ->
             "Check the final-answer setting and directive."
         toolTimeoutSeconds != null && toolTimeoutSeconds !in 1..600 -> "Tool timeout must be 1–600 seconds."
+        streamIdleSeconds != null && streamIdleSeconds !in 30..600 -> "Stream idle timeout must be 30–600 seconds."
         toolConcurrency != null && toolConcurrency !in 1..32 -> "Set 1–32 concurrent tool calls."
         stopOnTool.isNotEmpty() && !Regex("[a-zA-Z0-9_:-]{1,96}").matches(stopOnTool) ->
             "Enter an exact tool name for the stop condition."

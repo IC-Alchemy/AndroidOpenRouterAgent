@@ -45,6 +45,11 @@ export function createNativeTransport(id, bridge, onPhase) {
   function receive(requestId, kind, value) {
     const entry = pending.get(requestId);
     if (!entry) return;
+    if (kind === 'retry') {
+      // Android is retrying before any response bytes reached the SDK. The request is still pending.
+      onPhase('retrying', value);
+      return;
+    }
     if (kind === 'headers') {
       const bodyless = [204, 205, 304].includes(value.status);
       const stream = bodyless ? null : new ReadableStream({

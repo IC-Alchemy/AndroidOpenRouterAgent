@@ -102,6 +102,19 @@ async function postWebhook(url, args, signal, fetcher) {
 
 const split = value => [...new Set(String(value ?? '').split(',').map(s => s.trim()).filter(Boolean))];
 const join = (...values) => values.filter(Boolean).join('\n\n');
+
+// Hosted shell commands that wait for stdin, a missing file, or a blocked host leave the response
+// stream silent until the client gives up. Steer the model away from those commands.
+export function shellGuidance(options) {
+  if (!options.shell || options.sdk?.toolChoice === 'none') return '';
+  const network = options.domains?.length
+    ? `Shell network access is limited to ${options.domains.join(', ')}. Other hosts are blocked.`
+    : 'Shell network access is off, so downloads, package installs and API calls from the shell will fail.';
+  return 'Hosted shell rules: commands run non-interactively with no stdin. Never run a command that waits for input, ' +
+    'such as bare cat, read, input(), an editor or tail -f. Check that a file exists with test -f before reading it, ' +
+    'and report a missing file instead of waiting for it. Prefix commands that might run longer than two minutes ' +
+    'with timeout 120. ' + network;
+}
 const map = object => object && typeof object === 'object' && !Array.isArray(object) ? object : {};
 const optionalSdkFields = new Set(['provider', 'reasoning', 'text', 'include', 'metadata', 'prompt',
   'promptCacheKey', 'promptCacheOptions', 'cacheControl', 'truncation', 'topLogprobs', 'safetyIdentifier',
@@ -146,7 +159,7 @@ export function sdkParameters(options, hasTools) {
     provider: Object.keys(provider).length ? provider : undefined,
     reasoning: Object.keys(reasoning).length ? reasoning : undefined,
     text: Object.keys(text).length ? text : undefined,
-    instructions: ctx => join(options.instructions, pinned.length ? skillGuidance : '',
+    instructions: ctx => join(options.instructions, shellGuidance(options), pinned.length ? skillGuidance : '',
       pinnedInstructions, turnChanged(ctx) ? prefs.followUpInstructions : '') || undefined,
     temperature: ctx => maybe(turnChanged(ctx) ? prefs.followUpTemperature ?? options.baseTemperature ?? options.temperature
       : options.baseTemperature ?? options.temperature, ['temperature'], ctx),
