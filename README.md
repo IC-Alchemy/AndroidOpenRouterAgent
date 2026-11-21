@@ -29,8 +29,20 @@ Custom providers support text chat and pinned skills. Select OpenRouter to use t
 - **Settings** controls hosted shell, search, date and time, web fetch, and the local device time-zone tool. The SDK dispatches local tools and feeds their results back to the model.
 - **Advanced agent settings** includes a step limit, an optional USD stop threshold, and temperature for models that advertise that parameter. The SDK and provider check the threshold between steps. A step in progress can take the total above the threshold.
 - The app supports one HTTPS remote MCP server with no authentication or a separate bearer token. The server must accept cross-origin requests from `https://agent-runtime.invalid`. The app shows the tool name, endpoint, and arguments before each call and offers **Allow once** or **Decline**. Tool discovery occurs on connection.
-- **Additional server tools** accepts an array of SDK configuration objects using camelCase fields. Supported types include `openrouter:web_fetch`, `openrouter:image_generation`, `openrouter:experimental__search_models`, `openrouter:advisor`, `openrouter:subagent`, and `openrouter:fusion`. For example, `[{"type":"openrouter:advisor","parameters":{"model":"<allowed-model-id>"}}]`. Some tools require model-specific parameters or workspace permissions.
+- **Additional server tools** accepts an array of SDK configuration objects using camelCase fields. Supported types include `openrouter:web_fetch`, `openrouter:image_generation`, `openrouter:experimental__search_models`, `openrouter:advisor`, `openrouter:subagent`, and `openrouter:fusion`. For example, `[{"type":"openrouter:advisor","parameters":{"model":"<allowed-model-id>"}}]`. Existing subagent entries in this field also appear in the Subagents editor.
 - **Stop waiting** aborts the local agent run and restores the draft. A submitted hosted tool may continue on OpenRouter.
+
+### Delegate work to subagents
+
+1. Select OpenRouter as the provider. Open **Settings → OpenRouter Server Tools → Subagents → Add subagent**.
+2. Enter an optional name, worker model ID, and instructions. You can add several uniquely named workers and one unnamed default worker. If you leave the model blank, OpenRouter uses the main model.
+3. Tap **Apply**, then **Save** in Settings. In chat, try asking the main model to delegate a focused task, such as extracting action items from meeting notes and returning them as a checklist. The model decides when to delegate. **Activity** shows each worker's task, status, result or error, and any inherited function calls.
+
+Use **Advanced worker settings** to set `maxToolCalls` (1–25), `maxCompletionTokens`, `temperature` (0–2), or `reasoning` (`effort` and `maxTokens`). Add hosted tools in `tools`, for example `{"tools":[{"type":"openrouter:web_search"}],"maxToolCalls":3}`. Parameters nested inside those tool definitions use their own API field names.
+
+The experimental `inheritedFunctionNames` list gives the worker access to specific enabled Android function tools by name. For example, use `{"inheritedFunctionNames":["device_time_zone"]}` with the local time-zone tool enabled. Use `"inheritFunctions":true` to inherit all the functions available in the request. Inherited webhook and MCP calls still ask for approval in the app. OpenRouter resumes the worker after Android returns the tool result.
+
+The worker sees the task description supplied by the main model. Worker usage is included in the run's reported totals and billed at the worker model's rates. Workspace tool permissions apply. [OpenRouter Subagent documentation](https://openrouter.ai/docs/guides/features/server-tools/subagent)
 
 ## Build and test
 

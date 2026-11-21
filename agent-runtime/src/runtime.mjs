@@ -3,6 +3,7 @@ import { OpenRouter, deserializeConversationState, serializeConversationState,
 import { HTTPClient } from '@openrouter/sdk/lib/http';
 import { customTool, sdkParameters, skillLoader } from './customization.mjs';
 import { streamObserver } from './stream-events.mjs';
+import { discardUnfinishedSubagents, subagentConfig, subagentType } from './subagent.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
 
@@ -11,7 +12,6 @@ const allowedServerTools = new Set([
   'openrouter:image_generation',
   'openrouter:experimental__search_models',
   'openrouter:advisor',
-  'openrouter:subagent',
   'openrouter:fusion',
 ]);
 
@@ -42,7 +42,14 @@ export function buildTools(options, events, signal) {
     }));
   }
   const seen = new Set(tools.map(t => t.config?.type));
+  const subagentNames = new Set();
   for (const item of options.extraTools ?? []) {
+    if (item?.type === subagentType) {
+      const config = subagentConfig(item, subagentNames);
+      const id = config.parameters?.name ?? '';
+      tools.push(serverTool(config, { id: 'server:openrouter:subagent:' + id }));
+      continue;
+    }
     if (!item || !allowedServerTools.has(item.type)) throw new Error('Unsupported additional server tool.');
     if (seen.has(item.type)) throw new Error('Each additional server tool can appear once.');
     seen.add(item.type);
@@ -147,7 +154,8 @@ export async function runAgent(options, events, signal, createClient = opts => n
       appTitle: 'OpenRouter Sandbox Agent',
       ...(events.fetcher ? { httpClient: new HTTPClient({ fetcher: events.fetcher }) } : {}),
     });
-    const loadedState = options.state ? deserializeConversationState(options.state) : null;
+    const loadedState = options.state ? discardUnfinishedSubagents(deserializeConversationState(options.state)) : null;
+    const previousMessages = loadedState?.messages ?? discardUnfinishedSubagents({ messages: options.history }).messages;
     let savedState = loadedState;
     const state = {
       load: async () => savedState,
@@ -155,7 +163,7 @@ export async function runAgent(options, events, signal, createClient = opts => n
     };
     observe.phase('requesting');
     result = client.callModel({
-      ...buildCall(options, tools, events.approval, signal, observe),
+      ...buildCall({ ...options, history: previousMessages }, tools, events.approval, signal, observe),
       state,
     }, { signal, retries: { strategy: 'none' } });
     events.register?.(result);
@@ -174,8 +182,9 @@ export async function runAgent(options, events, signal, createClient = opts => n
         }
       })(),
     ]);
-    observe.phase('finishing');
     const response = await result.getResponse();
+    observe.settleSubagents('incomplete');
+    observe.phase('finishing');
     const [usage, finalState, repetition] = await Promise.all([
       result.getUsage(), result.getState(), result.getDoomLoopVerdict(),
     ]);
@@ -183,12 +192,12 @@ export async function runAgent(options, events, signal, createClient = opts => n
       const key = item.id ?? (item.callId ? item.type + ':' + item.callId : ++itemNumber);
       items.set(key, item);
     }
-    const previousMessages = Array.isArray(loadedState?.messages) ? loadedState.messages : options.history;
     const history = Array.isArray(finalState.messages) && finalState.messages.length >= previousMessages.length + 1
       ? finalState.messages
       : [...previousMessages,
           { type: 'message', role: 'user', content: options.prompt },
           ...Array.from(items.values()).filter(item => item.type === 'message')];
+    const conversation = discardUnfinishedSubagents({ ...finalState, messages: history });
     return {
       response: normalize({
         status: response.status,
@@ -206,9 +215,12 @@ export async function runAgent(options, events, signal, createClient = opts => n
           cachedTokens: usage.cachedTokens,
         },
       }),
-      history,
-      state: serializeConversationState({ ...finalState, messages: history }),
+      history: conversation.messages,
+      state: serializeConversationState(conversation),
     };
+  } catch (error) {
+    observe.settleSubagents(signal.aborted ? 'cancelled' : 'failed');
+    throw error;
   } finally {
     if (signal.aborted) await result?.cancel().catch(() => {});
     if (mcp) await mcp.close().catch(() => {});

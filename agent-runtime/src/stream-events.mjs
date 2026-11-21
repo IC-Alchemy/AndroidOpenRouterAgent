@@ -1,4 +1,5 @@
 const terminal = new Set(['completed', 'failed', 'cancelled', 'timed_out', 'expired', 'incomplete', 'declined']);
+const waitingForClientTools = 'waiting for client tools';
 
 function label(name) {
   return String(name || 'Tool').replace(/^openrouter:|^remote_/g, '').replaceAll('_', ' ');
@@ -13,8 +14,20 @@ function preview(value, limit = 1200) {
   return text?.length > limit ? text.slice(0, limit) + '…' : text;
 }
 
+function activityStatus(previous, status) {
+  return terminal.has(previous) && (!terminal.has(status) || (previous !== 'completed' && status === 'completed'))
+    ? previous : status;
+}
+
+function workerTitle(worker) {
+  const name = worker?.name ?? worker?.taskName;
+  return name ? `Subagent · ${name}` : 'Subagent';
+}
+
 export function streamObserver(events) {
   const tools = new Map();
+  const subagents = new Map();
+  const subagentIds = new Map();
   const textParts = new Map();
   const summaryParts = new Map();
   const counts = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, cost: 0 };
@@ -24,18 +37,61 @@ export function streamObserver(events) {
   let lastPhase;
   let lastPulse = 0;
 
-  function tool(id, name, status, detail) {
+  function tool(id, name, status, detail, parentId) {
     if (!id) return;
     const previous = tools.get(id);
+    const baseName = name ? label(name) : previous?.baseName ?? 'Tool';
+    const workerId = parentId ?? previous?.workerId;
+    const displayName = subagents.has(id) ? workerTitle(subagents.get(id)) : baseName;
     const next = {
-      id, name: name ? label(name) : previous?.name ?? 'Tool',
-      status: terminal.has(previous?.status) && (!terminal.has(status) || (previous.status !== 'completed' && status === 'completed')) ? previous.status : status,
+      id, name: workerId ? `${displayName} · ${workerTitle(subagents.get(workerId))}` : displayName,
+      status: activityStatus(previous?.status, status),
       detail: detail === undefined ? previous?.detail : preview(detail),
     };
-    if (previous && previous.name === next.name && previous.status === next.status && previous.detail === next.detail) return;
     if (!previous && tools.size >= 80) tools.delete(tools.keys().next().value);
-    tools.set(id, next);
+    tools.set(id, { ...next, baseName, workerId });
+    if (previous && previous.name === next.name && previous.status === next.status && previous.detail === next.detail) return;
     events.update?.({ kind: 'tool', ...next });
+  }
+
+  function updateSubagent(id, status, item = {}) {
+    const previous = subagents.get(id);
+    const nextStatus = activityStatus(previous?.status, status);
+    if (nextStatus !== status) return;
+    const worker = {
+      status,
+      name: preview(item.name || item.instanceName || item.instance_name, 64) ?? previous?.name,
+      model: preview(item.model, 160) ?? previous?.model,
+      taskName: preview(item.taskName ?? item.task_name, 128) ?? previous?.taskName,
+      task: preview(item.taskDescription ?? item.task_description, 320) ?? previous?.task,
+      outcome: preview(item.outcome, 1200) ?? previous?.outcome,
+      error: preview(item.error, 1200) ?? previous?.error,
+    };
+    subagents.set(id, worker);
+    tool(id, undefined, status, [
+      worker.model && `Model ${worker.model}`,
+      worker.taskName && `Task ${worker.taskName}`,
+      worker.task,
+      worker.error ? `Error\n${worker.error}` : worker.outcome && `Outcome\n${worker.outcome}`,
+    ].filter(Boolean).join('\n'));
+  }
+
+  function readSubagent(item, callId) {
+    const id = subagentIds.get(callId) ?? subagentIds.get(item.id) ?? callId ?? item.id;
+    if (!id) return;
+    // Added items may have only an item ID. Resumed items may have a new item ID and the same call ID.
+    if (item.id) subagentIds.set(item.id, id);
+    if (callId) subagentIds.set(callId, id);
+    let status = subagents.get(id)?.status ?? 'running';
+    if (item.status === 'error' || item.error) status = 'failed';
+    else if (terminal.has(item.status)) status = item.status;
+    updateSubagent(id, status, item);
+  }
+
+  function settleSubagents(status, detail) {
+    for (const [id, worker] of subagents) {
+      if (!terminal.has(worker.status)) updateSubagent(id, status, { error: detail });
+    }
   }
 
   function text(map, id, value, type, snapshot = false) {
@@ -71,7 +127,8 @@ export function streamObserver(events) {
 
   function readItem(item, ready) {
     if (!item) return;
-    const id = item.callId || item.id;
+    const callId = item.callId ?? item.call_id;
+    const id = callId || item.id;
     if (item.type === 'message') {
       if (ready) item.content?.forEach((part, index) => {
         if (part.type === 'output_text' || part.type === 'refusal') {
@@ -93,7 +150,15 @@ export function streamObserver(events) {
     }
     if (item.type === 'function_call') {
       phase('tools');
-      tool(id, item.name, 'preparing', ready ? item.arguments : undefined);
+      const workerCallId = item.subagentId ?? item.subagent_id;
+      const workerId = subagentIds.get(workerCallId) ?? workerCallId;
+      if (workerId && !tools.get(id)?.workerId) updateSubagent(workerId, waitingForClientTools);
+      tool(id, item.name, 'preparing', ready ? item.arguments : undefined, workerId);
+      return;
+    }
+    if (item.type === 'openrouter:subagent') {
+      phase('tools');
+      readSubagent(item, callId);
       return;
     }
     if (item.type?.startsWith('openrouter:') || /_call$/.test(item.type ?? '')) {
@@ -124,10 +189,18 @@ export function streamObserver(events) {
     const itemId = event.itemId ?? event.item_id;
     const part = itemId + ':' + index;
     switch (event.type) {
-      case 'turn.start':
-        step = (event.turnNumber ?? 0) + 1;
+      case 'turn.start': {
+        const nextStep = (event.turnNumber ?? 0) + 1;
+        const continuation = nextStep > step;
+        step = nextStep;
         phase('requesting');
+        if (continuation) {
+          for (const [id, worker] of subagents) {
+            if (worker.status === waitingForClientTools) updateSubagent(id, 'running');
+          }
+        }
         break;
+      }
       case 'turn.end':
         break;
       case 'response.created':
@@ -198,6 +271,7 @@ export function streamObserver(events) {
       case 'response.failed':
         usage(event.response);
         event.response?.output?.forEach(item => readItem(item, true));
+        if (event.type === 'response.failed') settleSubagents('failed', event.response?.error);
         break;
       default: {
         const match = /^response\.(web_search_call|file_search_call|mcp_call|mcp_list_tools|code_interpreter_call|image_generation_call|fusion_call(?:\.panel|\.analysis)?)\.([a-z_]+)$/.exec(event.type);
@@ -212,10 +286,10 @@ export function streamObserver(events) {
   }
 
   function toolStarted(name, status = 'running', detail) {
-    const row = Array.from(tools.values()).reverse().find(row => row.name === label(name) && !terminal.has(row.status));
+    const row = Array.from(tools.values()).reverse().find(row => row.baseName === label(name) && !terminal.has(row.status));
     if (row) tool(row.id, name, status, detail);
     phase('tools');
   }
 
-  return { observe, phase, toolStarted };
+  return { observe, phase, toolStarted, settleSubagents };
 }

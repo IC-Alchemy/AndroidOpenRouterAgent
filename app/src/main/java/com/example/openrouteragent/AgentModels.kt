@@ -2,7 +2,6 @@ package com.example.openrouteragent
 
 import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import org.json.JSONArray
 import java.util.UUID
 
 /**
@@ -156,8 +155,7 @@ fun AgentConfig.settingsError(): String? = when {
         customTools.any { it.problem() != null } -> "Check your custom tools for invalid or duplicate names."
     savedSkills.size > 32 || savedSkills.map { it.name }.distinct().size != savedSkills.size ||
         savedSkills.any { it.name == GUIDE_NAME || it.problem() != null } -> "Check your saved skills for invalid or duplicate names."
-    !validHostedTools(extraToolsJson) -> "Enter a JSON array of supported server tools."
-    else -> sdk.problem()
+    else -> hostedToolsError(extraToolsJson) ?: sdk.problem()
 }
 
 @Serializable
@@ -180,14 +178,3 @@ fun AgentConfig.agentToolsEnabled(): Boolean =
     sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||
         customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
         (extraToolsJson.isNotBlank() && extraToolsJson.replace(Regex("\\s"), "") != "[]"))
-
-private val configurableServerTools = setOf(
-    "openrouter:web_fetch", "openrouter:image_generation", "openrouter:experimental__search_models",
-    "openrouter:advisor", "openrouter:subagent", "openrouter:fusion"
-)
-
-private fun validHostedTools(json: String): Boolean = json.isBlank() || runCatching {
-    val items = JSONArray(json)
-    val types = (0 until items.length()).map { items.getJSONObject(it).getString("type") }
-    types.distinct().size == types.size && types.all { it in configurableServerTools }
-}.getOrDefault(false)

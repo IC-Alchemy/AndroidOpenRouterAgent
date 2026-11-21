@@ -1144,7 +1144,7 @@ private fun SettingsBottomSheet(
     var temperature by remember { mutableStateOf(initialConfig.temperature?.toString().orEmpty()) }
     var mcpUrl by remember { mutableStateOf(initialConfig.mcpUrl) }
     var mcpToken by remember { mutableStateOf(initialConfig.mcpToken) }
-    var toolsJson by remember { mutableStateOf(initialConfig.extraToolsJson) }
+    var toolsJson by rememberSaveable { mutableStateOf(initialConfig.extraToolsJson) }
     var advanced by rememberSaveable { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -1252,6 +1252,7 @@ private fun SettingsBottomSheet(
             )
 
             SettingsToggleRow("Web fetch", "Reads pages supplied by URL.", webFetch, { webFetch = it })
+            SubagentsSettings(toolsJson, enabled = !working, onChange = { toolsJson = it; error = null })
             SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
                 { deviceTools = it })
 
@@ -1308,9 +1309,9 @@ private fun SettingsBottomSheet(
                         keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                         singleLine = true)
                 }
-                OutlinedTextField(toolsJson, { toolsJson = it }, label = { Text("Additional server tools (JSON)") },
-                    supportingText = { Text("Supports model search, image generation, advisor, subagent, and fusion.") },
-                    modifier = Modifier.fillMaxWidth(), minLines = 2)
+                OutlinedTextField(toolsJson, { toolsJson = it; error = null }, label = { Text("Additional server tools (JSON)") },
+                    supportingText = { Text("Supports web fetch, model search, image generation, advisor, subagent, and fusion.") },
+                    modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 8)
             }
 
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
