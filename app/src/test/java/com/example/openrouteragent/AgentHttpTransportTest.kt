@@ -96,7 +96,7 @@ class AgentHttpTransportTest {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
         server.enqueue(sse("data: [DONE]\n\n"))
         val outcome = run.start()
-        assertEquals("end", outcome.kind)
+        assertEquals("${outcome.value} · retries=${run.retries} · logs=${run.logs}", "end", outcome.kind)
         assertEquals(2, server.requestCount)
         assertEquals(1, run.retries.size)
     }
