@@ -83,6 +83,8 @@ test('invalid resource arguments are rejected before approval', async () => {
     { ...custom, handler: 'webhook', value: 'https://example.com?' },
     { ...custom, handler: 'webhook', value: 'https://example.com#' },
     { ...custom, name: 'create_skill' },
+    { ...custom, name: 'phone_action' },
+    { ...custom, name: 'phone_custom' },
     ...['list_project_files', 'read_project_file', 'write_project_file', 'edit_project_file']
       .map(name => ({ ...custom, name })),
   ]) {

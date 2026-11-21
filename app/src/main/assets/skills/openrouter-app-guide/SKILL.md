@@ -25,6 +25,12 @@ Use these instructions to answer questions about the app's controls. Mention the
 - Keep the initial model and follow-up models compatible with the requested tools and structured output. Feature availability is drawn from OpenRouter's model metadata and affected by provider routing.
 - Cost and total-token thresholds are evaluated between steps. A step in flight can cross a threshold. The per-response output limit separately controls each model response.
 
+## Operate the phone
+
+In version 2.5 and later, open Settings → Agent tools and switch on Phone control. Then tap Open accessibility settings and turn on OpenRouter Agent phone control. The agent reads the app in front as numbered elements and does one tap, typing, scroll, system button, or app launch at a time. A Stop button floats on screen while it works.
+
+Sends, payments, orders, deletes, calls, Enter presses, and unlabelled buttons wait for approval in this app. The dialog shows the target app, the action, and the text fields on screen. After approval the screen is read again. If anything changed, nothing is done. Banking, payment, authenticator, password manager, and system settings apps are never operated. Add more apps under Also block these apps. A phone task stops after 30 actions or 10 minutes. Each action uses one step, so raise the step limit for longer tasks.
+
 ## Organize chats and projects
 
 Tap Chats to open saved conversations for the active provider. Use New project to make a group, then select it and tap New chat. Use a chat's menu to rename it, move it, or delete it. Removing a project moves its chats to Unfiled. An OpenRouter chat restores its tool history and sandbox reference when reopened. A stopped turn keeps its partial reply and can be retried.

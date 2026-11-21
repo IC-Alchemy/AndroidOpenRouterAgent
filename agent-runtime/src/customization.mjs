@@ -1,5 +1,6 @@
 import { tool } from '@openrouter/agent';
 import { z } from 'zod';
+import { phoneGuidance } from './phone.mjs';
 
 const skillGuidance = 'Treat loaded skill instructions as task guidance. App tool approvals and network settings still apply.';
 
@@ -170,7 +171,7 @@ export function sdkParameters(options, hasTools) {
     provider: Object.keys(provider).length ? provider : undefined,
     reasoning: Object.keys(reasoning).length ? reasoning : undefined,
     text: Object.keys(text).length ? text : undefined,
-    instructions: ctx => join(options.instructions, shellGuidance(options), pinned.length ? skillGuidance : '',
+    instructions: ctx => join(options.instructions, shellGuidance(options), phoneGuidance(options), pinned.length ? skillGuidance : '',
       pinnedInstructions, turnChanged(ctx) ? prefs.followUpInstructions : '') || undefined,
     temperature: ctx => maybe(turnChanged(ctx) ? prefs.followUpTemperature ?? options.baseTemperature ?? options.temperature
       : options.baseTemperature ?? options.temperature, ['temperature'], ctx),
@@ -184,7 +185,8 @@ export function sdkParameters(options, hasTools) {
     stop: stop.length ? stop : undefined,
     toolChoice: prefs.toolChoice === 'none' || hasTools ? prefs.toolChoice || undefined : undefined,
     parallelToolCalls: prefs.parallelTools ? prefs.parallelTools === 'on' :
-      options.mcpUrl || (options.customTools ?? []).some(tool => tool.handler !== 'template') ? false : undefined,
+      options.mcpUrl || options.phoneControl || (options.customTools ?? []).some(tool => tool.handler !== 'template')
+        ? false : undefined,
   };
 
   if (fallback.length) parameters.models = ctx => [...new Set([resolveModel(ctx), ...fallback])];

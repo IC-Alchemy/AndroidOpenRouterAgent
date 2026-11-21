@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="phone_control_label">OpenRouter Agent phone control</string>
+    <string name="phone_control_description">Lets the OpenRouter agent read the screen and tap, type and scroll in other apps when you switch on Phone control and ask it to. Sends, payments, deletes, calls and unlabelled buttons wait for your approval. Banking, payment, authenticator, password manager and system settings apps are never operated. Screen text goes only to the model you selected.</string>
+    <string name="phone_control_stop">Stop</string>
+    <string name="phone_control_stop_description">Stop the agent</string>
+</resources>

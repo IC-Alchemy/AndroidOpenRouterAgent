@@ -81,6 +81,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -116,6 +117,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CancellationException
@@ -475,13 +479,22 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         var answer by rememberSaveable(approval.decision) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { agent.decideTool(false) },
-            title = { Text(if (approval.asksUser) approval.name else "Allow ${approval.name}?") },
+            title = { Text(when {
+                approval.asksUser -> approval.name
+                approval.phone -> "${approval.name}?"
+                else -> "Allow ${approval.name}?"
+            }) },
             text = {
                 Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (approval.url.isNotBlank()) CopyableText(approval.url)
                     if (approval.savesSettings) Text("The change will be saved and available for future messages.")
-                    OutlinedSection(title = "Arguments") {
+                    if (approval.phone) {
+                        Text("The agent wants to do this on your phone. Check the app, the recipient and the text. " +
+                            "If anything changes before it runs, nothing is done and you are asked again.",
+                            style = MaterialTheme.typography.bodySmall)
+                        OutlinedSection(title = "Details") { CopyableText(approval.arguments) }
+                    } else OutlinedSection(title = "Arguments") {
                         CopyableText(approval.arguments, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
                     }
                     if (approval.asksUser) EditField("Your answer", answer, { answer = it }, 3)
@@ -493,13 +506,14 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     Text(when {
                         approval.asksUser -> "Send answer"
                         approval.savesSettings -> "Save change"
+                        approval.phone -> "Do it"
                         else -> "Allow once"
                     })
                 }
             },
             dismissButton = {
                 TextButton(onClick = { agent.decideTool(false) }) {
-                    Text(if (approval.asksUser) "Skip" else "Deny")
+                    Text(if (approval.asksUser) "Skip" else if (approval.phone) "Not now" else "Deny")
                 }
             },
         )
@@ -1247,6 +1261,8 @@ private fun SettingsBottomSheet(
     var webFetch by remember { mutableStateOf(initialConfig.webFetch) }
     var workspaceFiles by remember { mutableStateOf(initialConfig.enableWorkspaceFiles) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
+    var phoneControl by remember { mutableStateOf(initialConfig.phoneControl) }
+    var phoneBlockedApps by remember { mutableStateOf(initialConfig.phoneBlockedApps) }
     var maxSteps by remember { mutableStateOf(initialConfig.maxSteps.toString()) }
     var maxCost by remember { mutableStateOf(initialConfig.maxCost?.toString().orEmpty()) }
     var temperature by remember { mutableStateOf(initialConfig.temperature?.toString().orEmpty()) }
@@ -1261,7 +1277,8 @@ private fun SettingsBottomSheet(
     val uriHandler = LocalUriHandler.current
     val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
         enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
-        deviceTools = deviceTools, allowSandboxNetwork = allowNetwork,
+        deviceTools = deviceTools, phoneControl = phoneControl,
+        phoneBlockedApps = phoneBlockedApps.trim(), allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
         mcpToken = mcpToken, extraToolsJson = toolsJson)
@@ -1361,6 +1378,11 @@ private fun SettingsBottomSheet(
                     SubagentsSettings(toolsJson, enabled = !working, onChange = { toolsJson = it; error = null })
                     SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
                         { deviceTools = it })
+                    SettingsToggleRow("Phone control",
+                        "Lets the agent read the screen and tap, type and scroll in your other apps. Sends, " +
+                            "payments, deletes, calls and unlabelled buttons wait for your approval.",
+                        phoneControl, { phoneControl = it })
+                    if (phoneControl) PhoneControlSettings(phoneBlockedApps) { phoneBlockedApps = it }
 
                     if (enableShell) {
                         SettingsToggleRow(
@@ -1454,6 +1476,46 @@ private fun SettingsBottomSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PhoneControlSettings(blockedApps: String, onBlockedAppsChange: (String) -> Unit) {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(PhoneControlService.isEnabled(context)) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) enabled = PhoneControlService.isEnabled(context)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            if (enabled) "The phone-control accessibility service is on."
+            else "Turn on “OpenRouter Agent phone control” in Android accessibility settings to use this tool.",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        )
+        TextButton(onClick = { PhoneControlService.openSettings(context) }) {
+            Text(if (enabled) "Accessibility settings" else "Open accessibility settings")
+        }
+        Text(
+            "The agent reads the screen as text, one action at a time, and shows a Stop button while it works. " +
+                "Banking, payment, authenticator, password manager and system settings apps are never operated. " +
+                "Screen text goes to the selected model. A phone task stops after 30 actions or 10 minutes. " +
+                "Raise the step limit under Advanced if tasks stop early.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        CopyableOutlinedTextField(
+            value = blockedApps,
+            onValueChange = onBlockedAppsChange,
+            label = { Text("Also block these apps (names or package IDs, comma-separated)") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+        )
     }
 }
 

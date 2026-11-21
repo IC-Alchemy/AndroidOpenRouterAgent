@@ -70,7 +70,9 @@ const actionDefinitions = {
     }),
     validate(args) {
       const { name, schema, handler, value } = args;
-      if (name.startsWith('remote_') || reservedCustomNames.has(name)) throw new Error('Choose a different custom tool name.');
+      if (name.startsWith('remote_') || name.startsWith('phone_') || reservedCustomNames.has(name)) {
+        throw new Error('Choose a different custom tool name.');
+      }
       if (handler === 'template' && !value?.trim()) throw new Error('Enter a response template.');
       if (handler === 'ask' && value?.trim()) throw new Error('The ask handler takes no value.');
       if (handler === 'webhook') webhookEndpoint(value);

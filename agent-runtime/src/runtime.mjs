@@ -6,6 +6,7 @@ import { streamObserver } from './stream-events.mjs';
 import { discardUnfinishedSubagents, subagentConfig, subagentType } from './subagent.mjs';
 import { fileInstructions, projectFileTools } from './project-files.mjs';
 import { resourceActionNames, resourceActionTools } from './resource-actions.mjs';
+import { phoneTools } from './phone.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
 
@@ -45,6 +46,7 @@ export function buildTools(options, events, signal) {
       }),
     }));
   }
+  if (options.phoneControl && events?.phone) tools.push(...phoneTools(events.phone));
   const seen = new Set(tools.map(t => t.config?.type));
   const subagentNames = new Set();
   for (const item of options.extraTools ?? []) {

@@ -22,6 +22,8 @@ data class AgentConfig(
     val webFetch: Boolean = false,
     val enableWorkspaceFiles: Boolean = false,
     val deviceTools: Boolean = false,
+    val phoneControl: Boolean = false,
+    val phoneBlockedApps: String = "",
     val mcpUrl: String = "",
     val mcpToken: String = "",
     val maxSteps: Int = 12,
@@ -156,6 +158,7 @@ fun AgentConfig.settingsError(): String? = when {
         customTools.any { it.problem() != null } -> "Check your custom tools for invalid or duplicate names."
     savedSkills.size > 32 || savedSkills.map { it.name }.distinct().size != savedSkills.size ||
         savedSkills.any { it.name == GUIDE_NAME || it.problem() != null } -> "Check your saved skills for invalid or duplicate names."
+    phoneBlockedApps.length > 2_000 -> "Enter a shorter list of blocked apps."
     else -> hostedToolsError(extraToolsJson) ?: sdk.problem()
 }
 
@@ -177,5 +180,5 @@ data class InterruptedTurn(val prompt: String, val reply: String, val reasoningS
 
 fun AgentConfig.agentToolsEnabled(): Boolean =
     sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||
-        enableWorkspaceFiles || customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
+        enableWorkspaceFiles || phoneControl || customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
         (extraToolsJson.isNotBlank() && extraToolsJson.replace(Regex("\\s"), "") != "[]"))

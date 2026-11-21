@@ -24,7 +24,7 @@ data class CustomAgentTool(
 
     internal fun problem(strictSchema: Boolean): String? = when {
         !Regex("[a-z][a-z0-9_]{0,62}").matches(name) || name.startsWith("remote_") ||
-            name in setOf("load_skill", "device_time_zone") ->
+            name in setOf("load_skill", "device_time_zone") || name.startsWith("phone_") ->
             "Use a unique name with lowercase letters, digits, and underscores."
         description.isBlank() || description.length > 1024 -> "Enter a purpose of 1–1,024 characters."
         schema.length > 8192 || !validInputSchema(schema, strictSchema) -> "Enter a JSON object schema with supported properties."

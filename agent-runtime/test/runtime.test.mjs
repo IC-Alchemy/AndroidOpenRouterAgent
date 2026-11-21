@@ -61,16 +61,18 @@ async function bundledRuntime(AndroidAgent) {
   return browser.AgentRuntime;
 }
 
-test('the bundled SDK waits for Android to save a file and a subagent before reporting success',
+test('the bundled SDK handles project files, subagent approval and phone control together',
   { timeout: 5000 }, async () => {
     const events = [];
     const requests = [];
+    const phoneCalls = [];
     const responses = new Map();
     const fileArgs = { path: 'notes/plan.md', text: 'Initial plan.' };
     const subagentArgs = { name: 'Editor', model: 'mock/worker', advancedJson: '{"maxToolCalls":3}' };
     const call = (name, args, index) => ({ type: 'function_call', id: 'item_' + index, call_id: 'call_' + index,
       name, arguments: JSON.stringify(args), status: 'completed' });
     const outputs = [call('write_project_file', fileArgs, 1), call('create_subagent', subagentArgs, 2),
+      call('phone_action', { action: 'back' }, 3),
       answer('msg_created', 'The file and subagent are saved.')];
     const runtime = await bundledRuntime({
       post(message) {
@@ -97,10 +99,15 @@ test('the bundled SDK waits for Android to save a file and a subagent before rep
         responses.delete(requestId);
         queueMicrotask(() => runtime.http(id, requestId, response ? 'chunk' : 'end', response ?? null));
       },
+      phone(id, requestId, json) {
+        phoneCalls.push(JSON.parse(json));
+        queueMicrotask(() => runtime.phone(id, requestId, JSON.stringify({ ok: true, result: 'Done' })));
+      },
       cancelHttp() {},
     });
-    await runtime.start({ ...base, id: 'app-actions', appActions: true, projectFolder: 'projects/test' });
-    assert.equal(requests.length, 3);
+    await runtime.start({ ...base, id: 'app-actions', appActions: true, projectFolder: 'projects/test',
+      phoneControl: true, shell: true });
+    assert.equal(requests.length, 4);
     const actions = events.filter(event => event.type === 'app_request').map(event =>
       [event.value.name, event.value.args]);
     assert.deepEqual(actions, [['write_project_file', fileArgs], ['create_subagent', subagentArgs]]);
@@ -111,6 +118,11 @@ test('the bundled SDK waits for Android to save a file and a subagent before rep
     assert.match(requests[1].input.find(item => item.type === 'function_call_output').output, /notes\/plan.md/);
     assert.match(requests[2].input.find(item => item.call_id === 'call_2' && item.type === 'function_call_output').output,
       /\"name\":\"Editor\"/);
+    assert.deepEqual(phoneCalls, [{ type: 'action', action: 'back' }]);
+    assert.match(requests[0].instructions, /untrusted_screen/);
+    assert.match(requests[0].instructions, /projects\/test/);
+    assert.match(requests[3].input.find(item => item.call_id === 'call_3' && item.type === 'function_call_output').output,
+      /Done/);
     assert.ok(events.some(event => event.type === 'done'));
   });
 
@@ -735,4 +747,62 @@ test('the ask-me tool pauses the SDK until a user answer arrives', { timeout: 70
     server.closeAllConnections();
     server.close();
   }
+});
+
+test('phone control tools reach Android through the bridge, one call at a time, with untrusted-screen guidance',
+  { timeout: 7000 }, async () => {
+    const requests = [];
+    const server = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const bytes of req) chunks.push(bytes);
+      requests.push(JSON.parse(Buffer.concat(chunks)));
+      const item = requests.length === 1 ? {
+        type: 'function_call', name: 'phone_action', call_id: 'call_p', id: 'fc_p',
+        arguments: '{"action":"tap","element":3}', status: 'completed',
+      } : answer('msg_' + requests.length, 'Tapped it.');
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.end(stream(requests.length, item));
+    }).listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const createClient = options => new OpenRouter({ ...options, serverURL: 'http://127.0.0.1:' + server.address().port + '/api/v1' });
+      const calls = [];
+      const events = {
+        text: () => {}, approval: async () => false,
+        phone: async request => {
+          calls.push(request);
+          return { ok: true, result: 'Done.', screen: '<untrusted_screen>\nApp: Notes\n</untrusted_screen>' };
+        },
+      };
+      await runAgent({ ...base, phoneControl: true, prompt: 'Tap the third item' }, events,
+        new AbortController().signal, createClient);
+      const names = requests[0].tools.map(tool => tool.name ?? tool.type);
+      assert.deepEqual(names.filter(name => name.startsWith('phone_')), ['phone_screen', 'phone_apps', 'phone_action']);
+      assert.equal(requests[0].parallel_tool_calls, false);
+      assert.match(requests[0].instructions, /untrusted_screen/);
+      assert.deepEqual(calls, [{ type: 'action', action: 'tap', element: 3 }]);
+      const output = requests[1].input.find(item => item.type === 'function_call_output');
+      assert.equal(output.call_id, 'call_p');
+      assert.match(output.output, /App: Notes/);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+test('phone tools are absent without the setting or an Android bridge, and the bridge rejects on cancel', async () => {
+  assert.equal(buildTools({ phoneControl: true }, {}).length, 0);
+  assert.equal(buildTools({ phoneControl: true }, { phone: async () => ({}) }).length, 3);
+  assert.equal(buildTools({ phoneControl: false }, { phone: async () => ({}) }).length, 0);
+  const { createPhoneBridge } = await import('../src/phone.mjs');
+  const sent = [];
+  const controller = new AbortController();
+  const phone = createPhoneBridge('run', { phone: (...args) => sent.push(args) }, controller.signal);
+  const first = phone.call({ type: 'screen' });
+  assert.deepEqual(sent[0].slice(0, 2), ['run', '1']);
+  phone.receive('1', '{"ok":true,"screen":"x"}');
+  assert.deepEqual(await first, { ok: true, screen: 'x' });
+  const second = phone.call({ type: 'action', action: 'back' });
+  controller.abort(new Error('stopped'));
+  await assert.rejects(second, /stopped/);
 });
