@@ -22,8 +22,6 @@ data class AgentConfig(
     val enableDateTime: Boolean = true,
     val webFetch: Boolean = false,
     val deviceTools: Boolean = false,
-    val phoneControl: Boolean = false,
-    val phoneBlockedApps: String = "",
     val mcpUrl: String = "",
     val mcpToken: String = "",
     val maxSteps: Int = 12,
@@ -158,7 +156,6 @@ fun AgentConfig.settingsError(): String? = when {
         customTools.any { it.problem() != null } -> "Check your custom tools for invalid or duplicate names."
     savedSkills.size > 32 || savedSkills.map { it.name }.distinct().size != savedSkills.size ||
         savedSkills.any { it.name == GUIDE_NAME || it.problem() != null } -> "Check your saved skills for invalid or duplicate names."
-    phoneBlockedApps.length > 2_000 -> "Enter a shorter list of blocked apps."
     !validHostedTools(extraToolsJson) -> "Enter a JSON array of supported server tools."
     else -> sdk.problem()
 }
@@ -180,7 +177,7 @@ data class Workspace(
 data class InterruptedTurn(val prompt: String, val reply: String, val reasoningSummary: String, val error: String?)
 
 fun AgentConfig.agentToolsEnabled(): Boolean =
-    sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools || phoneControl ||
+    sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||
         customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
         (extraToolsJson.isNotBlank() && extraToolsJson.replace(Regex("\\s"), "") != "[]"))
 

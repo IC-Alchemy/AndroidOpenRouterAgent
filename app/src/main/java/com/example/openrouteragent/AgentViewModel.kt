@@ -204,7 +204,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         }
         val priorWorkspace = workspace
         val currentConfig = if (toolsOff) config.copy(enableShellSandbox = false, enableWebSearch = false,
-            enableDateTime = false, webFetch = false, deviceTools = false, phoneControl = false, mcpUrl = "", mcpToken = "",
+            enableDateTime = false, webFetch = false, deviceTools = false, mcpUrl = "", mcpToken = "",
             extraToolsJson = "", customTools = emptyList(),
             sdk = config.sdk.copy(discoverSkills = false, toolChoice = "none")) else config
         activePrompt = prompt
@@ -473,17 +473,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         exportMessage = null
     }
 
-    // The phone-control overlay's Stop button ends the run, like Stop waiting.
-    private val stopFromOverlay: () -> Unit = {
-        viewModelScope.launch { if (activePrompt != null) cancelTurn() }
-    }
-
-    init {
-        PhoneControlService.onStopRequested = stopFromOverlay
-    }
-
     override fun onCleared() {
-        if (PhoneControlService.onStopRequested === stopFromOverlay) PhoneControlService.onStopRequested = null
         sdk.destroy()
         super.onCleared()
     }

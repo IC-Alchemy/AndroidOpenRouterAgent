@@ -51,7 +51,7 @@ npm run build
 npm test
 ```
 
-The APK builds to `app/build/outputs/apk/debug/app-debug.apk`. The mock tests cover phone-control approvals and protected apps, account-filtered model discovery, streamed text, hosted shell and file handling, local tool execution, MCP approval and denial, and tool history across turns. Live verification requires an OpenRouter API key.
+The APK builds to `app/build/outputs/apk/debug/app-debug.apk`. The mock tests cover account-filtered model discovery, streamed text, hosted shell and file handling, local tool execution, MCP approval and denial, and tool history across turns. Live verification requires an OpenRouter API key.
 
 API references [Agent SDK](https://openrouter.ai/docs/agent-sdk/call-model/overview) · [Account-filtered models](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails) · [Remote MCP tools](https://openrouter.ai/docs/agent-sdk/call-model/mcp-tools) · [Hosted shell](https://openrouter.ai/docs/guides/features/server-tools/shell)
 
@@ -64,28 +64,6 @@ The stream connects within 10 seconds and fails after 90 seconds without any byt
 The transcript follows the newest answer until you scroll back. Tap **Latest** to resume following. If you stop a run or the provider disconnects, the app keeps the partial reply in view. You can retry normally or retry with tools disabled for that request. Tool settings remain available for your next run.
 
 Touch and hold to select text in chat messages, tool output, file previews, or the message you’re composing. Adjust the Android selection handles and the selected text copies automatically. Use **Copy reply** to copy the entire response at once.
-
-## Phone control
-
-Phone control lets the agent operate your other apps. It reads the app in front as a numbered list of buttons, fields and text, then taps, types, scrolls, presses Back or Home, or opens an app, one action at a time. The design follows [OpenCyclone](https://github.com/Exorust/opencyclone)'s approval gate, without its hidden display or developer-shell helper. It needs no root and works on the visible screen.
-
-1. Open **Settings → Agent tools** and switch on **Phone control**.
-2. Tap **Open accessibility settings** and turn on **OpenRouter Agent phone control**.
-3. Ask, for example, “Open Messages and reply to Alex that I'm on my way.”
-
-While the agent works, a small overlay shows its current step and a **Stop** button.
-
-The rules below are enforced in Kotlin before each action. The model cannot skip them.
-
-- **Approval gate:** a tap on a button labelled Send, Pay, Buy, Order, Delete, Confirm, Submit, Post, Call, Install, or a similar word waits for approval. So do a tap on an unlabelled button and pressing Enter in a text field. The app comes to the front and shows the app, the action, the text fields on screen (such as the recipient and the message), and **Do it** or **Not now**. A locked phone cannot approve.
-- **Re-check after approval:** the app returns to the target app and reads the screen again. If the app, the target button or any typed text changed, nothing is done and the agent must ask again.
-- **Stale element numbers:** an action must name an element from the screen the agent last read. If that element changed, the action is refused and the agent gets the current screen.
-- **Protected apps:** banking, payment, wallet, authenticator, password manager, system settings, permission and installer screens are never read or operated. Add more apps under **Also block these apps**.
-- **No secrets:** the agent never types into password fields, and their contents are never shown to the model.
-- **Untrusted screen text:** screen content goes to the model inside `<untrusted_screen>` markers, and the instructions say not to follow instructions found there.
-- **Limits:** a phone task stops after 30 actions, 10 minutes, or three repeats of the same action on an unchanged screen. Each action is one SDK step, so raise the step limit under **Settings → Advanced** for longer tasks.
-
-Screen text goes only to the selected model. The agent reads text, not screenshots, so apps drawn without accessibility labels, such as many games, are hard for it to use. Android may slow the agent while another app is in front. Google Play restricts accessibility automation, so distribute this build outside Play or review Play's accessibility policy first.
 
 ## Customize your agent
 

@@ -3,7 +3,6 @@ import { OpenRouter, deserializeConversationState, serializeConversationState,
 import { HTTPClient } from '@openrouter/sdk/lib/http';
 import { customTool, sdkParameters, skillLoader } from './customization.mjs';
 import { streamObserver } from './stream-events.mjs';
-import { phoneTools } from './phone.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
 
@@ -42,7 +41,6 @@ export function buildTools(options, events, signal) {
       }),
     }));
   }
-  if (options.phoneControl && events?.phone) tools.push(...phoneTools(events.phone));
   const seen = new Set(tools.map(t => t.config?.type));
   for (const item of options.extraTools ?? []) {
     if (!item || !allowedServerTools.has(item.type)) throw new Error('Unsupported additional server tool.');
