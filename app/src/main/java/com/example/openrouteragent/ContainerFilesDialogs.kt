@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -133,9 +132,13 @@ internal fun ContainerFilePreviewDialog(
                         CircularProgressIndicator()
                     }
                     result.text == null -> Text("Download this file to open it in another app.")
-                    else -> SelectionContainer(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                        Text(result.text.ifEmpty { "Empty file." }, fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall)
+                    result.text.isEmpty() -> Text("Empty file.")
+                    else -> OutlinedSection {
+                        CopyableText(
+                            result.text,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        )
                     }
                 }
                 if (result?.truncated == true && result.text != null) Text("Showing the first 64 KB.")

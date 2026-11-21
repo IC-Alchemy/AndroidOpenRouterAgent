@@ -9,19 +9,18 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
@@ -161,7 +161,9 @@ internal fun CustomizationSheet(
                 val currentSkill = skill
                 when {
                     readGuide -> guide?.let { entry ->
-                        SelectionContainer { Text(entry.body, style = MaterialTheme.typography.bodyMedium) }
+                        OutlinedSection {
+                            CopyableText(entry.body, style = MaterialTheme.typography.bodyMedium)
+                        }
                         TextButton(onClick = { export(entry) }) { Text("Export guide") }
                     }
                     currentTool != null -> {
@@ -268,8 +270,7 @@ internal fun CustomizationSheet(
 
 @Composable
 private fun CustomizationRow(title: String, description: String, status: String, onClick: () -> Unit) {
-    Column {
-        HorizontalDivider()
+    OutlinedSection {
         TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
@@ -284,7 +285,7 @@ private fun CustomizationRow(title: String, description: String, status: String,
 @Composable
 internal fun ColumnScope.EditField(label: String, value: String, onChange: (String) -> Unit,
     lines: Int = 1, hint: String? = null) {
-    OutlinedTextField(value, onChange, label = { Text(label) }, singleLine = lines == 1, minLines = lines,
+    CopyableOutlinedTextField(value, onChange, label = { Text(label) }, singleLine = lines == 1, minLines = lines,
         maxLines = if (lines == 1) 1 else lines.coerceAtLeast(5) + 5,
         modifier = Modifier.fillMaxWidth(), supportingText = hint?.let { { Text(it) } })
 }
@@ -298,8 +299,9 @@ internal fun ChoiceStrip(options: List<Pair<String, String>>, value: String, onS
 
 @Composable
 internal fun ToggleLine(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(checked, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically) {
         Text(title, Modifier.weight(1f))
-        Switch(checked, onChange)
+        Switch(checked, onCheckedChange = null)
     }
 }

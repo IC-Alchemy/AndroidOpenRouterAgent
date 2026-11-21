@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -26,6 +27,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -134,11 +137,12 @@ internal fun SdkSettingsSheet(
         Column(Modifier.fillMaxWidth().fillMaxHeight(.93f).imePadding().padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("SDK settings", style = MaterialTheme.typography.titleLarge)
+                Text("SDK settings", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
                 TextButton(onClick = onDismiss, enabled = !working) { Text("Close") }
             }
             ChoiceStrip(listOf("generation" to "Generation", "routing" to "Routing", "turn" to "Follow-up",
                 "advanced" to "Advanced", "display" to "Display"), section) { section = it }
+            HorizontalDivider()
             val scroll = rememberScrollState()
             androidx.compose.runtime.LaunchedEffect(section) { scroll.scrollTo(0) }
             Column(Modifier.weight(1f).verticalScroll(scroll).padding(vertical = 10.dp),
@@ -149,8 +153,9 @@ internal fun SdkSettingsSheet(
                 }
                 @Composable
                 fun Options(key: String, title: String, options: List<Pair<String, String>>) {
-                    Text(title, style = MaterialTheme.typography.labelLarge)
-                    ChoiceStrip(options, value(key)) { state[key] = it }
+                    OutlinedSection(title = title) {
+                        ChoiceStrip(options, value(key)) { state[key] = it }
+                    }
                 }
                 when (section) {
                     "generation" -> {

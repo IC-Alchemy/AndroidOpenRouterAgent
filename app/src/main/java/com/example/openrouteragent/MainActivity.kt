@@ -1,9 +1,5 @@
 package com.example.openrouteragent
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,11 +16,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,11 +33,11 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -84,6 +82,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,6 +100,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -142,6 +145,9 @@ fun OpenRouterAgentTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val clipboard = remember(context, scope) { SelectionClipboard(scope) { copyText(context, it) } }
     val colorScheme = if (darkTheme) darkColorScheme(
         primary = Color(0xFFCFC4FF), onPrimary = Color(0xFF23154F),
         primaryContainer = Color(0xFF272046), onPrimaryContainer = Color(0xFFF0EAFF),
@@ -153,7 +159,7 @@ fun OpenRouterAgentTheme(
         surfaceContainer = Color(0xFF101017), surfaceContainerHigh = Color(0xFF181820),
         surfaceContainerHighest = Color(0xFF21212A), surfaceVariant = Color(0xFF16161D),
         onSurface = Color(0xFFF1EFF6), onBackground = Color(0xFFF1EFF6),
-        onSurfaceVariant = Color(0xFFC2BFCD), outlineVariant = Color(0xFF302F3B)
+        onSurfaceVariant = Color(0xFFC2BFCD), outline = Color(0xFF817B96), outlineVariant = Color(0xFF524C62)
     ) else lightColorScheme(
         primary = Color(0xFF544294), onPrimary = Color.White,
         primaryContainer = Color(0xFFEAE2FF), onPrimaryContainer = Color(0xFF271650),
@@ -161,13 +167,12 @@ fun OpenRouterAgentTheme(
         background = Color(0xFFFAF8FE), surface = Color(0xFFFAF8FE),
         onSurface = Color(0xFF211C2A), onBackground = Color(0xFF211C2A),
         surfaceVariant = Color(0xFFEAE5F0), onSurfaceVariant = Color(0xFF51495C),
-        outlineVariant = Color(0xFFD7CEDF)
+        outline = Color(0xFF81758D), outlineVariant = Color(0xFFC1B6CC)
     )
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        content = content
-    )
+    CompositionLocalProvider(LocalSelectionClipboard provides clipboard) {
+        MaterialTheme(colorScheme = colorScheme, content = content)
+    }
 }
 
 // =============================================================================
@@ -183,8 +188,7 @@ private val QUICK_PROMPTS = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val clipboard = LocalSelectionClipboard.current
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val config = agent.config
@@ -273,71 +277,82 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         AgentRuntimeHost(agent, Modifier.align(Alignment.TopStart).size(1.dp))
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(if (usesOpenRouter) "OpenRouter Agent" else providerName,
-                                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.clickable(enabled = !agent.isLoading && !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting) {
+                Column {
+                    TopAppBar(
+                        title = {
+                            Column(
+                                Modifier.heightIn(min = 48.dp).clickable(
+                                    enabled = !agent.isLoading && !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting,
+                                    onClickLabel = "Choose provider", role = Role.Button,
+                                ) {
                                     editActiveProvider = false
                                     showProviders = true
-                                })
-                            val detail = when {
-                                model != null -> model.name
-                                agent.catalogLoading -> "Loading models…"
-                                agent.providerReady -> "Choose a model"
-                                else -> "Connect $providerName"
+                                },
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (usesOpenRouter) "OpenRouter Agent" else providerName,
+                                        Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp))
+                                }
+                                val detail = when {
+                                    model != null -> model.name
+                                    agent.catalogLoading -> "Loading models…"
+                                    agent.providerReady -> "Choose a model"
+                                    else -> "Connect $providerName"
+                                }
+                                Text(listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis)
                             }
-                            Text(listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "), style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis)
-                        }
-                    },
-                    actions = {
-                        if (agent.providerReady) {
-                            TextButton(enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting, onClick = { showModels = true }) { Text("Models") }
-                        }
-                        TextButton(enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
-                            !agent.isWorkingChat && !isExporting, onClick = { showChatLibrary = true }) { Text("Chats") }
-                        Box {
-                            IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat,
-                                onClick = { showConfigure = true }) {
-                                Icon(Icons.Default.Settings, contentDescription = "Configure")
+                        },
+                        actions = {
+                            if (agent.providerReady) {
+                                TextButton(enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting, onClick = { showModels = true }) { Text("Models") }
                             }
-                            DropdownMenu(expanded = showConfigure, onDismissRequest = { showConfigure = false }) {
-                                DropdownMenuItem(text = { Text("Providers") }, onClick = {
-                                    showConfigure = false
-                                    editActiveProvider = false
-                                    showProviders = true
-                                })
-                                DropdownMenuItem(text = { Text(if (usesOpenRouter) "Settings" else "OpenRouter settings") }, onClick = {
-                                    showConfigure = false
-                                    showSettings = true
-                                })
-                                if (usesOpenRouter) {
-                                    DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
+                            TextButton(enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
+                                !agent.isWorkingChat && !isExporting, onClick = { showChatLibrary = true }) { Text("Chats") }
+                            Box {
+                                IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat,
+                                    onClick = { showConfigure = true }) {
+                                    Icon(Icons.Default.Settings, contentDescription = "Configure")
+                                }
+                                DropdownMenu(expanded = showConfigure, onDismissRequest = { showConfigure = false }) {
+                                    DropdownMenuItem(text = { Text("Providers") }, onClick = {
                                         showConfigure = false
-                                        showSdkSettings = true
+                                        editActiveProvider = false
+                                        showProviders = true
                                     })
-                                    DropdownMenuItem(text = { Text("Custom tools") }, onClick = {
+                                    DropdownMenuItem(text = { Text(if (usesOpenRouter) "Settings" else "OpenRouter settings") }, onClick = {
                                         showConfigure = false
-                                        customizeTab = "tools"
+                                        showSettings = true
+                                    })
+                                    if (usesOpenRouter) {
+                                        DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
+                                            showConfigure = false
+                                            showSdkSettings = true
+                                        })
+                                        DropdownMenuItem(text = { Text("Custom tools") }, onClick = {
+                                            showConfigure = false
+                                            customizeTab = "tools"
+                                        })
+                                    }
+                                    DropdownMenuItem(text = { Text("Skills & app guide") }, onClick = {
+                                        showConfigure = false
+                                        customizeTab = "skills"
                                     })
                                 }
-                                DropdownMenuItem(text = { Text("Skills & app guide") }, onClick = {
-                                    showConfigure = false
-                                    customizeTab = "skills"
-                                })
                             }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                )
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                    HorizontalDivider()
+                }
             },
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
-                Column {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     runProgress?.let {
                         AgentRunStatus(it, agent.approval != null, following, providerName,
                             onActivity = { showRunActivity = true }, onFollow = { following = true })
@@ -350,7 +365,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 }
             }
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
+            Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                .background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (!agent.isLoading && usesOpenRouter) {
                     StatusCapabilitiesBar(
                         config = config, activeContainerId = activeContainerId, canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
@@ -359,7 +375,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     )
                 }
                 agent.storageError?.let {
-                    Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error,
+                    CopyableText(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall)
                 }
                 if (agent.isLoading) {
@@ -372,36 +388,35 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         }
                     }, providerName = providerName, usesOpenRouter = usesOpenRouter) { agent.promptText = it }
                 } else {
-                    LazyColumn(
-                        state = listState, modifier = Modifier.weight(1f).nestedScroll(manualScroll),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(messages, key = { it.id }) { entry ->
-                            if (entry.isUser) UserMessageBubble(entry.text)
-                            else AgentResponseCard(entry, {
-                                val clipboard = context.getSystemService(ClipboardManager::class.java)
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Agent response", it))
-                                if (Build.VERSION.SDK_INT < 33) scope.launch { snackbar.showSnackbar("Copied") }
-                            }, ::openFile)
-                        }
-                        if (activePrompt != null) {
-                            item("active_prompt") { UserMessageBubble(activePrompt) }
-                            item("running") {
-                                if (runProgress != null) LiveAgentReply(runProgress)
+                    CompositionLocalProvider(LocalTranscriptSelection provides { if (isRunning) following = false }) {
+                        LazyColumn(
+                            state = listState, modifier = Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth()
+                                .nestedScroll(manualScroll),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(messages, key = { it.id }) { entry ->
+                                if (entry.isUser) UserMessageBubble(entry.text)
+                                else AgentResponseCard(entry, clipboard::copy, ::openFile)
                             }
-                        }
-                        if (interrupted != null) {
-                            item("interrupted") {
-                                LiveAgentReply(interrupted, interrupted = true,
-                                    onRetry = { following = true; agent.retryTurn() },
-                                    onRetryWithoutTools = if (usesOpenRouter && config.agentToolsEnabled()) {
-                                        { following = true; agent.retryTurn(toolsOff = true) }
-                                    } else null,
-                                    onActivity = { showRunActivity = true })
+                            if (activePrompt != null) {
+                                item("active_prompt") { UserMessageBubble(activePrompt) }
+                                item("running") {
+                                    if (runProgress != null) LiveAgentReply(runProgress)
+                                }
                             }
+                            if (interrupted != null) {
+                                item("interrupted") {
+                                    LiveAgentReply(interrupted, interrupted = true,
+                                        onRetry = { following = true; agent.retryTurn() },
+                                        onRetryWithoutTools = if (usesOpenRouter && config.agentToolsEnabled()) {
+                                            { following = true; agent.retryTurn(toolsOff = true) }
+                                        } else null,
+                                        onActivity = { showRunActivity = true })
+                                }
+                            }
+                            item("latest") { Spacer(Modifier.size(1.dp)) }
                         }
-                        item("latest") { Spacer(Modifier.size(1.dp)) }
                     }
                 }
             }
@@ -446,10 +461,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             text = {
                 Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (approval.url.isNotBlank()) Text(approval.url)
-                    SelectionContainer {
-                        Text(approval.arguments, fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall)
+                    if (approval.url.isNotBlank()) CopyableText(approval.url)
+                    OutlinedSection(title = "Arguments") {
+                        CopyableText(approval.arguments, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
                     }
                     if (approval.asksUser) EditField("Your answer", answer, { answer = it }, 3)
                 }
@@ -505,35 +519,42 @@ private fun StatusCapabilitiesBar(
     onOpenFiles: () -> Unit,
     onResetContainer: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    if (!config.enableShellSandbox && !config.enableWebSearch) return
+    Surface(
+        modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
-        if (config.enableShellSandbox) {
-            if (activeContainerId != null) {
-                AssistChip(onClick = onOpenFiles, label = { Text("Sandbox files") })
-                TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
-            } else StatusPill("Hosted shell", MaterialTheme.colorScheme.primary)
-        }
-        if (config.enableWebSearch) {
-            StatusPill(
-                label = "Web Search",
-                accent = MaterialTheme.colorScheme.primary
-            )
-        }
-        if (config.enableShellSandbox && config.allowSandboxNetwork) {
-            StatusPill(
-                label = "Egress Allowlist",
-                accent = MaterialTheme.colorScheme.tertiary
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (config.enableShellSandbox) {
+                if (activeContainerId != null) {
+                    AssistChip(onClick = onOpenFiles, label = { Text("Sandbox files") }, modifier = Modifier.heightIn(min = 48.dp))
+                    TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
+                } else StatusPill("Hosted shell", MaterialTheme.colorScheme.primary)
+            }
+            if (config.enableWebSearch) {
+                StatusPill(
+                    label = "Web Search",
+                    accent = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (config.enableShellSandbox && config.allowSandboxNetwork) {
+                StatusPill(
+                    label = "Egress Allowlist",
+                    accent = MaterialTheme.colorScheme.tertiary
+                )
+            }
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }
 
 @Composable
@@ -578,6 +599,7 @@ private fun EmptyAgentState(
 ) {
     Column(
         modifier = Modifier
+            .widthIn(max = 560.dp)
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
@@ -604,7 +626,8 @@ private fun EmptyAgentState(
         Text(
             text = "What are you working on?",
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -629,7 +652,7 @@ private fun EmptyAgentState(
             text = "Try a prompt",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.align(Alignment.Start)
+            modifier = Modifier.align(Alignment.Start).semantics { heading() }
         )
         Spacer(Modifier.height(8.dp))
 
@@ -637,15 +660,15 @@ private fun EmptyAgentState(
             "Explain a topic in plain language.", "Help me outline a project.")
         suggestions.forEach { sample ->
             Card(
+                onClick = { onSelectPrompt(sample) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clickable { onSelectPrompt(sample) },
+                    .padding(vertical = 4.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
@@ -671,22 +694,21 @@ private fun EmptyAgentState(
 @Composable
 private fun UserMessageBubble(text: String) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
         horizontalArrangement = Arrangement.End
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.widthIn(max = 310.dp)
+            color = MaterialTheme.colorScheme.primaryContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+            modifier = Modifier.widthIn(max = 560.dp),
         ) {
-            SelectionContainer {
-                Text(
-                    text = text,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                )
-            }
+            CopyableText(
+                text = text,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            )
         }
     }
 }
@@ -701,7 +723,7 @@ private fun AgentResponseCard(
     val containerColor = if (entry.isError) {
         MaterialTheme.colorScheme.errorContainer
     } else {
-        MaterialTheme.colorScheme.surface
+        MaterialTheme.colorScheme.surfaceContainerLow
     }
 
     Card(
@@ -710,8 +732,7 @@ private fun AgentResponseCard(
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = BorderStroke(
             1.dp,
-            if (entry.isError) MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-            else MaterialTheme.colorScheme.outlineVariant
+            if (entry.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
         )
     ) {
         Column(
@@ -730,21 +751,16 @@ private fun AgentResponseCard(
                             .size(18.dp)
                     )
                 }
-                SelectionContainer {
-                    Text(
-                        text = entry.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (entry.isError) {
-                            MaterialTheme.colorScheme.onErrorContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                }
+                CopyableText(
+                    text = entry.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (entry.isError) MaterialTheme.colorScheme.onErrorContainer
+                        else MaterialTheme.colorScheme.onSurface,
+                )
             }
 
             entry.notice?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                CopyableText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
             }
 
             // Optional collapsible reasoning summary
@@ -764,6 +780,7 @@ private fun AgentResponseCard(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
@@ -783,8 +800,8 @@ private fun AgentResponseCard(
                         }
                         Spacer(Modifier.height(4.dp))
                         entry.searchQueries.forEach { q ->
-                            Text(
-                                text = "• $q",
+                            CopyableText(
+                                text = q,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
@@ -802,15 +819,8 @@ private fun AgentResponseCard(
                 )
             }
 
-            // Citations list if present
             if (entry.citations.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Sources",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                OutlinedSection(title = "Sources") {
                     entry.citations.forEach { cite ->
                         TextButton(onClick = { runCatching { uriHandler.openUri(cite.url) } }) {
                             Text(cite.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -821,7 +831,7 @@ private fun AgentResponseCard(
 
             // Footer with usage metadata and Copy button
             if (!entry.isError) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                HorizontalDivider()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -829,8 +839,8 @@ private fun AgentResponseCard(
                 ) {
                     Column(Modifier.weight(1f)) {
                         entry.modelUsed?.let {
-                            Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            CopyableText(it, style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         entry.usage?.let {
                             Text(it.display(), style = MaterialTheme.typography.labelSmall,
@@ -841,7 +851,7 @@ private fun AgentResponseCard(
                         onClick = { onCopyText(entry.text) },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
-                        Text("Copy", style = MaterialTheme.typography.labelSmall)
+                        Text("Copy reply")
                     }
                 }
             }
@@ -855,13 +865,15 @@ private fun CollapsibleReasoningBox(summary: String) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { expanded = !expanded }
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                    .clickable(role = Role.Button) { expanded = !expanded }
+                    .padding(horizontal = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -881,19 +893,17 @@ private fun CollapsibleReasoningBox(summary: String) {
                 }
                 Icon(
                     imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Toggle reasoning",
+                    contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
             }
             AnimatedVisibility(visible = expanded) {
-                SelectionContainer {
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
+                CopyableText(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                )
             }
         }
     }
@@ -909,14 +919,16 @@ private fun SandboxTerminalCard(
     val terminalBg = Color(0xFF0D1117)
     val terminalHeaderBg = Color(0xFF161B22)
     val terminalText = Color(0xFFE6EDF3)
-    val terminalMuted = Color(0xFF8B949E)
+    val terminalMuted = Color(0xFFA1AAB5)
     val terminalGreen = Color(0xFF3FB950)
     val terminalRed = Color(0xFFF85149)
+    val terminalStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+    val outputStyle = terminalStyle.copy(fontSize = 11.sp, lineHeight = 16.sp)
 
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = terminalBg,
-        border = BorderStroke(1.dp, Color(0xFF30363D)),
+        border = BorderStroke(1.dp, Color(0xFF626E7C)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
@@ -924,8 +936,10 @@ private fun SandboxTerminalCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .background(terminalHeaderBg)
-                    .clickable { expanded = !expanded }
+                    .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                    .clickable(role = Role.Button) { expanded = !expanded }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -957,7 +971,7 @@ private fun SandboxTerminalCard(
                 }
                 Icon(
                     imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Toggle terminal",
+                    contentDescription = null,
                     tint = terminalMuted,
                     modifier = Modifier.size(18.dp)
                 )
@@ -975,11 +989,10 @@ private fun SandboxTerminalCard(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(
-                                        text = "$ ${res.command}",
+                                    CopyableText(
+                                        text = res.command,
                                         color = terminalGreen,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
+                                        style = terminalStyle,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
@@ -995,38 +1008,17 @@ private fun SandboxTerminalCard(
                                 }
 
                                 if (res.stdout.isNotBlank()) {
-                                    SelectionContainer {
-                                        Text(
-                                            text = res.stdout.trimEnd(),
-                                            color = terminalText,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            lineHeight = 16.sp
-                                        )
-                                    }
+                                    CopyableText(res.stdout, color = terminalText, style = outputStyle)
                                 }
 
                                 if (res.stderr.isNotBlank()) {
-                                    SelectionContainer {
-                                        Text(
-                                            text = res.stderr.trimEnd(),
-                                            color = terminalRed,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            lineHeight = 16.sp
-                                        )
-                                    }
+                                    CopyableText(res.stderr, color = terminalRed, style = outputStyle)
                                 }
                             }
                         }
                     } else {
                         step.commands.forEach { cmd ->
-                            Text(
-                                text = "$ $cmd",
-                                color = terminalGreen,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp
-                            )
+                            CopyableText(cmd, color = terminalGreen, style = terminalStyle)
                         }
                     }
 
@@ -1071,26 +1063,22 @@ private fun AgentInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit
 ) {
-    Surface(
-        tonalElevation = 3.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .imePadding()
-    ) {
-        Column {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             if (error != null) {
-                Text(error, Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                CopyableText(error, Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
             Row(
                 modifier = Modifier
+                    .widthIn(max = 840.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedTextField(
+                CopyableOutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
                     placeholder = { Text("Message the agent") },
@@ -1164,157 +1152,158 @@ private fun SettingsBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(.93f)
                 .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = 20.dp),
         ) {
             Text(
                 text = "Settings",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics { heading() }.padding(bottom = 12.dp),
             )
-
-            // API Key Input
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it; testResult = null; error = null },
-                label = { Text("OpenRouter API key") },
-                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
-                singleLine = true,
-                visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    TextButton(onClick = { showApiKey = !showApiKey }) {
-                        Text(if (showApiKey) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { runCatching { uriHandler.openUri("https://openrouter.ai/settings/keys") } }) {
-                    Text("Get an API key")
-                }
-                TextButton(enabled = !working && apiKey.isNotBlank(), onClick = {
-                    val keyToTest = apiKey.trim()
-                    error = AgentConfig(apiKey = keyToTest).settingsError()
-                    if (error == null) {
-                        working = true
-                        scope.launch {
-                            try {
-                                onValidate(keyToTest)
-                                if (apiKey.trim() == keyToTest) testResult = "OpenRouter accepted the key."
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                if (apiKey.trim() == keyToTest) error = e.userMessage(keyToTest)
-                            } finally {
-                                working = false
+            Column(
+                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                OutlinedSection(title = "Connection") {
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it; testResult = null; error = null },
+                        label = { Text("OpenRouter API key") },
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                        singleLine = true,
+                        visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { showApiKey = !showApiKey }) {
+                                Text(if (showApiKey) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
                             }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { runCatching { uriHandler.openUri("https://openrouter.ai/settings/keys") } }) {
+                            Text("Get an API key")
+                        }
+                        TextButton(enabled = !working && apiKey.isNotBlank(), onClick = {
+                            val keyToTest = apiKey.trim()
+                            error = AgentConfig(apiKey = keyToTest).settingsError()
+                            if (error == null) {
+                                working = true
+                                scope.launch {
+                                    try {
+                                        onValidate(keyToTest)
+                                        if (apiKey.trim() == keyToTest) testResult = "OpenRouter accepted the key."
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        if (apiKey.trim() == keyToTest) error = e.userMessage(keyToTest)
+                                    } finally {
+                                        working = false
+                                    }
+                                }
+                            }
+                        }) { Text("Test key") }
+                    }
+                    testResult?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                    if (initialConfig.apiKey.isNotBlank() && apiKey.trim() != initialConfig.apiKey) {
+                        Text("Changing the key starts a new conversation.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                OutlinedSection(title = "Agent tools") {
+                    SettingsToggleRow(
+                        title = "Hosted Linux Sandbox (openrouter:shell)",
+                        subtitle = "Runs commands in a hosted Linux container",
+                        checked = enableShell,
+                        onCheckedChange = { enableShell = it }
+                    )
+
+                    SettingsToggleRow(
+                        title = "Web Search (openrouter:web_search)",
+                        subtitle = "Real-time search with cited URLs",
+                        checked = enableWeb,
+                        onCheckedChange = { enableWeb = it }
+                    )
+
+                    SettingsToggleRow(
+                        title = "Date & Time (openrouter:datetime)",
+                        subtitle = "Gives the model current UTC date/time",
+                        checked = enableDateTime,
+                        onCheckedChange = { enableDateTime = it }
+                    )
+
+                    SettingsToggleRow("Web fetch", "Reads pages supplied by URL.", webFetch, { webFetch = it })
+                    SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
+                        { deviceTools = it })
+
+                    if (enableShell) {
+                        SettingsToggleRow(
+                            title = "Sandbox Outbound Network Allowlist",
+                            subtitle = "Changing network access starts a fresh sandbox.",
+                            checked = allowNetwork,
+                            onCheckedChange = { allowNetwork = it }
+                        )
+
+                        if (allowNetwork) {
+                            CopyableOutlinedTextField(
+                                value = allowedDomains,
+                                onValueChange = { allowedDomains = it },
+                                label = { Text("Allowed domains, separated by commas") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2
+                            )
                         }
                     }
-                }) { Text("Test key") }
-            }
-            testResult?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-            if (initialConfig.apiKey.isNotBlank() && apiKey.trim() != initialConfig.apiKey) {
-                Text("Changing the key starts a new conversation.",
-                    style = MaterialTheme.typography.bodySmall)
-            }
+                }
 
-            HorizontalDivider()
-
-            // Server Tools Toggles
-            Text(
-                text = "OpenRouter Server Tools",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            SettingsToggleRow(
-                title = "Hosted Linux Sandbox (openrouter:shell)",
-                subtitle = "Runs commands in a hosted Linux container",
-                checked = enableShell,
-                onCheckedChange = { enableShell = it }
-            )
-
-            SettingsToggleRow(
-                title = "Web Search (openrouter:web_search)",
-                subtitle = "Real-time search with cited URLs",
-                checked = enableWeb,
-                onCheckedChange = { enableWeb = it }
-            )
-
-            SettingsToggleRow(
-                title = "Date & Time (openrouter:datetime)",
-                subtitle = "Gives the model current UTC date/time",
-                checked = enableDateTime,
-                onCheckedChange = { enableDateTime = it }
-            )
-
-            SettingsToggleRow("Web fetch", "Reads pages supplied by URL.", webFetch, { webFetch = it })
-            SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
-                { deviceTools = it })
-
-            if (enableShell) {
-                SettingsToggleRow(
-                    title = "Sandbox Outbound Network Allowlist",
-                    subtitle = "Changing network access starts a fresh sandbox.",
-                    checked = allowNetwork,
-                    onCheckedChange = { allowNetwork = it }
-                )
-
-                if (allowNetwork) {
-                    OutlinedTextField(
-                        value = allowedDomains,
-                        onValueChange = { allowedDomains = it },
-                        label = { Text("Allowed domains, separated by commas") },
+                OutlinedSection {
+                    CopyableOutlinedTextField(
+                        value = instructions,
+                        onValueChange = { instructions = it },
+                        label = { Text("System instructions") },
                         modifier = Modifier.fillMaxWidth(),
-                        minLines = 2
+                        minLines = 3
                     )
                 }
+
+                OutlinedSection {
+                    TextButton(onClick = { advanced = !advanced }) {
+                        Text(if (advanced) "Hide advanced settings" else "Advanced settings")
+                    }
+                    if (advanced) {
+                        val decimal = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                        CopyableOutlinedTextField(maxSteps, { maxSteps = it }, label = { Text("Agent step limit (1–30)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        CopyableOutlinedTextField(maxCost, { maxCost = it }, label = { Text("Stop threshold in USD (optional)") },
+                            supportingText = { Text("Checks accrued cost between steps.") }, keyboardOptions = decimal,
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        CopyableOutlinedTextField(temperature, { temperature = it }, label = { Text("Temperature (optional)") },
+                            supportingText = { Text("Applies when the selected model supports it.") }, keyboardOptions = decimal,
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        CopyableOutlinedTextField(mcpUrl, { mcpUrl = it }, label = { Text("Remote MCP HTTPS endpoint") },
+                            supportingText = { Text("The app asks before calling a remote tool.") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        if (mcpUrl.isNotBlank()) {
+                            OutlinedTextField(mcpToken, { mcpToken = it }, label = { Text("MCP bearer token (optional)") },
+                                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                                singleLine = true)
+                        }
+                        CopyableOutlinedTextField(toolsJson, { toolsJson = it }, label = { Text("Additional server tools (JSON)") },
+                            supportingText = { Text("Supports model search, image generation, advisor, subagent, and fusion.") },
+                            modifier = Modifier.fillMaxWidth(), minLines = 2)
+                    }
+                }
+
             }
 
             HorizontalDivider()
-
-            // System Instructions
-            OutlinedTextField(
-                value = instructions,
-                onValueChange = { instructions = it },
-                label = { Text("System Instructions") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3
-            )
-
-            TextButton(onClick = { advanced = !advanced }) {
-                Text(if (advanced) "Hide advanced agent settings" else "Advanced agent settings")
-            }
-            if (advanced) {
-                val decimal = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
-                OutlinedTextField(maxSteps, { maxSteps = it }, label = { Text("Agent step limit (1–30)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(maxCost, { maxCost = it }, label = { Text("Stop threshold in USD (optional)") },
-                    supportingText = { Text("Checks accrued cost between steps.") }, keyboardOptions = decimal,
-                    modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(temperature, { temperature = it }, label = { Text("Temperature (optional)") },
-                    supportingText = { Text("Applies when the selected model supports it.") }, keyboardOptions = decimal,
-                    modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(mcpUrl, { mcpUrl = it }, label = { Text("Remote MCP HTTPS endpoint") },
-                    supportingText = { Text("The app asks before calling a remote tool.") },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true)
-                if (mcpUrl.isNotBlank()) {
-                    OutlinedTextField(mcpToken, { mcpToken = it }, label = { Text("MCP bearer token (optional)") },
-                        visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
-                        singleLine = true)
-                }
-                OutlinedTextField(toolsJson, { toolsJson = it }, label = { Text("Additional server tools (JSON)") },
-                    supportingText = { Text("Supports model search, image generation, advisor, subagent, and fusion.") },
-                    modifier = Modifier.fillMaxWidth(), minLines = 2)
-            }
-
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            error?.let { CopyableText(it, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error) }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onDismiss, enabled = !working, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Button(enabled = !working, onClick = {
                     error = when {
@@ -1352,7 +1341,8 @@ private fun SettingsToggleRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1364,7 +1354,7 @@ private fun SettingsToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
