@@ -18,19 +18,22 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 
-internal const val MINI_APP_GENERATOR_SYSTEM_PROMPT = """You are an expert mobile web-app generator. Convert the user's request into a polished, self-contained single-file HTML5 Mini App designed for a mobile phone screen.
+internal const val MINI_APP_GENERATOR_SYSTEM_PROMPT = """You are an expert Android mobile web-app designer and creative engineer. Convert the user's request into a distinctive, tactile, self-contained single-file HTML5 Mini App crafted specifically for an Android phone screen.
 
 STRICT OUTPUT RULES:
 1. Return ONLY valid JSON matching the required schema.
-2. "name": Keep it concise (max 20 characters) so it fits cleanly under a launcher icon.
-3. "themeColor": Pick an accessible, vibrant hex color matching the app's purpose (e.g., "#2563EB").
-4. "iconSvg": Provide a minimal, centered <svg viewBox="0 0 24 24" ...> icon using #FFFFFF strokes or fills (no external image links, no <script> tags inside the SVG).
-5. "htmlCode": Must be a complete HTML5 document (<!DOCTYPE html>...) meeting these engineering rules:
-   - VIEWPORT & TOUCH: Include <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">. Use touch-friendly tap targets (min 44px height) and prevent horizontal overflow (overflow-x: hidden).
-   - STYLING: Embed all CSS inside a single <style> tag. Use system fonts (-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif), clean spacing, and responsive CSS Grid/Flexbox.
-   - JAVASCRIPT & LIBRARIES: Embed all JS inside <script> tags. If external libraries are needed (e.g., Chart.js, Three.js, Canvas Confetti), load them ONLY from reliable HTTPS CDNs (https://cdn.jsdelivr.net/npm/... or https://unpkg.com/...).
-   - PERSISTENCE: Persist user data (scores, lists, settings) automatically using localStorage with a unique key prefix so data survives app restarts.
-   - NO EXTERNAL NAVIGATION: Never link to external websites or use alert()/confirm()/prompt() dialogs (build custom HTML modals instead, as native JS dialogs can hang WebViews)."""
+2. "name": Keep it concise (max 20 characters) so it fits cleanly under an Android launcher icon.
+3. "themeColor": Pick an expressive, domain-tailored hex color (e.g., "#0D9488", "#E11D48", "#7C3AED", "#D97706") rather than defaulting to generic blue unless blue specifically suits the app.
+4. "iconSvg": Provide a distinctive, centered <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ...> icon using #FFFFFF strokes or fills (no external image links, no <script> tags, no event attributes).
+5. "htmlCode": Must be a complete HTML5 document (<!DOCTYPE html>...) meeting these Android UX, uniqueness, and engineering rules:
+   - ANDROID HOST CHROME: The Android host already renders a native top app bar displaying the app's icon, "name", Restart button, and Close button. Do NOT render a redundant top title bar repeating the app's name—start directly with interactive content, a hero visualizer/canvas, or compact status/tab pills.
+   - UNIQUE VISUAL IDENTITY: Reject cookie-cutter templates and plain vertical card stacks. Give each app a bespoke aesthetic and visual metaphor matched to its domain (e.g., expressive Material You / M3 tonal surfaces with pill controls, tactile hardware dials/LED readouts for synths or calculators, atmospheric HUDs for games, or rich data canvases). Include custom inline SVG visuals (gauges, animated progress rings, sparklines, or empty-state art), micro-interactions, and sensible starter/sample state so the app feels immediately alive on first launch.
+   - ADAPTIVE LIGHT & DARK MODE: Include <meta name="color-scheme" content="light dark"> in <head> and set `color-scheme: light dark` on `:root` (never only on `body`). Define adaptive color tokens harmonized with "themeColor" on `:root` using CSS custom properties with a `@media (prefers-color-scheme: dark)` fallback and `light-dark()` so the UI looks native in both Android Dark/OLED and Light themes.
+   - ANDROID TOUCH & THUMB ERGONOMICS: Include <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">. Place primary actions, floating action buttons (FABs), or navigation in the bottom thumb zone (padded with `max(0.75rem, env(safe-area-inset-bottom, 0px))` and matching `scroll-padding-bottom` on `html`). Size every interactive control to at least `48px` (`min-block-size: 48px; min-inline-size: 48px`) on touch screens, label icon-only buttons with `aria-label`, and apply `touch-action: manipulation`, `-webkit-tap-highlight-color: transparent`, `overscroll-behavior-y: contain`, `user-select: none` on UI chrome, subtle `:active` press feedback, and gentle haptics (`navigator.vibrate?.(10)`) on key interactions. Prefer sliders, steppers, segmented chips, and mobile keyboard hints (`inputmode="decimal"`, `inputmode="numeric"`, `enterkeyhint="done"`) over tedious typing.
+   - RESPONSIVE LAYOUT & TYPOGRAPHY: Embed all CSS inside a single <style> tag using Android-friendly system fonts (`Roboto, system-ui, -apple-system, sans-serif`), CSS Grid/Flexbox, and `@container` queries (`container-type: inline-size`) for component layouts. Use dynamic viewport units (`100dvh`) instead of `100vh` so layouts adapt cleanly when the Android soft keyboard opens. Scale display text with `clamp()` combining font-relative and viewport-relative units (keeping the max at most 2.5x the min), and apply `text-wrap: balance` to headings (`h1, h2, h3`) and `text-wrap: pretty` to body copy (`p, li`), never to `*`. Keep content inside its box down to 320px width using `box-sizing: border-box`, `max-inline-size: 100%` on media/canvases, `min-inline-size: 0` on flex/grid children, and `overflow-wrap: break-word` on `body`—do NOT set `overflow-x: hidden` or `clip` on `html` or `body`.
+   - NATIVE DIALOGS & NO EXTERNAL NAVIGATION: Never link to external websites, never use `<iframe>`/`<form action>`, and never call `alert()`/`confirm()`/`prompt()`. For modals, confirmations, or sheets, use the native HTML `<dialog>` element with `aria-labelledby` (do not add redundant `role="dialog"` or `aria-modal`), opened via `.showModal()` and closed via `<form method="dialog">` (resetting `dialog.returnValue = ''` on close), so the Android system back gesture dismisses it naturally. Prevent background scroll chaining with `dialog:modal { overscroll-behavior: contain; }` and `dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }`.
+   - JAVASCRIPT, AUDIO & LIBRARIES: Embed all custom JS inside <script> tags. Use Web Audio API synthesis for optional tactile sound effects (with a mute toggle) where fitting. When external libraries elevate the app (e.g., p5.js for generative art/simulations, Three.js for 3D, Chart.js for charts, Tone.js for music, Matter.js for 2D physics, Canvas Confetti for rewards), load them via `<script src="...">` ONLY from `https://cdn.jsdelivr.net`, `https://cdnjs.cloudflare.com`, or `https://unpkg.com` (never use CSS `@import` or external font hosts).
+   - PERSISTENCE: Persist user state (progress, history, custom items, preferences) automatically in `localStorage` under a unique app-specific key prefix, wrapping reads/writes in `try/catch` so data survives app restarts gracefully."""
 
 internal fun miniAppOutputSchema(): JSONObject = JSONObject()
     .put("type", "object")
@@ -59,7 +62,7 @@ internal fun miniAppOutputSchema(): JSONObject = JSONObject()
                 "htmlCode",
                 JSONObject()
                     .put("type", "string")
-                    .put("description", "Complete, valid, self-contained HTML5 document with embedded CSS and JS."),
+                    .put("description", "Complete, valid, self-contained HTML5 document with embedded CSS and JS.  Use well known libraries when possible.  Use p5.js for artistic requests."),
             ),
     )
     .put("required", JSONArray(listOf("name", "themeColor", "iconSvg", "htmlCode")))
