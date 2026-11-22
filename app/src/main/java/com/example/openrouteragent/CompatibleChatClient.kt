@@ -167,7 +167,7 @@ internal fun chatPayload(profile: CustomProvider, config: AgentConfig, prior: Wo
     }.joinToString("\n\n")
     val messages = JSONArray()
     if (system.isNotBlank()) messages.put(message("system", system))
-    prior.messages.filter { !it.isError && it.text.isNotBlank() }.forEach {
+    prior.messages.filter { !it.isError && !it.isModerated && it.text.isNotBlank() }.forEach {
         messages.put(message(if (it.isUser) "user" else "assistant", it.text))
     }
     messages.put(message("user", prompt))

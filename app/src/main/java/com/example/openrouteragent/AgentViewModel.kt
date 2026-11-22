@@ -26,12 +26,26 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
 
-class AgentViewModel(application: Application) : AndroidViewModel(application) {
+internal const val POLICY_PROMPT_BLOCKED = "This prompt violates our content policy."
+internal const val POLICY_RESPONSE_WARNING = "This response was hidden because it violates our content policy."
+
+class AgentViewModel internal constructor(
+    application: Application,
+    private val textModerator: TextModerator?,
+    private val reportClient: ModerationReportClient,
+    private val chatClient: CompatibleChatClient,
+) : AndroidViewModel(application) {
+    @JvmOverloads
+    constructor(
+        application: Application,
+        textModerator: TextModerator? = ContentModerator.fromAssets(application),
+        reportClient: ModerationReportClient = ModerationReportClient(),
+    ) : this(application, textModerator, reportClient, CompatibleChatClient())
+
     val client = OpenRouterAgentClient()
     internal val files = OpenRouterFiles(application, client)
     private val storage = AgentStorage(application)
     private val sdk = AgentSdkRuntime(application)
-    private val chatClient = CompatibleChatClient()
     private val customizationAssistant = CustomizationAssistant()
     private val skillsDirectory = SkillsDirectoryClient()
     private val chats = ChatDatabase(application)
@@ -76,6 +90,10 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     var isExporting by mutableStateOf(false)
         private set
     var exportMessage by mutableStateOf<String?>(null)
+        private set
+    var isModerating by mutableStateOf(false)
+        private set
+    var reportMessage by mutableStateOf<String?>(null)
         private set
 
     var availableModels by mutableStateOf<List<CatalogModel>>(emptyList())
@@ -132,7 +150,12 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                 }.getOrNull())
             }
             builtInGuide = guide
-            savedConfig.onSuccess { config = it }.onFailure {
+            savedConfig.onSuccess {
+                config = it
+                if (it.enableModeration && textModerator is ContentModerator) {
+                    LiteRtInitializer.initialize(application)
+                }
+            }.onFailure {
                 storageError = "Android could not read the saved API key. Open Settings to enter it again."
             }
             savedWorkspace.onSuccess { (saved, index) ->
@@ -221,7 +244,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun chooseModel(model: CatalogModel) {
-        if (isLoading || isSavingSettings || isWorkingChat || activePrompt != null ||
+        if (isLoading || isSavingSettings || isWorkingChat || isModerating || activePrompt != null ||
             (usesOpenRouter && (model !in availableModels || (config.agentToolsEnabled() && !model.supportsTools)))) return
         viewModelScope.launch {
             try {
@@ -307,9 +330,20 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         send(prompt, toolsOff)
     }
 
+    private fun beginTurn(prompt: String) {
+        activePrompt = prompt
+        promptText = ""
+        interrupted = null
+        retryPrompt = null
+        progress = AgentProgress(SystemClock.elapsedRealtime())
+        RunNotifications.reset()
+        notifyBackground(force = true)
+        AgentRunService.start(app)
+    }
+
     fun send(text: String, toolsOff: Boolean = false) {
         val prompt = text.trim()
-        if (isLoading || isSavingSettings || isWorkingChat || activePrompt != null || prompt.isBlank()) return
+        if (isLoading || isSavingSettings || isWorkingChat || isModerating || activePrompt != null || prompt.isBlank()) return
         if (!providerReady) {
             turnError = if (usesOpenRouter) "Add your OpenRouter API key in Settings before sending."
                 else "Enter the $providerName API key in Providers before sending."
@@ -339,17 +373,33 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
             attachments = attachments,
         )
         val currentConfig = if (noTools) config.withoutTools() else config
-        activePrompt = prompt
-        promptText = ""
+        val activeModerator = textModerator?.takeIf { currentConfig.enableModeration }
         turnError = null
-        interrupted = null
-        retryPrompt = null
-        progress = AgentProgress(SystemClock.elapsedRealtime())
-        RunNotifications.reset()
-        notifyBackground(force = true)
-        AgentRunService.start(app)
+        if (activeModerator != null) {
+            isModerating = true
+        } else {
+            beginTurn(prompt)
+        }
 
         running = viewModelScope.launch {
+            if (activeModerator != null) {
+                val promptSafe = try {
+                    activeModerator.isSafe(prompt)
+                } catch (e: CancellationException) {
+                    isModerating = false
+                    throw e
+                } catch (_: Throwable) {
+                    true
+                }
+                isModerating = false
+                if (!promptSafe) {
+                    turnError = POLICY_PROMPT_BLOCKED
+                    return@launch
+                }
+                if (activePrompt != null || isLoading || isSavingSettings || isWorkingChat) return@launch
+                beginTurn(prompt)
+            }
+
             var finishedTitle = "Reply ready"
             var finishedText = "The agent finished."
             try {
@@ -364,10 +414,19 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                     SdkRunResult(chatClient.run(active, currentConfig, priorWorkspace, prompt, model.id, ::updateProgress), null)
                 }
                 val result = sdkResult.result
-                finishedText = replyPreview(result.assistantText)
-                if (attachments.isNotEmpty()) attachmentSelection = null
-                val messages = priorWorkspace.messages + listOf(
-                    ChatEntry(isUser = true, text = prompt),
+                val responseSafe = if (activeModerator != null) {
+                    try {
+                        activeModerator.isSafe(result.assistantText)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                        true
+                    }
+                } else {
+                    true
+                }
+                val assistantEntry = if (responseSafe) {
+                    finishedText = replyPreview(result.assistantText)
                     ChatEntry(
                         isUser = false, text = result.assistantText,
                         // Keep the reasoning even while it is hidden, so turning it back on shows it.
@@ -380,13 +439,28 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                             ToolActivity(it.name, it.status, it.detail)
                         }
                     )
+                } else {
+                    finishedText = POLICY_RESPONSE_WARNING
+                    ChatEntry(
+                        isUser = false,
+                        text = POLICY_RESPONSE_WARNING,
+                        usage = result.usage,
+                        modelUsed = result.modelUsed,
+                        isModerated = true,
+                    )
+                }
+                if (attachments.isNotEmpty()) attachmentSelection = null
+                val messages = priorWorkspace.messages + listOf(
+                    ChatEntry(isUser = true, text = prompt),
+                    assistantEntry,
                 )
                 val finished = scopedWorkspace(priorWorkspace.copy(
                     messages = messages,
                     containerId = if (area.projectId != null) priorWorkspace.containerId
-                        else result.discoveredContainerId ?: priorWorkspace.containerId,
-                    sdkHistory = sdkResult.history,
-                    sdkState = sdkResult.state,
+                        else if (responseSafe) result.discoveredContainerId ?: priorWorkspace.containerId
+                        else priorWorkspace.containerId,
+                    sdkHistory = if (responseSafe) sdkResult.history else priorWorkspace.sdkHistory,
+                    sdkState = if (responseSafe) sdkResult.state else priorWorkspace.sdkState,
                     interruptedTurn = null,
                 ))
                 workspace = finished
@@ -542,7 +616,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun chatAction(action: suspend (ChatScope) -> Unit) {
-        if (activePrompt != null || isLoading || isSavingSettings || isWorkingChat || isExporting) return
+        if (activePrompt != null || isLoading || isSavingSettings || isWorkingChat || isExporting || isModerating) return
         val scope = chatScope(config)
         isWorkingChat = true
         viewModelScope.launch {
@@ -561,7 +635,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     internal suspend fun createCustomizationWithModel(kind: CustomizationKind, prompt: String): String {
-        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting) {
+        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating) {
             "Wait for the current task to finish before updating settings."
         }
         require(providerReady) {
@@ -574,7 +648,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     internal suspend fun improveCustomizationWithModel(target: CustomizationTarget, prompt: String): String {
-        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting) {
+        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating) {
             "Wait for the current task to finish before updating settings."
         }
         require(providerReady) {
@@ -593,7 +667,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         skillsDirectory.fetchSkill(skill)
 
     suspend fun saveSettings(updated: AgentConfig) = settingsMutex.withLock {
-        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting)
+        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating)
         updated.settingsError()?.let { throw IllegalArgumentException(it) }
         val clean = updated.copy(apiKey = updated.apiKey.trim(),
             model = updated.model.trim(),
@@ -618,6 +692,9 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                     loaded
                 }
                 config = clean
+                if (clean.enableModeration && !previous.enableModeration && textModerator is ContentModerator) {
+                    LiteRtInitializer.initialize(app)
+                }
                 next?.let { (saved, index) ->
                     cancelImageGeneration()
                     imageResult = null
@@ -705,6 +782,20 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         exportMessage = null
     }
 
+    fun reportResponse(prompt: String, response: String, reason: String) {
+        viewModelScope.launch {
+            reportMessage = when (val outcome = reportClient.submitReport(prompt, response, reason)) {
+                ReportResult.Sent -> "Report submitted. Thank you."
+                ReportResult.Unconfigured -> "Reporting endpoint is not configured in this build."
+                is ReportResult.Failed -> "Could not send report: ${outcome.message}"
+            }
+        }
+    }
+
+    fun clearReportMessage() {
+        reportMessage = null
+    }
+
     init {
         // Notification buttons reach the process-wide view model through this handler.
         RunCommands.handler = { command, decision ->
@@ -761,6 +852,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         sdk.destroy()
+        (textModerator as? AutoCloseable)?.close()
         super.onCleared()
     }
 

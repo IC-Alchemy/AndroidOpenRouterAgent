@@ -370,7 +370,7 @@ internal fun runtimeOptions(
     files: OpenRouterRunFiles = OpenRouterRunFiles(), appActions: Boolean = false,
 ): JSONObject {
     val transcript = JSONArray()
-    workspace.messages.filter { !it.isError && it.text.isNotBlank() }.forEach {
+    workspace.messages.filter { !it.isError && !it.isModerated && it.text.isNotBlank() }.forEach {
         transcript.put(JSONObject().put("type", "message").put("role", if (it.isUser) "user" else "assistant")
             .put("content", it.text))
     }

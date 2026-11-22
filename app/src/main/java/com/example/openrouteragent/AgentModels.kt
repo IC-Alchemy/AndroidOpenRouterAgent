@@ -23,6 +23,7 @@ data class AgentConfig(
     val enableWorkspaceFiles: Boolean = false,
     val deviceTools: Boolean = false,
     val miniApps: Boolean = true,
+    val enableModeration: Boolean = false,
     val mcpUrl: String = "",
     val mcpToken: String = "",
     val maxSteps: Int = 12,
@@ -103,6 +104,7 @@ data class ChatEntry(
     val usage: TokenUsage? = null,
     val modelUsed: String? = null,
     val isError: Boolean = false,
+    val isModerated: Boolean = false,
     val notice: String? = null,
     val toolActivity: List<ToolActivity> = emptyList()
 )

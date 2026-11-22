@@ -31,8 +31,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,6 +71,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -292,6 +295,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var pendingExportContainer by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingExportFile by rememberSaveable { mutableStateOf<String?>(null) }
     val isExporting = agent.isExporting
+    var reportTarget by remember { mutableStateOf<ReportTarget?>(null) }
 
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val containerId = pendingExportContainer
@@ -305,6 +309,13 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         agent.exportMessage?.let {
             snackbar.showSnackbar(it)
             agent.clearExportMessage()
+        }
+    }
+
+    LaunchedEffect(agent.reportMessage) {
+        agent.reportMessage?.let {
+            snackbar.showSnackbar(it)
+            agent.clearReportMessage()
         }
     }
 
@@ -347,7 +358,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         title = {
                             Column(
                                 Modifier.heightIn(min = 48.dp).clickable(
-                                    enabled = !agent.isLoading && !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting,
+                                    enabled = !agent.isLoading && !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating,
                                     onClickLabel = "Choose provider", role = Role.Button,
                                 ) {
                                     editActiveProvider = false
@@ -374,12 +385,12 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         },
                         actions = {
                             if (agent.providerReady) {
-                                TextButton(enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting, onClick = { showModels = true }) { Text("Models") }
+                                TextButton(enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating, onClick = { showModels = true }) { Text("Models") }
                             }
                             TextButton(enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
-                                !agent.isWorkingChat && !isExporting, onClick = { showChatLibrary = true }) { Text("Chats") }
+                                !agent.isWorkingChat && !isExporting && !agent.isModerating, onClick = { showChatLibrary = true }) { Text("Chats") }
                             Box {
-                                IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat,
+                                IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
                                     onClick = { showConfigure = true }) {
                                     Icon(Icons.Default.Settings, contentDescription = "Configure")
                                 }
@@ -389,7 +400,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         editActiveProvider = false
                                         showProviders = true
                                     })
-                                    DropdownMenuItem(text = { Text(if (usesOpenRouter) "Settings" else "OpenRouter settings") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Settings") }, onClick = {
                                         showConfigure = false
                                         showSettings = true
                                     })
@@ -447,7 +458,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     }
                     AgentInputBar(
                         value = agent.promptText, onValueChange = { agent.promptText = it },
-                        isRunning = isRunning, isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat,
+                        isRunning = isRunning,
+                        isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat || agent.isModerating,
                         error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
                         onVoice = listen,
                         onImages = if (usesOpenUncensored) ({ showImageGeneration = true }) else null,
@@ -491,9 +503,18 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(messages, key = { it.id }) { entry ->
+                            itemsIndexed(messages, key = { _, entry -> entry.id }) { index, entry ->
                                 if (entry.isUser) UserMessageBubble(entry.text)
-                                else AgentResponseCard(entry, clipboard::copy, ::openFile, config.sdk.showReasoning)
+                                else {
+                                    val prompt = messages.take(index).lastOrNull { it.isUser }?.text.orEmpty()
+                                    AgentResponseCard(
+                                        entry = entry,
+                                        onCopyText = clipboard::copy,
+                                        onFileClick = ::openFile,
+                                        showReasoning = config.sdk.showReasoning,
+                                        onReport = { reportTarget = ReportTarget(prompt = prompt, response = entry.text) },
+                                    )
+                                }
                             }
                             if (activePrompt != null) {
                                 item("active_prompt") { UserMessageBubble(activePrompt) }
@@ -687,6 +708,72 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             },
         )
     }
+    reportTarget?.let { target ->
+        ReportResponseDialog(
+            onDismiss = { reportTarget = null },
+            onSubmit = { reason ->
+                reportTarget = null
+                agent.reportResponse(target.prompt, target.response, reason)
+            },
+        )
+    }
+}
+
+private data class ReportTarget(val prompt: String, val response: String)
+
+internal val REPORT_REASONS = listOf("Sexual content", "Harassment", "Other")
+
+@Composable
+internal fun ReportResponseDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit,
+) {
+    var selectedReason by remember { mutableStateOf(REPORT_REASONS.first()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Report response") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Select a reason for reporting this AI response. Only the prompt, response, and reason are sent.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                REPORT_REASONS.forEach { reason ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .selectable(
+                                selected = selectedReason == reason,
+                                role = Role.RadioButton,
+                                onClick = { selectedReason = reason },
+                            )
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = selectedReason == reason,
+                            onClick = null,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(text = reason, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(selectedReason) }) {
+                Text("Submit")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable
@@ -943,14 +1030,16 @@ private fun UserMessageBubble(text: String) {
 }
 
 @Composable
-private fun AgentResponseCard(
+internal fun AgentResponseCard(
     entry: ChatEntry,
     onCopyText: (String) -> Unit,
     onFileClick: (containerId: String, fileRef: ContainerFileRef) -> Unit,
     showReasoning: Boolean = true,
+    onReport: () -> Unit = {},
 ) {
     val uriHandler = LocalUriHandler.current
-    val containerColor = if (entry.isError) {
+    val isWarningCard = entry.isError || entry.isModerated
+    val containerColor = if (isWarningCard) {
         MaterialTheme.colorScheme.errorContainer
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
@@ -962,7 +1051,7 @@ private fun AgentResponseCard(
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = BorderStroke(
             1.dp,
-            if (entry.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+            if (isWarningCard) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
         )
     ) {
         Column(
@@ -971,10 +1060,10 @@ private fun AgentResponseCard(
         ) {
             // Main Assistant Text
             Row(verticalAlignment = Alignment.Top) {
-                if (entry.isError) {
+                if (isWarningCard) {
                     Icon(
                         imageVector = Icons.Default.Warning,
-                        contentDescription = "Error",
+                        contentDescription = if (entry.isModerated) "Content policy warning" else "Error",
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier
                             .padding(end = 8.dp, top = 2.dp)
@@ -984,7 +1073,7 @@ private fun AgentResponseCard(
                 CopyableText(
                     text = entry.text,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (entry.isError) MaterialTheme.colorScheme.onErrorContainer
+                    color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
                         else MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -1059,29 +1148,51 @@ private fun AgentResponseCard(
                 }
             }
 
-            // Footer with usage metadata and Copy button
-            if (!entry.isError) {
-                HorizontalDivider()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        entry.modelUsed?.let {
-                            CopyableText(it, style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        entry.usage?.let {
-                            Text(it.display(), style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Footer with usage metadata, Copy reply (when safe), and Report button on every AI bubble
+            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    entry.modelUsed?.let {
+                        CopyableText(
+                            it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    entry.usage?.let {
+                        Text(
+                            it.display(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!isWarningCard) {
+                        TextButton(
+                            onClick = { onCopyText(entry.text) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Text("Copy reply")
                         }
                     }
                     TextButton(
-                        onClick = { onCopyText(entry.text) },
+                        onClick = onReport,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
-                        Text("Copy reply")
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Report")
                     }
                 }
             }
@@ -1365,7 +1476,7 @@ private fun AgentInputBar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsBottomSheet(
+internal fun SettingsBottomSheet(
     initialConfig: AgentConfig,
     onDismiss: () -> Unit,
     onSave: suspend (AgentConfig) -> Unit,
@@ -1390,6 +1501,7 @@ private fun SettingsBottomSheet(
     var workspaceFiles by remember { mutableStateOf(initialConfig.enableWorkspaceFiles) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
     var miniApps by remember { mutableStateOf(initialConfig.miniApps) }
+    var enableModeration by remember { mutableStateOf(initialConfig.enableModeration) }
     var maxSteps by remember { mutableStateOf(initialConfig.maxSteps.toString()) }
     var maxCost by remember { mutableStateOf(initialConfig.maxCost?.toString().orEmpty()) }
     var temperature by remember { mutableStateOf(initialConfig.temperature?.toString().orEmpty()) }
@@ -1404,7 +1516,7 @@ private fun SettingsBottomSheet(
     val uriHandler = LocalUriHandler.current
     val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
         enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
-        deviceTools = deviceTools, miniApps = miniApps, allowSandboxNetwork = allowNetwork,
+        deviceTools = deviceTools, miniApps = miniApps, enableModeration = enableModeration, allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
         mcpToken = mcpToken, extraToolsJson = toolsJson)
@@ -1494,6 +1606,15 @@ private fun SettingsBottomSheet(
                         Text("Changing the key starts a new conversation.",
                             style = MaterialTheme.typography.bodySmall)
                     }
+                }
+
+                OutlinedSection(title = "Content moderation") {
+                    SettingsToggleRow(
+                        title = "On-device content moderation",
+                        subtitle = "Checks prompts and AI responses locally before sending or displaying them. Off by default.",
+                        checked = enableModeration,
+                        onCheckedChange = { enableModeration = it }
+                    )
                 }
 
                 OutlinedSection(title = "Agent tools") {
