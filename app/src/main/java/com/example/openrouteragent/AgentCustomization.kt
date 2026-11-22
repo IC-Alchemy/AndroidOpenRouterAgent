@@ -132,6 +132,9 @@ internal fun parseSkill(markdown: String): SavedAgentSkill {
     return skill
 }
 
+val QUANTIZATIONS = listOf("int4", "int8", "fp4", "mxfp4", "nvfp4", "fp6", "fp8", "mxfp8", "fp16", "bf16", "fp32",
+    "unknown")
+
 @Serializable
 data class SdkSettings(
     val fallbackModels: String = "",
@@ -153,6 +156,16 @@ data class SdkSettings(
     val providerOnly: String = "",
     val providerIgnore: String = "",
     val providerSort: String = "",
+    /** A routing variant added to the model ID: floor, nitro or exacto. Empty uses default routing. */
+    val routingVariant: String = "",
+    val sortPartition: String = "",
+    val zdr: Boolean = false,
+    val distillableText: Boolean = false,
+    val quantizations: String = "",
+    val minThroughput: Double? = null,
+    val maxLatency: Double? = null,
+    val maxPromptPrice: Double? = null,
+    val maxCompletionPrice: Double? = null,
     val providerFallback: String = "",
     val requireParameters: Boolean = false,
     val dataCollection: String = "",
@@ -187,6 +200,12 @@ data class SdkSettings(
             "Follow-up temperature must be between 0 and 2."
         finalResponse !in setOf("", "off", "custom") || finalDirective.length > 4_000 ->
             "Check the final-answer setting and directive."
+        routingVariant !in setOf("", "floor", "nitro", "exacto") -> "Choose a routing option."
+        routingVariant.isNotEmpty() && providerSort.isNotEmpty() -> "Choose one routing option."
+        quantizations.split(',').map(String::trim).filter(String::isNotEmpty).any { it !in QUANTIZATIONS } ->
+            "Use quantizations from: ${QUANTIZATIONS.joinToString()}."
+        listOf(minThroughput, maxLatency).any { it != null && it <= 0 } -> "Throughput and latency must be above 0."
+        listOf(maxPromptPrice, maxCompletionPrice).any { it != null && it < 0 } -> "Maximum prices cannot be negative."
         toolTimeoutSeconds != null && toolTimeoutSeconds !in 1..600 -> "Tool timeout must be 1–600 seconds."
         streamIdleSeconds != null && streamIdleSeconds !in 30..600 -> "Stream idle timeout must be 30–600 seconds."
         toolConcurrency != null && toolConcurrency !in 1..32 -> "Set 1–32 concurrent tool calls."

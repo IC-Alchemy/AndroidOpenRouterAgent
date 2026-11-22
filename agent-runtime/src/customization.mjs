@@ -132,6 +132,15 @@ const optionalSdkFields = new Set(['provider', 'reasoning', 'text', 'include', '
   'promptCacheKey', 'promptCacheOptions', 'cacheControl', 'truncation', 'topLogprobs', 'safetyIdentifier',
   'route', 'user', 'plugins', 'imageConfig', 'modalities']);
 
+const routingVariants = new Set(['floor', 'nitro', 'exacto']);
+
+/** Adds a routing variant suffix. Any sorting variant already on the ID is replaced, since the last one wins. */
+export function withVariant(id, variant) {
+  if (!id || !routingVariants.has(variant)) return id;
+  const [base, ...suffixes] = id.split(':');
+  return [base, ...suffixes.filter(suffix => !routingVariants.has(suffix)), variant].join(':');
+}
+
 export function sdkParameters(options, hasTools) {
   const prefs = options.sdk ?? {};
   const details = options.modelDetails;
@@ -150,7 +159,18 @@ export function sdkParameters(options, hasTools) {
   for (const [key, input] of [['order', prefs.providerOrder], ['only', prefs.providerOnly], ['ignore', prefs.providerIgnore]]) {
     if (split(input).length) provider[key] = split(input);
   }
-  if (prefs.providerSort) provider.sort = prefs.providerSort;
+  if (prefs.providerSort) {
+    provider.sort = prefs.sortPartition ? { by: prefs.providerSort, partition: prefs.sortPartition } : prefs.providerSort;
+  }
+  if (prefs.zdr) provider.zdr = true;
+  if (prefs.distillableText) provider.enforceDistillableText = true;
+  if (split(prefs.quantizations).length) provider.quantizations = split(prefs.quantizations);
+  if (prefs.minThroughput != null) provider.preferredMinThroughput = prefs.minThroughput;
+  if (prefs.maxLatency != null) provider.preferredMaxLatency = prefs.maxLatency;
+  const maxPrice = {};
+  if (prefs.maxPromptPrice != null) maxPrice.prompt = String(prefs.maxPromptPrice);
+  if (prefs.maxCompletionPrice != null) maxPrice.completion = String(prefs.maxCompletionPrice);
+  if (Object.keys(maxPrice).length) provider.maxPrice = { ...map(provider.maxPrice), ...maxPrice };
   if (prefs.providerFallback) provider.allowFallbacks = prefs.providerFallback === 'on';
   if (prefs.requireParameters) provider.requireParameters = true;
   if (prefs.dataCollection) provider.dataCollection = prefs.dataCollection;
@@ -190,8 +210,10 @@ export function sdkParameters(options, hasTools) {
       options.mcpUrl || (options.customTools ?? []).some(tool => tool.handler !== 'template') ? false : undefined,
   };
 
-  if (fallback.length) parameters.models = ctx => [...new Set([resolveModel(ctx), ...fallback])];
-  else parameters.model = adaptive ? resolveModel : options.model;
+  // Routing variants (:floor, :nitro, :exacto) go on every model ID sent; model details stay keyed by the base ID.
+  const routed = id => withVariant(id, prefs.routingVariant);
+  if (fallback.length) parameters.models = ctx => [...new Set([resolveModel(ctx), ...fallback].map(routed))];
+  else parameters.model = adaptive ? ctx => routed(resolveModel(ctx)) : routed(options.model);
   if (Object.keys(reasoning).length) parameters.reasoning = ctx =>
     supports(resolveModel(ctx), 'reasoning', 'include_reasoning') ? reasoning : undefined;
   return parameters;

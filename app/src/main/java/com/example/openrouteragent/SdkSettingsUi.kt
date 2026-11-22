@@ -36,6 +36,27 @@ import kotlinx.coroutines.launch
 private fun choices(vararg values: String): List<Pair<String, String>> =
     listOf("" to "Provider default") + values.map { it to it.replace('_', ' ').replaceFirstChar(Char::uppercaseChar) }
 
+private val ROUTING_VARIANTS = setOf("floor", "nitro", "exacto")
+private val ROUTING_SORTS = setOf("price", "throughput", "latency")
+private val ROUTING_OPTIONS = listOf("" to "Auto", "floor" to "Floor", "nitro" to "Nitro", "exacto" to "Exacto",
+    "price" to "Price", "throughput" to "Throughput", "latency" to "Latency")
+
+/** Short descriptions from OpenRouter's provider routing docs. */
+private val ROUTING_DESCRIPTIONS = mapOf(
+    "" to "OpenRouter's default. Balances price, speed, latency and reliability, and keeps a chat on one provider " +
+        "while its prompt cache is warm. When tools are sent, Auto Exacto also moves providers with better " +
+        "tool-calling results to the front.",
+    "floor" to "Adds :floor to the model. Cheapest provider first, and cheaper flex-tier endpoints may be used. " +
+        "Turns off Auto Exacto, so a chat stays on one provider and prompt caching works best.",
+    "nitro" to "Adds :nitro to the model. Fastest provider first, and priority-tier endpoints may be used, " +
+        "billed at their higher rate.",
+    "exacto" to "Adds :exacto to the model. Always puts providers with the most reliable tool calling first, " +
+        "even for messages without tools.",
+    "price" to "Sorts providers by price only, without flex endpoints. Turns off Auto Exacto.",
+    "throughput" to "Sorts providers by tokens per second only, without priority endpoints.",
+    "latency" to "Sorts providers by time to first token.",
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SdkSettingsSheet(
@@ -53,6 +74,8 @@ internal fun SdkSettingsSheet(
     var detectRepetition by remember { mutableStateOf(sdk.detectRepetition) }
     var showReasoning by remember { mutableStateOf(sdk.showReasoning) }
     var discoverSkills by remember { mutableStateOf(sdk.discoverSkills) }
+    var zdr by remember { mutableStateOf(sdk.zdr) }
+    var distillable by remember { mutableStateOf(sdk.distillableText) }
     val scope = rememberCoroutineScope()
     val state = remember {
         mutableStateMapOf(
@@ -65,7 +88,11 @@ internal fun SdkSettingsSheet(
             "verbosity" to sdk.verbosity, "toolChoice" to sdk.toolChoice, "parallel" to sdk.parallelTools,
             "tier" to sdk.serviceTier, "stops" to sdk.stopSequences, "models" to sdk.fallbackModels,
             "order" to sdk.providerOrder, "only" to sdk.providerOnly, "ignore" to sdk.providerIgnore,
-            "sort" to sdk.providerSort, "fallback" to sdk.providerFallback, "data" to sdk.dataCollection,
+            "route" to sdk.routingVariant.ifEmpty { sdk.providerSort }, "partition" to sdk.sortPartition,
+            "quant" to sdk.quantizations, "minTp" to sdk.minThroughput?.toString().orEmpty(),
+            "maxLat" to sdk.maxLatency?.toString().orEmpty(), "maxIn" to sdk.maxPromptPrice?.toString().orEmpty(),
+            "maxOut" to sdk.maxCompletionPrice?.toString().orEmpty(),
+            "fallback" to sdk.providerFallback, "data" to sdk.dataCollection,
             "json" to sdk.advancedJson, "turn" to sdk.followUpTurn.toString(), "followModel" to sdk.followUpModel,
             "followTemp" to sdk.followUpTemperature?.toString().orEmpty(),
             "followOutput" to sdk.followUpOutputTokens?.toString().orEmpty(), "followInstructions" to sdk.followUpInstructions,
@@ -94,7 +121,16 @@ internal fun SdkSettingsSheet(
                 reasoningSummary = value("summary"), responseFormat = value("format"), verbosity = value("verbosity"),
                 toolChoice = value("toolChoice"), parallelTools = value("parallel"), serviceTier = value("tier"),
                 stopSequences = value("stops"), providerOrder = value("order").trim(), providerOnly = value("only").trim(),
-                providerIgnore = value("ignore").trim(), providerSort = value("sort"), providerFallback = value("fallback"),
+                providerIgnore = value("ignore").trim(),
+                providerSort = value("route").takeIf { it in ROUTING_SORTS }.orEmpty(),
+                routingVariant = value("route").takeIf { it in ROUTING_VARIANTS }.orEmpty(),
+                sortPartition = value("partition"), zdr = zdr, distillableText = distillable,
+                quantizations = value("quant").split(',').map(String::trim).filter(String::isNotEmpty)
+                    .joinToString(","),
+                minThroughput = decimal("minTp", "Minimum throughput"), maxLatency = decimal("maxLat", "Maximum latency"),
+                maxPromptPrice = decimal("maxIn", "Maximum input price"),
+                maxCompletionPrice = decimal("maxOut", "Maximum output price"),
+                providerFallback = value("fallback"),
                 requireParameters = requireParams, dataCollection = value("data"), advancedJson = value("json").trim(),
                 followUpTurn = number("turn", "Follow-up step") ?: 2, followUpModel = value("followModel").trim(),
                 followUpTemperature = decimal("followTemp", "Follow-up temperature"),
@@ -154,11 +190,19 @@ internal fun SdkSettingsSheet(
                     EditField(title, value(key), { state[key] = it }, lines, hint)
                 }
                 @Composable
-                fun Options(key: String, title: String, options: List<Pair<String, String>>) {
+                fun Options(key: String, title: String, options: List<Pair<String, String>>,
+                            descriptions: Map<String, String> = emptyMap()) {
                     OutlinedSection(title = title) {
                         ChoiceStrip(options, value(key)) { state[key] = it }
+                        descriptions[value(key)]?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
+                @Composable
+                fun Note(text: String) = Text(text, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when (section) {
                     "generation" -> {
                         Field("temperature", "Temperature")
@@ -174,15 +218,44 @@ internal fun SdkSettingsSheet(
                         Field("stops", "Stop sequences", "Up to four sequences, one per line.", 3)
                     }
                     "routing" -> {
-                        Field("models", "Fallback model IDs", "Comma-separated OpenRouter model IDs.")
-                        Field("order", "Provider order", "Comma-separated provider slugs.")
-                        Field("only", "Allow only providers")
-                        Field("ignore", "Exclude providers")
-                        Options("sort", "Provider sorting", choices("price", "throughput", "latency"))
-                        Options("fallback", "Provider fallbacks", choices("on", "off"))
-                        Options("data", "Provider data collection", choices("allow", "deny"))
-                        Options("tier", "Service tier", choices("auto", "default", "flex", "priority", "scale", "ultrafast"))
+                        Options("route", "Provider routing", ROUTING_OPTIONS, ROUTING_DESCRIPTIONS)
+                        if (value("route") in ROUTING_SORTS && value("models").isNotBlank()) {
+                            Options("partition", "Sort across fallback models", listOf("" to "Per model", "none" to "All together"),
+                                mapOf("" to "Tries every provider of your main model first, then the fallback models.",
+                                    "none" to "Sorts all endpoints of all models together, so a fallback model can go first."))
+                        }
+                        Field("models", "Fallback model IDs", "Comma-separated OpenRouter model IDs, tried if the main model fails.")
+                        Field("order", "Provider order", "Comma-separated provider slugs to try first, such as anthropic, openai. " +
+                            "Overrides default routing.")
+                        Field("only", "Allow only providers", "Comma-separated slugs. Every other provider is skipped.")
+                        Field("ignore", "Exclude providers", "Comma-separated slugs to never use.")
+                        Options("fallback", "Provider fallbacks", choices("on", "off"), mapOf(
+                            "on" to "Use backup providers when the first one is down or busy.",
+                            "off" to "Fail instead of using a provider you did not list. Use with Provider order."))
+                        HorizontalDivider()
+                        Text("Performance preferences", style = MaterialTheme.typography.titleSmall)
+                        Note("Providers that miss these are moved to the back, not removed, so requests still run.")
+                        Field("minTp", "Preferred minimum throughput (tokens/s)", "Compared with each provider's median speed.")
+                        Field("maxLat", "Preferred maximum latency (seconds)", "Compared with each provider's median time to first token.")
+                        HorizontalDivider()
+                        Text("Filters", style = MaterialTheme.typography.titleSmall)
+                        Note("Filters remove providers. A request fails if no provider is left.")
+                        Field("maxIn", "Maximum input price (USD per million tokens)")
+                        Field("maxOut", "Maximum output price (USD per million tokens)")
+                        Field("quant", "Allowed quantizations", "Comma-separated, for open-weight models: " +
+                            QUANTIZATIONS.joinToString() + ". Lower bit counts are cheaper but can be less accurate.")
+                        Options("data", "Provider data collection", choices("allow", "deny"), mapOf(
+                            "allow" to "Any provider may be used, including ones that may store or train on prompts.",
+                            "deny" to "Only providers that do not store your data or train on it."))
+                        ToggleLine("Zero data retention only", zdr) { zdr = it }
+                        Note("Only providers that keep no copy of your prompts or replies.")
+                        ToggleLine("Distillable models only", distillable) { distillable = it }
+                        Note("Only models whose licence lets you train other models on their output.")
                         ToggleLine("Require all requested parameters", requireParams) { requireParams = it }
+                        Note("Skip providers that would ignore a setting you chose, such as a response format.")
+                        Options("tier", "Service tier", choices("auto", "default", "flex", "priority", "scale", "ultrafast"), mapOf(
+                            "flex" to "Slower or queued endpoints at a lower price, where offered.",
+                            "priority" to "Faster, higher-priority endpoints at a higher price, where offered."))
                     }
                     "turn" -> {
                         Text("Apply these overrides to follow-up requests inside the current agent run.",
