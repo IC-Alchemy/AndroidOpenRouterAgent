@@ -3,10 +3,14 @@ package com.example.openrouteragent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -71,5 +75,102 @@ class PrecisionStudioUiTest {
         composeRule.onNodeWithText("Section body").assertIsDisplayed()
         composeRule.onNodeWithText("Untitled body").assertIsDisplayed()
         composeRule.onNodeWithText("Rail content").assertIsDisplayed()
+    }
+
+    @Test
+    fun statusCapabilitiesBarAndEmptyWorkbenchRenderOpenRouterAndCustomProviderStates() {
+        var selectedPrompt = ""
+        var usesOpenRouter by androidx.compose.runtime.mutableStateOf(true)
+        composeRule.setContent {
+            OpenRouterAgentTheme(darkTheme = true) {
+                androidx.compose.foundation.layout.Column {
+                    StatusCapabilitiesBar(
+                        config = AgentConfig(
+                            apiKey = "or-key",
+                            enableShellSandbox = true,
+                            enableWebSearch = true,
+                            allowSandboxNetwork = true,
+                        ),
+                        activeContainerId = null,
+                        canDetach = true,
+                        inProject = true,
+                        attachmentCount = 2,
+                        onOpenProjectFiles = {},
+                        onOpenWorkspaceFiles = {},
+                        onClearAttachments = {},
+                        onOpenFiles = {},
+                        onResetContainer = {},
+                    )
+                    EmptyAgentState(
+                        hasApiKey = !usesOpenRouter,
+                        onOpenSettings = {},
+                        providerName = if (usesOpenRouter) "OpenRouter" else "CustomAI",
+                        usesOpenRouter = usesOpenRouter,
+                        onSelectPrompt = { selectedPrompt = it },
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Project files").assertIsDisplayed()
+        composeRule.onNodeWithText("Workspace files · 2 attached").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Hosted shell").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Web Search").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Egress Allowlist").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Connect OpenRouter").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("01").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("03").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Check the Linux OS, Python, and Node.js versions in my sandbox.")
+            .performScrollTo()
+            .performClick()
+        assertEquals("Check the Linux OS, Python, and Node.js versions in my sandbox.", selectedPrompt)
+
+        usesOpenRouter = false
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Start a conversation with CustomAI.").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Explain a topic in plain language.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun agentInputBarHandlesAgentAndChatModeAndCustomProviderWithoutModeSwitch() {
+        var currentMode = false
+        composeRule.setContent {
+            OpenRouterAgentTheme(darkTheme = true) {
+                androidx.compose.foundation.layout.Column {
+                    AgentInputBar(
+                        value = "Run check",
+                        onValueChange = {},
+                        isRunning = false,
+                        isLoading = false,
+                        error = "Turn failed",
+                        onSend = {},
+                        onStop = {},
+                        onVoice = {},
+                        onImages = {},
+                        chatMode = currentMode,
+                        onChatMode = { currentMode = it },
+                    )
+                    AgentInputBar(
+                        value = "",
+                        onValueChange = {},
+                        isRunning = false,
+                        isLoading = false,
+                        error = null,
+                        onSend = {},
+                        onStop = {},
+                        onVoice = {},
+                        onImages = null,
+                        chatMode = null,
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Agent").assertIsDisplayed()
+        composeRule.onNodeWithText("Chat").performClick()
+        assertEquals(true, currentMode)
+        composeRule.onNodeWithText("Tools on").assertIsDisplayed()
+        composeRule.onNodeWithText("Generate images").assertIsDisplayed()
+        composeRule.onNodeWithText("Turn failed").assertIsDisplayed()
     }
 }

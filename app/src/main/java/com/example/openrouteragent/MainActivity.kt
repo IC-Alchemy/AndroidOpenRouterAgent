@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -344,10 +345,19 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val statusColor = when {
+                                        isRunning -> MaterialTheme.colorScheme.primary
+                                        agent.providerReady -> MaterialTheme.colorScheme.secondary
+                                        else -> MaterialTheme.colorScheme.outline
+                                    }
+                                    StudioStatusDot(color = statusColor, size = 6.dp)
+                                    Spacer(Modifier.width(7.dp))
                                     Text(if (usesOpenRouter) "OpenRouter Agent" else providerName,
                                         Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp))
+                                        fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.width(2.dp))
+                                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 val detail = when {
                                     model != null -> model.name
@@ -355,17 +365,39 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     agent.providerReady -> "Choose a model"
                                     else -> "Connect $providerName"
                                 }
-                                Text(listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "), style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         },
                         actions = {
+                            val pillColors = ButtonDefaults.textButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            )
                             if (agent.providerReady) {
-                                TextButton(enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating, onClick = { showModels = true }) { Text("Models") }
+                                TextButton(
+                                    enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating,
+                                    onClick = { showModels = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = pillColors,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                ) { Text("Models", style = MaterialTheme.typography.labelMedium) }
+                                Spacer(Modifier.width(4.dp))
                             }
-                            TextButton(enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
-                                !agent.isWorkingChat && !isExporting && !agent.isModerating, onClick = { showChatLibrary = true }) { Text("Chats") }
+                            TextButton(
+                                enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
+                                    !agent.isWorkingChat && !isExporting && !agent.isModerating,
+                                onClick = { showChatLibrary = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = pillColors,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            ) { Text("Chats", style = MaterialTheme.typography.labelMedium) }
                             Box {
                                 IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
                                     onClick = { showConfigure = true }) {
@@ -423,7 +455,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
-                    HorizontalDivider()
+                    HorizontalDivider(
+                        thickness = StudioHairlineWidth,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
                 }
             },
             snackbarHost = { SnackbarHost(snackbar) },
@@ -800,7 +835,7 @@ private fun ProjectFilePanel(
 // =============================================================================
 
 @Composable
-private fun StatusCapabilitiesBar(
+internal fun StatusCapabilitiesBar(
     config: AgentConfig,
     activeContainerId: String?,
     canDetach: Boolean,
@@ -814,9 +849,9 @@ private fun StatusCapabilitiesBar(
 ) {
     Surface(
         modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             modifier = Modifier
@@ -841,7 +876,7 @@ private fun StatusCapabilitiesBar(
                 if (activeContainerId != null) {
                     AssistChip(onClick = onOpenFiles, label = { Text("Sandbox files") }, modifier = Modifier.heightIn(min = 48.dp))
                     if (!inProject) TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
-                } else StatusPill("Hosted shell", MaterialTheme.colorScheme.primary)
+                } else StatusPill("Hosted shell", MaterialTheme.colorScheme.secondary)
             }
             if (config.enableWebSearch) {
                 StatusPill(
@@ -860,39 +895,34 @@ private fun StatusCapabilitiesBar(
 }
 
 @Composable
-private fun StatusPill(
+internal fun StatusPill(
     label: String,
     accent: Color
 ) {
     Surface(
-        shape = RoundedCornerShape(50),
-        color = accent.copy(alpha = 0.14f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f))
+        shape = RoundedCornerShape(8.dp),
+        color = accent.copy(alpha = 0.11f),
+        border = BorderStroke(StudioHairlineWidth, accent.copy(alpha = 0.38f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-            )
+            StudioStatusDot(color = accent, size = 5.dp)
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium
             )
-
         }
     }
 }
 
 @Composable
-private fun EmptyAgentState(
+internal fun EmptyAgentState(
     hasApiKey: Boolean,
     onOpenSettings: () -> Unit,
     providerName: String,
@@ -909,16 +939,17 @@ private fun EmptyAgentState(
         verticalArrangement = Arrangement.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.size(64.dp)
+            border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+            modifier = Modifier.size(60.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Default.Build,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(32.dp)
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }
@@ -928,7 +959,7 @@ private fun EmptyAgentState(
         Text(
             text = "What are you working on?",
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(6.dp))
@@ -953,6 +984,7 @@ private fun EmptyAgentState(
         Text(
             text = "Try a prompt",
             style = MaterialTheme.typography.labelLarge,
+            fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.align(Alignment.Start).semantics { heading() }
         )
@@ -960,7 +992,7 @@ private fun EmptyAgentState(
 
         val suggestions = if (usesOpenRouter) QUICK_PROMPTS else listOf(
             "Explain a topic in plain language.", "Help me outline a project.")
-        suggestions.forEach { sample ->
+        suggestions.forEachIndexed { index, sample ->
             Card(
                 onClick = { onSelectPrompt(sample) },
                 modifier = Modifier
@@ -968,21 +1000,35 @@ private fun EmptyAgentState(
                     .padding(vertical = 4.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                    ) {
+                        Text(
+                            text = "%02d".format(index + 1),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         text = sample,
                         style = MaterialTheme.typography.bodyMedium
@@ -1381,7 +1427,7 @@ private fun SandboxTerminalCard(
 }
 
 @Composable
-private fun AgentInputBar(
+internal fun AgentInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     isRunning: Boolean,
@@ -1396,9 +1442,9 @@ private fun AgentInputBar(
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(thickness = StudioHairlineWidth, color = MaterialTheme.colorScheme.outlineVariant)
             if (onImages != null || chatMode != null) {
-                Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (chatMode != null) {
                         // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
@@ -1408,6 +1454,7 @@ private fun AgentInputBar(
                         }
                         Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                     }
                     if (onImages != null) {
@@ -1433,7 +1480,7 @@ private fun AgentInputBar(
                     placeholder = { Text(if (chatMode == true) "Message" else "Message the agent") },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(16.dp),
                     enabled = !isRunning && !isLoading,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { onSend() })
@@ -1444,6 +1491,7 @@ private fun AgentInputBar(
                 FilledIconButton(
                     onClick = if (isRunning) onStop else onSend,
                     enabled = isRunning || (!isLoading && value.isNotBlank()),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
