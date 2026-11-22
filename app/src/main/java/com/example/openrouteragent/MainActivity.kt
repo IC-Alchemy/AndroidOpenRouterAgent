@@ -89,6 +89,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
@@ -275,6 +276,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var showSdkSettings by rememberSaveable { mutableStateOf(false) }
     var customizeTab by rememberSaveable { mutableStateOf<String?>(null) }
     var showModels by rememberSaveable { mutableStateOf(false) }
+    var showImageGeneration by rememberSaveable { mutableStateOf(false) }
+    val imageDialogState = rememberSaveableStateHolder()
+    val usesOpenUncensored = config.activeProviderId == OPENUNCENSORED_ID
     val model = agent.selectedModel
     var showChatLibrary by rememberSaveable { mutableStateOf(false) }
     var deviceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
@@ -441,6 +445,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         isRunning = isRunning, isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat,
                         error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
                         onVoice = listen,
+                        onImages = if (usesOpenUncensored) ({ showImageGeneration = true }) else null,
                     )
                 }
             }
@@ -542,6 +547,15 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             agent.catalogError, { agent.refreshModels() }, { showModels = false }, providerName, !usesOpenRouter) { chosen ->
             agent.chooseModel(chosen)
             showModels = false
+        }
+    }
+    if (usesOpenUncensored && showImageGeneration && !agent.isLoading) {
+        imageDialogState.SaveableStateProvider(workspaceTag(config)) {
+            OpenUncensoredImagesDialog(agent, onDismiss = { showImageGeneration = false }, onConnect = {
+                showImageGeneration = false
+                editActiveProvider = true
+                showProviders = true
+            })
         }
     }
     agent.approval?.let { approval ->
@@ -1256,10 +1270,16 @@ private fun AgentInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onVoice: () -> Unit,
+    onImages: (() -> Unit)?,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            if (onImages != null) {
+                Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp)) {
+                    TextButton(onClick = onImages, enabled = !isLoading && !isRunning) { Text("Generate images") }
+                }
+            }
             if (error != null) {
                 CopyableText(error, Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
