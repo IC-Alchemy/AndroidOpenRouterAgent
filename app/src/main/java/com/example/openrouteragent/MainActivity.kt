@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -179,30 +180,15 @@ fun OpenRouterAgentTheme(
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val clipboard = remember(context, scope) { SelectionClipboard(scope) { copyText(context, it) } }
-    val colorScheme = if (darkTheme) darkColorScheme(
-        primary = Color(0xFFCFC4FF), onPrimary = Color(0xFF23154F),
-        primaryContainer = Color(0xFF272046), onPrimaryContainer = Color(0xFFF0EAFF),
-        secondary = Color(0xFF9EE4D3), onSecondary = Color(0xFF00382E),
-        secondaryContainer = Color(0xFF142E2C), onSecondaryContainer = Color(0xFFD2F3EA),
-        background = Color.Black, surface = Color.Black, surfaceTint = Color.Black,
-        surfaceDim = Color.Black, surfaceBright = Color(0xFF191821),
-        surfaceContainerLowest = Color.Black, surfaceContainerLow = Color(0xFF09090D),
-        surfaceContainer = Color(0xFF101017), surfaceContainerHigh = Color(0xFF181820),
-        surfaceContainerHighest = Color(0xFF21212A), surfaceVariant = Color(0xFF16161D),
-        onSurface = Color(0xFFF1EFF6), onBackground = Color(0xFFF1EFF6),
-        onSurfaceVariant = Color(0xFFC2BFCD), outline = Color(0xFF817B96), outlineVariant = Color(0xFF524C62)
-    ) else lightColorScheme(
-        primary = Color(0xFF544294), onPrimary = Color.White,
-        primaryContainer = Color(0xFFEAE2FF), onPrimaryContainer = Color(0xFF271650),
-        secondary = Color(0xFF1E665B), secondaryContainer = Color(0xFFCFEDE7),
-        background = Color(0xFFFAF8FE), surface = Color(0xFFFAF8FE),
-        onSurface = Color(0xFF211C2A), onBackground = Color(0xFF211C2A),
-        surfaceVariant = Color(0xFFEAE5F0), onSurfaceVariant = Color(0xFF51495C),
-        outline = Color(0xFF81758D), outlineVariant = Color(0xFFC1B6CC)
-    )
+    val colorScheme = if (darkTheme) StudioDarkColorScheme else StudioLightColorScheme
 
     CompositionLocalProvider(LocalSelectionClipboard provides clipboard) {
-        MaterialTheme(colorScheme = colorScheme, content = content)
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = StudioTypography,
+            shapes = StudioShapes,
+            content = content,
+        )
     }
 }
 
@@ -359,10 +345,19 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val statusColor = when {
+                                        isRunning -> MaterialTheme.colorScheme.primary
+                                        agent.providerReady -> MaterialTheme.colorScheme.secondary
+                                        else -> MaterialTheme.colorScheme.outline
+                                    }
+                                    StudioStatusDot(color = statusColor, size = 6.dp)
+                                    Spacer(Modifier.width(7.dp))
                                     Text(if (usesOpenRouter) "OpenRouter Agent" else providerName,
                                         Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp))
+                                        fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.width(2.dp))
+                                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 val detail = when {
                                     model != null -> model.name
@@ -370,17 +365,39 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     agent.providerReady -> "Choose a model"
                                     else -> "Connect $providerName"
                                 }
-                                Text(listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "), style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         },
                         actions = {
+                            val pillColors = ButtonDefaults.textButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            )
                             if (agent.providerReady) {
-                                TextButton(enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating, onClick = { showModels = true }) { Text("Models") }
+                                TextButton(
+                                    enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating,
+                                    onClick = { showModels = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = pillColors,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                ) { Text("Models", style = MaterialTheme.typography.labelMedium) }
+                                Spacer(Modifier.width(4.dp))
                             }
-                            TextButton(enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
-                                !agent.isWorkingChat && !isExporting && !agent.isModerating, onClick = { showChatLibrary = true }) { Text("Chats") }
+                            TextButton(
+                                enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
+                                    !agent.isWorkingChat && !isExporting && !agent.isModerating,
+                                onClick = { showChatLibrary = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = pillColors,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            ) { Text("Chats", style = MaterialTheme.typography.labelMedium) }
                             Box {
                                 IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
                                     onClick = { showConfigure = true }) {
@@ -438,7 +455,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
-                    HorizontalDivider()
+                    HorizontalDivider(
+                        thickness = StudioHairlineWidth,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
                 }
             },
             snackbarHost = { SnackbarHost(snackbar) },
@@ -815,7 +835,7 @@ private fun ProjectFilePanel(
 // =============================================================================
 
 @Composable
-private fun StatusCapabilitiesBar(
+internal fun StatusCapabilitiesBar(
     config: AgentConfig,
     activeContainerId: String?,
     canDetach: Boolean,
@@ -829,9 +849,9 @@ private fun StatusCapabilitiesBar(
 ) {
     Surface(
         modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             modifier = Modifier
@@ -856,7 +876,7 @@ private fun StatusCapabilitiesBar(
                 if (activeContainerId != null) {
                     AssistChip(onClick = onOpenFiles, label = { Text("Sandbox files") }, modifier = Modifier.heightIn(min = 48.dp))
                     if (!inProject) TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
-                } else StatusPill("Hosted shell", MaterialTheme.colorScheme.primary)
+                } else StatusPill("Hosted shell", MaterialTheme.colorScheme.secondary)
             }
             if (config.enableWebSearch) {
                 StatusPill(
@@ -875,39 +895,34 @@ private fun StatusCapabilitiesBar(
 }
 
 @Composable
-private fun StatusPill(
+internal fun StatusPill(
     label: String,
     accent: Color
 ) {
     Surface(
-        shape = RoundedCornerShape(50),
-        color = accent.copy(alpha = 0.14f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f))
+        shape = RoundedCornerShape(8.dp),
+        color = accent.copy(alpha = 0.11f),
+        border = BorderStroke(StudioHairlineWidth, accent.copy(alpha = 0.38f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-            )
+            StudioStatusDot(color = accent, size = 5.dp)
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium
             )
-
         }
     }
 }
 
 @Composable
-private fun EmptyAgentState(
+internal fun EmptyAgentState(
     hasApiKey: Boolean,
     onOpenSettings: () -> Unit,
     providerName: String,
@@ -924,16 +939,17 @@ private fun EmptyAgentState(
         verticalArrangement = Arrangement.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.size(64.dp)
+            border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+            modifier = Modifier.size(60.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Default.Build,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(32.dp)
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }
@@ -943,7 +959,7 @@ private fun EmptyAgentState(
         Text(
             text = "What are you working on?",
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(6.dp))
@@ -968,6 +984,7 @@ private fun EmptyAgentState(
         Text(
             text = "Try a prompt",
             style = MaterialTheme.typography.labelLarge,
+            fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.align(Alignment.Start).semantics { heading() }
         )
@@ -975,7 +992,7 @@ private fun EmptyAgentState(
 
         val suggestions = if (usesOpenRouter) QUICK_PROMPTS else listOf(
             "Explain a topic in plain language.", "Help me outline a project.")
-        suggestions.forEach { sample ->
+        suggestions.forEachIndexed { index, sample ->
             Card(
                 onClick = { onSelectPrompt(sample) },
                 modifier = Modifier
@@ -983,21 +1000,35 @@ private fun EmptyAgentState(
                     .padding(vertical = 4.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                    ) {
+                        Text(
+                            text = "%02d".format(index + 1),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         text = sample,
                         style = MaterialTheme.typography.bodyMedium
@@ -1009,26 +1040,31 @@ private fun EmptyAgentState(
 }
 
 @Composable
-private fun UserMessageBubble(text: String) {
+internal fun UserMessageBubble(text: String) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
         horizontalArrangement = Arrangement.End
     ) {
         Surface(
-            shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
             modifier = Modifier.widthIn(max = 560.dp),
         ) {
             CopyableText(
                 text = text,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             )
         }
     }
 }
+
+internal fun agentResponseReportContentColor(
+    isWarningCard: Boolean,
+    colors: androidx.compose.material3.ColorScheme,
+): Color = if (isWarningCard) colors.onErrorContainer else colors.primary
 
 @Composable
 internal fun AgentResponseCard(
@@ -1048,11 +1084,11 @@ internal fun AgentResponseCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = BorderStroke(
-            1.dp,
-            if (isWarningCard) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+            StudioHairlineWidth,
+            if (isWarningCard) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
         Column(
@@ -1100,7 +1136,7 @@ internal fun AgentResponseCard(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
@@ -1150,17 +1186,20 @@ internal fun AgentResponseCard(
             }
 
             // Footer with usage metadata, Copy reply (when safe), and Report button on every AI bubble
-            HorizontalDivider()
+            HorizontalDivider(
+                thickness = StudioHairlineWidth,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    entry.modelUsed?.let {
+                    entry.modelUsed?.takeIf { it.isNotBlank() }?.let {
                         CopyableText(
                             it,
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                             color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1169,6 +1208,7 @@ internal fun AgentResponseCard(
                         Text(
                             it.display(),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
                             color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1185,6 +1225,9 @@ internal fun AgentResponseCard(
                     }
                     TextButton(
                         onClick = onReport,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = agentResponseReportContentColor(isWarningCard, MaterialTheme.colorScheme),
+                        ),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
                         Icon(
@@ -1202,75 +1245,70 @@ internal fun AgentResponseCard(
 }
 
 @Composable
-private fun CollapsibleReasoningBox(summary: String) {
+internal fun CollapsibleReasoningBox(summary: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    StudioRailBlock(
+        railColor = MaterialTheme.colorScheme.primary,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
-                    .clickable(role = Role.Button) { expanded = !expanded }
-                    .padding(horizontal = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Reasoning",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .clickable(role = Role.Button) { expanded = !expanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    Icons.Default.Info,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "Reasoning",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
-            AnimatedVisibility(visible = expanded) {
-                CopyableText(
-                    text = summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
-                )
-            }
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            CopyableText(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun SandboxTerminalCard(
+internal fun SandboxTerminalCard(
     stepIndex: Int,
     step: ShellExecutionStep,
     onFileClick: (containerId: String, fileRef: ContainerFileRef) -> Unit
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val terminalBg = Color(0xFF0D1117)
-    val terminalHeaderBg = Color(0xFF161B22)
-    val terminalText = Color(0xFFE6EDF3)
-    val terminalMuted = Color(0xFFA1AAB5)
-    val terminalGreen = Color(0xFF3FB950)
-    val terminalRed = Color(0xFFF85149)
+    val terminalBg = StudioTerminalColors.background
+    val terminalHeaderBg = StudioTerminalColors.headerBackground
+    val terminalText = StudioTerminalColors.text
+    val terminalMuted = StudioTerminalColors.muted
+    val terminalGreen = StudioTerminalColors.green
+    val terminalRed = StudioTerminalColors.red
     val terminalStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
     val outputStyle = terminalStyle.copy(fontSize = 11.sp, lineHeight = 16.sp)
 
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = terminalBg,
-        border = BorderStroke(1.dp, Color(0xFF626E7C)),
+        border = BorderStroke(StudioHairlineWidth, StudioTerminalColors.border),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
@@ -1287,12 +1325,7 @@ private fun SandboxTerminalCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(terminalGreen)
-                    )
+                    StudioStatusDot(color = terminalGreen, size = 6.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "Sandbox run $stepIndex",
@@ -1366,7 +1399,7 @@ private fun SandboxTerminalCard(
 
                     // Clickable container output files (`cfile_*`)
                     if (step.files.isNotEmpty() && !step.containerId.isNullOrBlank()) {
-                        HorizontalDivider(color = Color(0xFF30363D))
+                        HorizontalDivider(thickness = StudioHairlineWidth, color = StudioTerminalColors.divider)
                         Text(
                             text = "Created or updated files",
                             color = terminalMuted,
@@ -1396,7 +1429,7 @@ private fun SandboxTerminalCard(
 }
 
 @Composable
-private fun AgentInputBar(
+internal fun AgentInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     isRunning: Boolean,
@@ -1411,9 +1444,9 @@ private fun AgentInputBar(
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(thickness = StudioHairlineWidth, color = MaterialTheme.colorScheme.outlineVariant)
             if (onImages != null || chatMode != null) {
-                Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (chatMode != null) {
                         // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
@@ -1423,6 +1456,7 @@ private fun AgentInputBar(
                         }
                         Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                     }
                     if (onImages != null) {
@@ -1448,7 +1482,7 @@ private fun AgentInputBar(
                     placeholder = { Text(if (chatMode == true) "Message" else "Message the agent") },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(16.dp),
                     enabled = !isRunning && !isLoading,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { onSend() })
@@ -1459,6 +1493,7 @@ private fun AgentInputBar(
                 FilledIconButton(
                     onClick = if (isRunning) onStop else onSend,
                     enabled = isRunning || (!isLoading && value.isNotBlank()),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(

@@ -94,8 +94,14 @@ internal fun AgentRunStatus(
                     val speed = progress.tokensPerSecond()?.let { " · ${it.toInt()} tok/s" }.orEmpty()
                     " · $estimate${compactCount(count)} tokens$speed"
                 }.orEmpty()
-                Text("Step ${progress.step} · $duration$tokens$model", maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Step ${progress.step} · $duration$tokens$model",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (!following) TextButton(onClick = onFollow) { Text("Latest") }
             TextButton(onClick = onActivity) { Text("Activity") }
@@ -167,27 +173,38 @@ private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((
         }
         return
     }
-    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 10.dp, end = 4.dp, bottom = 8.dp)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 40.dp)
-                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
-                .clickable(role = Role.Button) { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (live) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
-                Text(if (live) "Thinking…" else "Thought", style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                onShow?.let { TextButton(onClick = { it(false) }) { Text("Hide") } }
-                Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null, modifier = Modifier.size(18.dp))
-            }
-            val style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
-            val color = MaterialTheme.colorScheme.onSurfaceVariant
-            when {
-                expanded -> CopyableText(text.trim(), style = style, color = color, keepSelectionOnReplacement = live)
-                live -> Text(if (text.length > LIVE_THINKING_TAIL) "…" + text.takeLast(LIVE_THINKING_TAIL).trimStart()
-                    else text.trim(), style = style, color = color)
-            }
+    StudioRailBlock(
+        railColor = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+            .clickable(role = Role.Button) { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (live) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+            Text(if (live) "Thinking…" else "Thought", style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            onShow?.let { TextButton(onClick = { it(false) }) { Text("Hide") } }
+            Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        val style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
+        val color = MaterialTheme.colorScheme.onSurfaceVariant
+        when {
+            expanded -> CopyableText(
+                text.trim(),
+                modifier = Modifier.padding(bottom = 8.dp),
+                style = style,
+                color = color,
+                keepSelectionOnReplacement = live,
+            )
+            live -> Text(
+                if (text.length > LIVE_THINKING_TAIL) "…" + text.takeLast(LIVE_THINKING_TAIL).trimStart()
+                else text.trim(),
+                modifier = Modifier.padding(bottom = 8.dp),
+                style = style,
+                color = color,
+            )
         }
     }
 }
