@@ -29,6 +29,7 @@ import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.IOException
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
@@ -89,8 +90,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
             settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval,
             CoroutineScope(coroutineContext + SupervisorJob(coroutineContext[Job])), onAppAction,
-            miniApps = if (settings.miniApps && settings.sdk.toolChoice != "none") MiniAppTools(miniAppStore(context))
-                else null)
+            miniApps = if (settings.miniApps && settings.sdk.toolChoice != "none") MiniAppTools(miniAppStore(context),
+                MiniAppLibraries(File(context.applicationContext.cacheDir, "miniapp-libraries"))) else null)
         try {
             val runtime = view ?: createWebView()
             try {
@@ -260,7 +261,8 @@ internal class AgentSdkRuntime(private val context: Context) {
                     val result = try {
                         val request = JSONObject(json)
                         when (request.optString("tool")) {
-                            "mini_app" -> run.miniApps?.handle(request)
+                            // Saving can download libraries, so the tools run off the main thread.
+                            "mini_app" -> run.miniApps?.let { tools -> withContext(Dispatchers.IO) { tools.handle(request) } }
                                 ?: JSONObject().put("ok", false).put("error", "Mini apps are off in Settings.")
                             else -> JSONObject().put("ok", false).put("error", "Unknown local tool.")
                         }

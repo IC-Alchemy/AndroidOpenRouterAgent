@@ -86,7 +86,7 @@ class MiniAppActivity : Activity() {
             override fun onPermissionRequest(request: PermissionRequest) = request.deny()
         }
         setContentView(view)
-        view.loadDataWithBaseURL(origin, html, "text/html", "UTF-8", null)
+        view.loadDataWithBaseURL(origin, MiniAppChecks.withPolicy(html), "text/html", "UTF-8", null)
     }
 
     @Deprecated("Deprecated in Java")
