@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -190,12 +191,12 @@ internal fun MiniAppsSheet(
         scope.launch {
             errorMessage = null
             statusMessage = null
-            val outcome = withContext(Dispatchers.IO) {
-                runCatching { writeExportBundleToUri(context, repo, appId, uri) }
-            }
-            outcome.onSuccess {
+            try {
+                context.contentResolver.writeCreatedDocument(uri) { writeExportBundleToUri(context, repo, appId, uri) }
                 statusMessage = "Saved ${appName ?: "mini app"} as a .miniapp file."
-            }.onFailure { err ->
+            } catch (err: CancellationException) {
+                throw err
+            } catch (err: Exception) {
                 errorMessage = err.message ?: "Could not save ${appName ?: "mini app"}."
             }
         }
@@ -996,15 +997,15 @@ internal fun MiniAppMetadataDialog(
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
 
-    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             photoError = null
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                    context.contentResolver.openDocumentInput(uri).use { stream ->
                         MiniAppIconRenderer.decodeAndResizeUploadedImage(stream)
-                    } ?: throw IllegalArgumentException("Could not open the selected image.")
+                    }
                 }
             }
             result.onSuccess { pngBytes ->
@@ -1289,7 +1290,7 @@ internal fun MiniAppMetadataDialog(
                                 onClick = {
                                     photoError = null
                                     try {
-                                        pickPhoto.launch("image/*")
+                                        pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                     } catch (_: ActivityNotFoundException) {
                                         photoError = "No photo picker is available on this device."
                                     }

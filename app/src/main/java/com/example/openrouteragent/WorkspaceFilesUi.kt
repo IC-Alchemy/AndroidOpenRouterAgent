@@ -69,7 +69,8 @@ internal fun WorkspaceFilesDialog(
     var confirmDiscard by remember(selectedId) { mutableStateOf(false) }
     val operation = remember(apiKey) { FileDialogOperation(apiKey) }
     val scope = rememberCoroutineScope()
-    val resolver = LocalContext.current.contentResolver
+    val context = LocalContext.current
+    val resolver = context.contentResolver
 
     LaunchedEffect(client, apiKey, refresh, pageRequest) {
         loadingPage = true
@@ -130,15 +131,17 @@ internal fun WorkspaceFilesDialog(
         val id = pendingExportId
         pendingExportId = null
         if (uri != null && id != null) operation.run(scope, "Exporting file…") {
-            val file = selected?.takeIf { it.id == id } ?: client.workspaceFile(apiKey, id)
-            if (file.downloadable) {
-                client.downloadWorkspaceFile(apiKey, file.id) {
-                    resolver.openOutputStream(uri, "wt") ?: error("Android could not open the export destination.")
+            resolver.writeCreatedDocument(uri) {
+                val file = selected?.takeIf { it.id == id } ?: client.workspaceFile(apiKey, id)
+                if (file.downloadable) {
+                    resolver.writeDownloadedDocument(uri, context.cacheDir) { openDestination ->
+                        client.downloadWorkspaceFile(apiKey, file.id, openDestination)
+                    }
+                } else {
+                    check(localExport?.invoke(file, uri) == true) { "The copy on this device is no longer available." }
                 }
-            } else {
-                check(localExport?.invoke(file, uri) == true) { "The copy on this device is no longer available." }
+                "Exported ${fileName(file.filename)}."
             }
-            "Exported ${fileName(file.filename)}."
         }
     }
 

@@ -2,7 +2,6 @@ package com.example.openrouteragent
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -38,21 +37,19 @@ private fun hash(value: String): String = MessageDigest.getInstance("SHA-256")
 
 internal class OpenRouterFiles(context: Context, private val client: OpenRouterAgentClient) {
     private val resolver = context.contentResolver
-    private val directory = context.noBackupFilesDir
-    val store = ProjectFileStore(File(directory, "files"))
+    private val privateDir = context.noBackupFilesDir
+    private val cacheDir = context.cacheDir
+    val store = ProjectFileStore(File(privateDir, "files"))
 
     suspend fun importFile(area: ProjectFileArea?, uri: Uri, folder: String): String = withContext(Dispatchers.IO) {
-        val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-            if (it.moveToFirst()) it.getString(0) else null
-        }
-        val name = safeTransferName(displayName ?: "imported-file")
+        val name = safeTransferName(resolver.documentDisplayName(uri) ?: "imported-file")
         store.importCopy(area, joinFilePath(folder, name)) {
-            resolver.openInputStream(uri) ?: throw IOException("Android could not open the selected file.")
+            resolver.openDocumentInput(uri)
         }
     }
 
-    suspend fun exportFile(area: ProjectFileArea?, path: String, uri: Uri) = withContext(Dispatchers.IO) {
-        store.export(area, path) { output(uri) }
+    suspend fun exportFile(area: ProjectFileArea?, path: String, uri: Uri) = resolver.writeCreatedDocument(uri) {
+        store.export(area, path) { resolver.openDocumentOutput(uri) }
     }
 
     suspend fun upload(apiKey: String, area: ProjectFileArea, path: String): WorkspaceFileRef {
@@ -81,7 +78,7 @@ internal class OpenRouterFiles(context: Context, private val client: OpenRouterA
     suspend fun exportUpload(apiKey: String, file: WorkspaceFileRef, uri: Uri): Boolean = withContext(Dispatchers.IO) {
         val cached = uploadCopy(apiKey, file.id)
         if (!cached.isFile) return@withContext false
-        cached.inputStream().use { source -> output(uri).use { source.copyTo(it) } }
+        cached.inputStream().use { source -> resolver.openDocumentOutput(uri).use { source.copyTo(it) } }
         true
     }
 
@@ -142,16 +139,13 @@ internal class OpenRouterFiles(context: Context, private val client: OpenRouterA
         return created
     }
 
-    private fun output(uri: Uri) = resolver.openOutputStream(uri, "wt")
-        ?: throw IOException("Android could not open the destination.")
-
     private fun uploadCopy(apiKey: String, id: String): File {
         require(id.matches(Regex("or_file_[A-Za-z0-9_-]{1,200}"))) { "Invalid OpenRouter file ID." }
-        return File(directory, "workspace-uploads/${hash(apiKey.trim())}/$id")
+        return File(privateDir, "workspace-uploads/${hash(apiKey.trim())}/$id")
     }
 
     private suspend fun <T> withTransferFile(block: suspend (File) -> T): T = withContext(Dispatchers.IO) {
-        val temporary = File.createTempFile("file-transfer-", ".tmp", directory)
+        val temporary = File.createTempFile("file-transfer-", ".tmp", cacheDir)
         try {
             block(temporary)
         } finally {

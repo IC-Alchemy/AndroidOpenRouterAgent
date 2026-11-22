@@ -192,9 +192,9 @@ private fun GeneratedImage(bytes: ByteArray, number: Int, saving: FileDialogOper
     val mime = image?.mime ?: "application/octet-stream"
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mime)) { uri ->
         if (uri != null) saving.run(scope, "Saving image…") {
-            withContext(Dispatchers.IO) {
-                val output = context.contentResolver.openOutputStream(uri) ?: throw IOException("Cannot open the destination.")
-                output.use { it.write(bytes) }
+            val resolver = context.contentResolver
+            resolver.writeCreatedDocument(uri) {
+                resolver.openDocumentOutput(uri).use { it.write(bytes) }
             }
             "Image saved."
         }

@@ -268,6 +268,9 @@ internal fun ProjectFilesDialog(
             }
             else -> {
                 FileBreadcrumbs(directory, "Files", !working, ::navigate)
+                if (upload != null && directory.isEmpty()) {
+                    FileDetailText("Agent mode can send file names and text it reads in this folder to OpenRouter during a run.")
+                }
                 FileActionRow {
                     Button(enabled = !working, onClick = {
                         pendingImportDirectory = directory

@@ -4,7 +4,6 @@ import android.app.Application
 import android.net.Uri
 import android.os.SystemClock
 import android.widget.FrameLayout
-import android.provider.DocumentsContract
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -769,29 +768,19 @@ class AgentViewModel internal constructor(
         val application = getApplication<Application>()
         val resolver = application.contentResolver
         viewModelScope.launch {
-            var staging: File? = null
             try {
-                ready.await()
-                val file = withContext(Dispatchers.IO) {
-                    File.createTempFile("export-", ".tmp", application.cacheDir).also { staging = it }
-                }
-                client.downloadFile(config.apiKey, containerId, fileId) { file.outputStream() }
-                withContext(Dispatchers.IO) {
-                    val destination = resolver.openOutputStream(uri, "wt")
-                        ?: throw IOException("Android could not open the destination.")
-                    destination.use { output -> file.inputStream().use { it.copyTo(output) } }
+                resolver.writeCreatedDocument(uri) {
+                    ready.await()
+                    resolver.writeDownloadedDocument(uri, application.cacheDir) { openDestination ->
+                        client.downloadFile(config.apiKey, containerId, fileId, openDestination)
+                    }
                 }
                 exportMessage = "File saved."
             } catch (e: CancellationException) {
-                withContext(NonCancellable + Dispatchers.IO) {
-                    runCatching { DocumentsContract.deleteDocument(resolver, uri) }
-                }
                 throw e
             } catch (e: Exception) {
-                withContext(Dispatchers.IO) { runCatching { DocumentsContract.deleteDocument(resolver, uri) } }
                 exportMessage = e.userMessage(config.apiKey)
             } finally {
-                staging?.delete()
                 isExporting = false
             }
         }

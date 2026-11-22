@@ -152,17 +152,9 @@ internal fun CustomizationSheet(
             message = null
             try {
                 val imported = withContext(Dispatchers.IO) {
-                    resolver.openInputStream(uri)?.use { input ->
-                        val bytes = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(4096)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            require(bytes.size() + count <= SKILL_IMPORT_BYTES) { "This SKILL.md is too large." }
-                            bytes.write(buffer, 0, count)
-                        }
-                        parseSkill(bytes.toString(Charsets.UTF_8.name()))
-                    } ?: throw IllegalArgumentException("Android could not read this file.")
+                    val bytes = resolver.openDocumentInput(uri).use { it.readBytesLimited(SKILL_IMPORT_BYTES + 1) }
+                    require(bytes.size <= SKILL_IMPORT_BYTES) { "This SKILL.md is too large." }
+                    parseSkill(bytes.toString(Charsets.UTF_8))
                 }
                 oldSkillName = config.savedSkills.firstOrNull { it.name == imported.name }?.name
                 skill = imported
@@ -184,9 +176,8 @@ internal fun CustomizationSheet(
         exportText = null
         if (uri != null && payload != null) scope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    val out = resolver.openOutputStream(uri, "wt") ?: kotlin.error("Android could not open the file.")
-                    out.bufferedWriter().use { it.write(payload) }
+                resolver.writeCreatedDocument(uri) {
+                    resolver.openDocumentOutput(uri).bufferedWriter().use { it.write(payload) }
                 }
                 message = "Skill exported."
             } catch (e: CancellationException) {

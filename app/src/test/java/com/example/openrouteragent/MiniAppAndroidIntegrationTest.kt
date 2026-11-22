@@ -440,20 +440,41 @@ class MiniAppAndroidIntegrationTest {
             iconUpdate = MiniAppIconUpdate.Emoji("🚀"),
         )
         val sharedDir = File(context.cacheDir, "shared").apply { mkdirs() }
-        val staleOne = File(sharedDir, "Old App.miniapp").apply { writeText("stale1") }
-        val staleTwo = File(sharedDir, "Legacy.MINIAPP").apply { writeText("stale2") }
-        val staleTmp = File(sharedDir, "Crashed.miniapp.1234.tmp").apply { writeText("partial") }
+        val oldTimestamp = System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000L
+        val staleOne = File(sharedDir, "Old App.miniapp").apply {
+            writeText("stale1")
+            assertTrue(setLastModified(oldTimestamp))
+        }
+        val staleTwo = File(sharedDir, "Legacy.MINIAPP").apply {
+            writeText("stale2")
+            assertTrue(setLastModified(oldTimestamp))
+        }
+        val staleTmp = File(sharedDir, "Crashed.miniapp.1234.tmp").apply {
+            writeText("partial")
+            assertTrue(setLastModified(oldTimestamp))
+        }
+        val staleShare = File(sharedDir, "miniapp-expired").apply {
+            mkdir()
+            File(this, "Expired.miniapp").writeText("expired")
+            assertTrue(setLastModified(oldTimestamp))
+        }
         val unrelated = File(sharedDir, "unrelated.txt").apply { writeText("keep") }
         try {
             val archive = MiniAppActivity.prepareShareArchive(context, app)
             assertTrue(archive.isFile && archive.name == "Shareable App.miniapp")
-            assertEquals(sharedDir.canonicalFile, archive.parentFile?.canonicalFile)
+            assertEquals(sharedDir.canonicalFile, archive.parentFile?.parentFile?.canonicalFile)
             assertFalse("Stale .miniapp cache file should be cleaned up", staleOne.exists())
             assertFalse("Stale uppercase .MINIAPP cache file should be cleaned up", staleTwo.exists())
             assertFalse("Stale .miniapp.*.tmp cache file should be cleaned up", staleTmp.exists())
+            assertFalse("Expired share directory should be cleaned up", staleShare.exists())
             assertTrue("Non-.miniapp cache files should not be removed", unrelated.isFile)
-            val reimported = repo.inspectImport(archive.readBytes(), archive.name)
+            val originalBytes = archive.readBytes()
+            val reimported = repo.inspectImport(originalBytes, archive.name)
             assertTrue(reimported is MiniAppImportPreview.Bundle)
+            val secondArchive = MiniAppActivity.prepareShareArchive(context, app)
+            assertTrue("Each Sharesheet invocation needs its own stable URI", archive != secondArchive)
+            assertTrue(secondArchive.isFile)
+            assertArrayEquals(originalBytes, archive.readBytes())
 
             // Verify SAF export helper writes a valid round-trippable .miniapp bundle and truncates larger existing files.
             val safDest = File(folder.newFolder("saf_export"), "Backup.miniapp").apply {
@@ -471,7 +492,7 @@ class MiniAppAndroidIntegrationTest {
             val uri = if (File.separatorChar == '/') {
                 androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", archive)
             } else {
-                Uri.parse("content://${context.packageName}.files/shared/${Uri.encode(archive.name)}")
+                Uri.parse("content://${context.packageName}.files/shared/${archive.parentFile?.name}/${Uri.encode(archive.name)}")
             }
             val chooser = MiniAppActivity.buildShareChooserIntent(context, app, archive.name, uri)
             assertEquals(Intent.ACTION_CHOOSER, chooser.action)

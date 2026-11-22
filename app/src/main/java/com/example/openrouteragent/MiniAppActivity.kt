@@ -89,6 +89,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -450,21 +451,32 @@ class MiniAppActivity : ComponentActivity() {
             }
         }
 
-        /** Builds the `.miniapp` archive on IO threads (cleaning stale shared archives), then opens ShareSheet via FileProvider. */
+        /** Builds a fresh archive without invalidating another Sharesheet's read grant. */
         fun prepareShareArchive(context: Context, app: MiniApp): File {
             val repo = miniAppRepository(context)
             val bytes = repo.exportBundleBytes(app.id)
-            val dir = File(context.cacheDir, "shared").apply { mkdirs() }
-            val archive = File(dir, miniAppArchiveFileName(app.name))
+            val dir = File(context.cacheDir, "shared")
+            Files.createDirectories(dir.toPath())
+            val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
             dir.listFiles()?.forEach { existing ->
-                val isStaleArchive = existing.name.endsWith(".miniapp", ignoreCase = true) ||
-                    (existing.name.contains(".miniapp.", ignoreCase = true) && existing.name.endsWith(".tmp", ignoreCase = true))
-                if (existing.isFile && isStaleArchive && existing != archive) {
-                    existing.delete()
+                if (existing.lastModified() < cutoff) {
+                    if (existing.isDirectory && existing.name.startsWith("miniapp-")) {
+                        existing.deleteRecursively()
+                    } else if (existing.isFile && (existing.name.endsWith(".miniapp", ignoreCase = true) ||
+                            (existing.name.contains(".miniapp.", ignoreCase = true) &&
+                                existing.extension.equals("tmp", ignoreCase = true)))
+                    ) {
+                        existing.delete()
+                    }
                 }
             }
-            atomicWriteBytes(archive, bytes)
-            return archive
+            val shareDir = Files.createTempDirectory(dir.toPath(), "miniapp-").toFile()
+            return try {
+                File(shareDir, miniAppArchiveFileName(app.name)).apply { writeBytes(bytes) }
+            } catch (failure: Exception) {
+                shareDir.deleteRecursively()
+                throw failure
+            }
         }
 
         internal fun buildShareChooserIntent(context: Context, app: MiniApp, archiveName: String, uri: Uri): Intent {
@@ -807,6 +819,7 @@ class MiniAppImportActivity : ComponentActivity() {
             val inspected = withContext(Dispatchers.IO) {
                 runCatching {
                     if (uri != null) {
+                        require(uri.scheme == "content") { "Open mini apps through Android's file sharing." }
                         readImportPreviewFromUri(this@MiniAppImportActivity, repo, uri)
                     } else {
                         val text = extraText?.takeIf { MiniAppSanitizer.looksLikeHtml(it) }

@@ -2,7 +2,6 @@ package com.example.openrouteragent
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import kotlinx.serialization.json.Json
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -635,25 +634,21 @@ private object MiniAppRepositoryHolder {
 
 fun miniAppRepository(context: Context): MiniAppRepository = MiniAppRepositoryHolder.get(context)
 
-internal fun queryUriDisplayName(context: Context, uri: Uri): String? = runCatching {
-    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst()) cursor.getString(0) else null
-    }
-}.getOrNull() ?: uri.lastPathSegment
-
 internal fun readImportPreviewFromUri(
     context: Context,
     repo: MiniAppRepository,
     uri: Uri,
 ): MiniAppImportPreview {
-    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+    val resolver = context.contentResolver
+    val bytes = resolver.openDocumentInput(uri).use { input ->
         val data = input.readBytesLimited(MAX_IMPORT_BYTES + 1)
         require(data.size <= MAX_IMPORT_BYTES) {
             "The file is larger than ${MAX_IMPORT_BYTES / 1_000_000} MB."
         }
         data
-    } ?: throw IllegalArgumentException("Android could not open the selected file.")
-    return repo.inspectImport(bytes, queryUriDisplayName(context, uri))
+    }
+    val displayName = runCatching { resolver.documentDisplayName(uri) }.getOrNull() ?: uri.lastPathSegment
+    return repo.inspectImport(bytes, displayName)
 }
 
 internal fun writeExportBundleToUri(
@@ -663,14 +658,7 @@ internal fun writeExportBundleToUri(
     uri: Uri,
 ) {
     val bytes = repo.exportBundleBytes(id)
-    val resolver = context.contentResolver
-    val stream = runCatching { resolver.openOutputStream(uri, "wt") }.getOrNull()
-        ?: resolver.openOutputStream(uri)
-        ?: throw IOException("Android could not open the destination file for writing.")
-    stream.use { out ->
-        out.write(bytes)
-        out.flush()
-    }
+    context.contentResolver.openDocumentOutput(uri).use { it.write(bytes) }
 }
 
 /** Writes a temporary file, fsyncs, and moves over [file] atomically (works on Android and Windows). */
