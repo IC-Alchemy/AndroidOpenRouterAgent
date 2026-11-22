@@ -3,10 +3,10 @@ import { OpenRouter, deserializeConversationState, serializeConversationState,
 import { HTTPClient } from '@openrouter/sdk/lib/http';
 import { customTool, sdkParameters, skillLoader } from './customization.mjs';
 import { streamObserver } from './stream-events.mjs';
+import { miniAppTools } from './local-tools.mjs';
 import { discardUnfinishedSubagents, subagentConfig, subagentType } from './subagent.mjs';
 import { fileInstructions, projectFileTools } from './project-files.mjs';
 import { resourceActionNames, resourceActionTools } from './resource-actions.mjs';
-import { phoneTools } from './phone.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
 
@@ -46,7 +46,10 @@ export function buildTools(options, events, signal) {
       }),
     }));
   }
-  if (options.phoneControl && events?.phone) tools.push(...phoneTools(events.phone));
+  // Mini apps are optional: they never restrict the model choice, so skip them for models without tool calling.
+  if (options.miniApps && events?.local && options.modelDetails?.[options.model]?.tools !== false) {
+    tools.push(...miniAppTools(events.local));
+  }
   const seen = new Set(tools.map(t => t.config?.type));
   const subagentNames = new Set();
   for (const item of options.extraTools ?? []) {

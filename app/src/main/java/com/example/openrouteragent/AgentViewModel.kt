@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -184,6 +185,29 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         val pending = approval ?: return
         approvals = approvals.drop(1)
         sdk.decide(pending.decision, approve, answer)
+        notifyBackground()
+    }
+
+    private val app get() = getApplication<Application>()
+
+    /** Mirrors the live status, or a pending approval, into the ongoing run notification. */
+    private fun notifyBackground(force: Boolean = false) {
+        val prompt = activePrompt ?: return
+        val pending = approval
+        val notice = if (pending != null) RunNotice(
+            title = if (pending.asksUser) "The agent has a question" else "Allow ${pending.name}?",
+            text = if (pending.asksUser) "${pending.name}. Open the app to answer."
+                else (pending.url.ifBlank { pending.arguments }).take(400),
+            approval = pending,
+        ) else RunNotice("Working on: ${replyPreview(prompt, 60)}",
+            progress?.status(providerName) ?: "Working")
+        RunNotifications.update(app, notice, force)
+    }
+
+    private fun finishBackground(title: String, text: String) {
+        AgentRunService.stop(app)
+        RunNotifications.reset()
+        if (!AppVisibility.visible) RunNotifications.finished(app, title, text)
     }
 
     internal fun attachRuntime(host: FrameLayout) = sdk.attach(host)
@@ -256,7 +280,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         )
         val currentConfig = if (toolsOff) config.copy(enableShellSandbox = false, enableWebSearch = false,
             enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false,
-            phoneControl = false, mcpUrl = "", mcpToken = "",
+            miniApps = false, mcpUrl = "", mcpToken = "",
             extraToolsJson = "", customTools = emptyList(),
             sdk = config.sdk.copy(discoverSkills = false, toolChoice = "none")) else config
         activePrompt = prompt
@@ -265,12 +289,18 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         interrupted = null
         retryPrompt = null
         progress = AgentProgress(SystemClock.elapsedRealtime())
+        RunNotifications.reset()
+        notifyBackground(force = true)
+        AgentRunService.start(app)
 
         running = viewModelScope.launch {
+            var finishedTitle = "Reply ready"
+            var finishedText = "The agent finished."
             try {
                 val sdkResult = if (active == null) {
                     sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
-                        onUpdate = ::updateProgress, onApproval = { approvals = approvals + it }, files = runFiles,
+                        onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
+                        files = runFiles,
                         onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
                             executeAppAction(area, name, args)
                         })
@@ -278,6 +308,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                     SdkRunResult(chatClient.run(active, currentConfig, priorWorkspace, prompt, model.id, ::updateProgress), null)
                 }
                 val result = sdkResult.result
+                finishedText = replyPreview(result.assistantText)
                 if (attachments.isNotEmpty()) attachmentSelection = null
                 val messages = priorWorkspace.messages + listOf(
                     ChatEntry(isUser = true, text = prompt),
@@ -313,15 +344,20 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                     storageError = "Android could not save this reply. It is still open on this screen."
                 }
             } catch (e: CancellationException) {
+                finishedTitle = "Run stopped"
+                finishedText = turnError ?: "The run was stopped."
                 if (turnError != null) keepInterrupted(prompt, turnError)
                 throw e
             } catch (e: Exception) {
                 turnError = if (active == null) e.userMessage(currentConfig.apiKey) else providerMessage(active, e)
+                finishedTitle = "The agent could not finish"
+                finishedText = turnError ?: "The run failed."
                 keepInterrupted(prompt, turnError)
             } finally {
                 activePrompt = null
                 progress = null
                 approvals = emptyList()
+                finishBackground(finishedTitle, finishedText)
             }
         }
     }
@@ -343,6 +379,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun updateProgress(updates: List<RunUpdate>) {
         progress = progress?.apply(updates, SystemClock.elapsedRealtime())
+        notifyBackground()
     }
 
     private suspend fun keepInterrupted(prompt: String, error: String?) {
@@ -550,17 +587,61 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         exportMessage = null
     }
 
-    // The phone-control overlay's Stop button ends the run, like Stop waiting.
-    private val stopFromOverlay: () -> Unit = {
-        viewModelScope.launch { if (activePrompt != null) cancelTurn() }
+    init {
+        // Notification buttons reach the process-wide view model through this handler.
+        RunCommands.handler = { command, decision ->
+            viewModelScope.launch {
+                when (command) {
+                    RunCommands.STOP -> cancelTurn()
+                    RunCommands.ALLOW, RunCommands.DENY ->
+                        if (approval?.decision == decision && approval?.asksUser == false) {
+                            decideTool(command == RunCommands.ALLOW)
+                        }
+                }
+            }
+        }
     }
 
-    init {
-        PhoneControlService.onStopRequested = stopFromOverlay
+    var signInBusy by mutableStateOf(false)
+        private set
+    var signInError by mutableStateOf<String?>(null)
+        private set
+    /** A key from OpenRouter sign-in that the Settings sheet has not taken yet. */
+    var signInKey by mutableStateOf<String?>(null)
+        private set
+    private var signInJob: Job? = null
+    private val signInHttp by lazy { OkHttpClient() }
+
+    /** Starts OpenRouter's OAuth PKCE sign-in. [open] shows the authorization page in a browser. */
+    fun signInWithOpenRouter(open: (String) -> Boolean) {
+        if (signInBusy) return
+        signInError = null
+        signInKey = null
+        signInJob = viewModelScope.launch {
+            signInBusy = true
+            try {
+                OpenRouterSignIn(signInHttp, getApplication<Application>().packageName).use { attempt ->
+                    if (!open(attempt.authorizeUrl)) throw IOException("No browser is available to open OpenRouter.")
+                    signInKey = attempt.awaitKey()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                signInError = e.message ?: "Sign-in failed. Try again."
+            } finally {
+                signInBusy = false
+            }
+        }
     }
+
+    fun cancelSignIn() {
+        signInJob?.cancel()
+        signInJob = null
+    }
+
+    fun takeSignInKey(): String? = signInKey.also { signInKey = null }
 
     override fun onCleared() {
-        if (PhoneControlService.onStopRequested === stopFromOverlay) PhoneControlService.onStopRequested = null
         sdk.destroy()
         super.onCleared()
     }

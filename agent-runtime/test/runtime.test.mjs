@@ -61,18 +61,18 @@ async function bundledRuntime(AndroidAgent) {
   return browser.AgentRuntime;
 }
 
-test('the bundled SDK handles project files, subagent approval and phone control together',
+test('the bundled SDK handles project files, subagent approval and mini apps together',
   { timeout: 5000 }, async () => {
     const events = [];
     const requests = [];
-    const phoneCalls = [];
+    const localCalls = [];
     const responses = new Map();
     const fileArgs = { path: 'notes/plan.md', text: 'Initial plan.' };
     const subagentArgs = { name: 'Editor', model: 'mock/worker', advancedJson: '{"maxToolCalls":3}' };
     const call = (name, args, index) => ({ type: 'function_call', id: 'item_' + index, call_id: 'call_' + index,
       name, arguments: JSON.stringify(args), status: 'completed' });
     const outputs = [call('write_project_file', fileArgs, 1), call('create_subagent', subagentArgs, 2),
-      call('phone_action', { action: 'back' }, 3),
+      call('mini_app_list', {}, 3),
       answer('msg_created', 'The file and subagent are saved.')];
     const runtime = await bundledRuntime({
       post(message) {
@@ -99,14 +99,14 @@ test('the bundled SDK handles project files, subagent approval and phone control
         responses.delete(requestId);
         queueMicrotask(() => runtime.http(id, requestId, response ? 'chunk' : 'end', response ?? null));
       },
-      phone(id, requestId, json) {
-        phoneCalls.push(JSON.parse(json));
-        queueMicrotask(() => runtime.phone(id, requestId, JSON.stringify({ ok: true, result: 'Done' })));
+      local(id, requestId, json) {
+        localCalls.push(JSON.parse(json));
+        queueMicrotask(() => runtime.local(id, requestId, JSON.stringify({ ok: true, apps: [], result: 'Done' })));
       },
       cancelHttp() {},
     });
     await runtime.start({ ...base, id: 'app-actions', appActions: true, projectFolder: 'projects/test',
-      phoneControl: true, shell: true });
+      miniApps: true, shell: true });
     assert.equal(requests.length, 4);
     const actions = events.filter(event => event.type === 'app_request').map(event =>
       [event.value.name, event.value.args]);
@@ -118,8 +118,8 @@ test('the bundled SDK handles project files, subagent approval and phone control
     assert.match(requests[1].input.find(item => item.type === 'function_call_output').output, /notes\/plan.md/);
     assert.match(requests[2].input.find(item => item.call_id === 'call_2' && item.type === 'function_call_output').output,
       /\"name\":\"Editor\"/);
-    assert.deepEqual(phoneCalls, [{ type: 'action', action: 'back' }]);
-    assert.match(requests[0].instructions, /untrusted_screen/);
+    assert.deepEqual(localCalls, [{ tool: 'mini_app', type: 'list' }]);
+    assert.match(requests[0].instructions, /one complete HTML file/);
     assert.match(requests[0].instructions, /projects\/test/);
     assert.match(requests[3].input.find(item => item.call_id === 'call_3' && item.type === 'function_call_output').output,
       /Done/);
@@ -749,60 +749,58 @@ test('the ask-me tool pauses the SDK until a user answer arrives', { timeout: 70
   }
 });
 
-test('phone control tools reach Android through the bridge, one call at a time, with untrusted-screen guidance',
-  { timeout: 7000 }, async () => {
-    const requests = [];
-    const server = createServer(async (req, res) => {
-      const chunks = [];
-      for await (const bytes of req) chunks.push(bytes);
-      requests.push(JSON.parse(Buffer.concat(chunks)));
-      const item = requests.length === 1 ? {
-        type: 'function_call', name: 'phone_action', call_id: 'call_p', id: 'fc_p',
-        arguments: '{"action":"tap","element":3}', status: 'completed',
-      } : answer('msg_' + requests.length, 'Tapped it.');
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.end(stream(requests.length, item));
-    }).listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    try {
-      const createClient = options => new OpenRouter({ ...options, serverURL: 'http://127.0.0.1:' + server.address().port + '/api/v1' });
-      const calls = [];
-      const events = {
-        text: () => {}, approval: async () => false,
-        phone: async request => {
-          calls.push(request);
-          return { ok: true, result: 'Done.', screen: '<untrusted_screen>\nApp: Notes\n</untrusted_screen>' };
-        },
-      };
-      await runAgent({ ...base, phoneControl: true, prompt: 'Tap the third item' }, events,
-        new AbortController().signal, createClient);
-      const names = requests[0].tools.map(tool => tool.name ?? tool.type);
-      assert.deepEqual(names.filter(name => name.startsWith('phone_')), ['phone_screen', 'phone_apps', 'phone_action']);
-      assert.equal(requests[0].parallel_tool_calls, false);
-      assert.match(requests[0].instructions, /untrusted_screen/);
-      assert.deepEqual(calls, [{ type: 'action', action: 'tap', element: 3 }]);
-      const output = requests[1].input.find(item => item.type === 'function_call_output');
-      assert.equal(output.call_id, 'call_p');
-      assert.match(output.output, /App: Notes/);
-    } finally {
-      server.closeAllConnections();
-      server.close();
-    }
-  });
+test('mini app tools reach Android through the local bridge and carry build guidance', { timeout: 7000 }, async () => {
+  const requests = [];
+  const server = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const bytes of req) chunks.push(bytes);
+    requests.push(JSON.parse(Buffer.concat(chunks)));
+    const item = requests.length === 1 ? {
+      type: 'function_call', name: 'mini_app_save', call_id: 'call_m', id: 'fc_m', status: 'completed',
+      arguments: JSON.stringify({ name: 'Tips', html: '<html><head><title>Tips</title></head></html>' }),
+    } : answer('msg_' + requests.length, 'Saved your app.');
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.end(stream(requests.length, item));
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const createClient = options => new OpenRouter({ ...options, serverURL: 'http://127.0.0.1:' + server.address().port + '/api/v1' });
+    const calls = [];
+    const events = {
+      text: () => {}, approval: async () => false,
+      local: async request => { calls.push(request); return { ok: true, id: 'abc12345', version: 1 }; },
+    };
+    await runAgent({ ...base, miniApps: true, prompt: 'Make me a tip calculator' }, events,
+      new AbortController().signal, createClient);
+    const names = requests[0].tools.map(tool => tool.name ?? tool.type);
+    assert.deepEqual(names.filter(name => name.startsWith('mini_app_')), ['mini_app_list', 'mini_app_read', 'mini_app_save']);
+    assert.match(requests[0].instructions, /one complete HTML file/);
+    assert.equal(calls[0].tool, 'mini_app');
+    assert.equal(calls[0].type, 'save');
+    assert.equal(calls[0].name, 'Tips');
+    const output = requests[1].input.find(item => item.type === 'function_call_output');
+    assert.match(output.output, /abc12345/);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
 
-test('phone tools are absent without the setting or an Android bridge, and the bridge rejects on cancel', async () => {
-  assert.equal(buildTools({ phoneControl: true }, {}).length, 0);
-  assert.equal(buildTools({ phoneControl: true }, { phone: async () => ({}) }).length, 3);
-  assert.equal(buildTools({ phoneControl: false }, { phone: async () => ({}) }).length, 0);
-  const { createPhoneBridge } = await import('../src/phone.mjs');
+test('mini app tools need the setting and a bridge, and the local bridge rejects on cancel', async () => {
+  assert.equal(buildTools({ miniApps: true }, {}).length, 0);
+  assert.equal(buildTools({ miniApps: false }, { local: async () => ({}) }).length, 0);
+  assert.equal(buildTools({ miniApps: true }, { local: async () => ({}) }).length, 3);
+  const textOnly = { miniApps: true, model: 'm/plain', modelDetails: { 'm/plain': { tools: false, parameters: [] } } };
+  assert.equal(buildTools(textOnly, { local: async () => ({}) }).length, 0);
+  const { createLocalBridge } = await import('../src/local-tools.mjs');
   const sent = [];
   const controller = new AbortController();
-  const phone = createPhoneBridge('run', { phone: (...args) => sent.push(args) }, controller.signal);
-  const first = phone.call({ type: 'screen' });
+  const local = createLocalBridge('run', { local: (...args) => sent.push(args) }, controller.signal);
+  const first = local.call({ tool: 'mini_app', type: 'list' });
   assert.deepEqual(sent[0].slice(0, 2), ['run', '1']);
-  phone.receive('1', '{"ok":true,"screen":"x"}');
-  assert.deepEqual(await first, { ok: true, screen: 'x' });
-  const second = phone.call({ type: 'action', action: 'back' });
+  local.receive('1', '{"ok":true,"apps":[]}');
+  assert.deepEqual(await first, { ok: true, apps: [] });
+  const second = local.call({ tool: 'mini_app', type: 'list' });
   controller.abort(new Error('stopped'));
   await assert.rejects(second, /stopped/);
 });

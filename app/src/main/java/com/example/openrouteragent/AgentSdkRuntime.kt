@@ -31,7 +31,6 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val ORIGIN = "https://agent-runtime.invalid"
@@ -42,7 +41,6 @@ private const val RUN_TIMEOUT_MILLIS = 15 * 60_000L
 data class ToolApproval(
     val decision: String, val name: String, val arguments: String, val url: String, val asksUser: Boolean = false,
     val savesSettings: Boolean = false,
-    val phone: Boolean = false,
 )
 data class SdkRunResult(val result: AgentRunResult, val history: String?, val state: String? = null)
 
@@ -57,8 +55,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         val onApproval: (ToolApproval) -> Unit,
         val actions: CoroutineScope,
         val onAppAction: (suspend (String, JSONObject) -> JSONObject)?,
-        val phone: PhoneController?,
-        val phoneScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        val miniApps: MiniAppTools?,
+        val localScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -67,7 +65,6 @@ internal class AgentSdkRuntime(private val context: Context) {
     private var view: WebView? = null
     private var ready = CompletableDeferred<Unit>()
     private var activeRun: ActiveRun? = null
-    private val phoneApprovals = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
 
     // Request interception runs on WebView worker threads.
     @Volatile private var approvedToolOrigins: Set<Triple<String, String, Int>> = emptySet()
@@ -92,8 +89,8 @@ internal class AgentSdkRuntime(private val context: Context) {
         val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
             settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval,
             CoroutineScope(coroutineContext + SupervisorJob(coroutineContext[Job])), onAppAction,
-            phone = if (settings.phoneControl && settings.sdk.toolChoice != "none") PhoneController(
-                AccessibilityPhoneDevice(context), context.packageName, settings.phoneBlockedApps) else null)
+            miniApps = if (settings.miniApps && settings.sdk.toolChoice != "none") MiniAppTools(miniAppStore(context))
+                else null)
         try {
             val runtime = view ?: createWebView()
             try {
@@ -123,32 +120,10 @@ internal class AgentSdkRuntime(private val context: Context) {
             if (!run.completion.isCompleted) view?.let { dispatch(it, "stop", run.id) }
             run.actions.cancel()
             transport.cancelRun(run.id)
-            run.phoneScope.cancel()
-            phoneApprovals.values.forEach { it.complete(false) }
-            phoneApprovals.clear()
-            if (run.phone != null) PhoneControlService.connected?.let { service ->
-                service.status(null)
-                // Bring the reply into view after the agent worked in another app.
-                if (run.phone.acted) service.showAgentApp()
-            }
+            run.localScope.cancel()
             approvedToolOrigins = emptySet()
             if (activeRun?.id == run.id) activeRun = null
             if (!ready.isCompleted || ready.isCancelled) destroy()
-        }
-    }
-
-    private suspend fun askPhoneApproval(run: ActiveRun, approval: PhoneApproval): Boolean {
-        val decision = PHONE_DECISION + UUID.randomUUID()
-        val answer = CompletableDeferred<Boolean>()
-        phoneApprovals[decision] = answer
-        try {
-            withContext(Dispatchers.Main) {
-                if (activeRun?.id != run.id) answer.complete(false)
-                else run.onApproval(ToolApproval(decision, approval.title, approval.details, "", phone = true))
-            }
-            return answer.await()
-        } finally {
-            phoneApprovals.remove(decision)
         }
     }
 
@@ -171,11 +146,6 @@ internal class AgentSdkRuntime(private val context: Context) {
     }
 
     fun decide(decision: String, accept: Boolean, answer: String) {
-        // Phone approvals are decided here in Kotlin, so the JavaScript runtime never holds the gate.
-        if (decision.startsWith(PHONE_DECISION)) {
-            phoneApprovals.remove(decision)?.complete(accept)
-            return
-        }
         val run = activeRun ?: return
         view?.let { dispatch(it, "decide", run.id, decision, accept, answer) }
     }
@@ -280,24 +250,28 @@ internal class AgentSdkRuntime(private val context: Context) {
             }
         }
 
+        /** Local tools that run in Kotlin, such as mini apps. Replies arrive through AgentRuntime.local. */
         @JavascriptInterface
-        fun phone(runId: String, requestId: String, json: String) {
+        fun local(runId: String, requestId: String, json: String) {
             main.post {
                 val run = activeRun ?: return@post
                 if (runtime !== view || run.id != runId || run.completion.isCompleted) return@post
-                val controller = run.phone
-                run.phoneScope.launch {
+                run.localScope.launch {
                     val result = try {
-                        controller?.handle(JSONObject(json)) { approval -> askPhoneApproval(run, approval) }
-                            ?: JSONObject().put("ok", false).put("error", "Phone control is off in Settings.")
+                        val request = JSONObject(json)
+                        when (request.optString("tool")) {
+                            "mini_app" -> run.miniApps?.handle(request)
+                                ?: JSONObject().put("ok", false).put("error", "Mini apps are off in Settings.")
+                            else -> JSONObject().put("ok", false).put("error", "Unknown local tool.")
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        JSONObject().put("ok", false).put("error", "The phone action failed: ${e.message ?: e}")
+                        JSONObject().put("ok", false).put("error", "The tool failed: ${e.message ?: e}")
                     }
                     main.post {
                         if (runtime === view && activeRun?.id == runId) {
-                            dispatch(runtime, "phone", runId, requestId, result.toString())
+                            dispatch(runtime, "local", runId, requestId, result.toString())
                         }
                     }
                 }
@@ -384,8 +358,6 @@ internal class AgentSdkRuntime(private val context: Context) {
     }
 }
 
-private const val PHONE_DECISION = "phone:"
-
 /** The SDK wraps transport failures as "Unexpected HTTP client error: Error: <text>". Keep only the text. */
 internal fun sdkErrorText(message: String): String =
     message.replace(Regex("^Unexpected HTTP client error:\\s*(Error:\\s*)?"), "")
@@ -420,7 +392,7 @@ internal fun runtimeOptions(
         .put("appActions", appActions)
         .put("fileIds", JSONArray(files.attachments.map { it.id }))
         .put("attachmentNames", JSONArray(files.attachments.map { it.id.takeLast(8) + "-" + it.filename.substringAfterLast('/') }))
-        .put("phoneControl", config.phoneControl)
+        .put("miniApps", config.miniApps)
         .put("extraTools", JSONArray(config.extraToolsJson.ifBlank { "[]" }))
         .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)
         .put("maxSteps", config.maxSteps).put("maxCost", config.maxCost)

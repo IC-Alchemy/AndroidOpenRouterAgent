@@ -137,7 +137,7 @@ class OpenRouterAgentClient(
     }
 
     internal suspend fun previewWorkspaceFile(apiKey: String, fileId: String): FilePreview =
-        execute(request(apiKey, workspaceFileEndpoint(fileId, "content")).build(), apiKey, ::readFilePreview)
+        execute(request(apiKey, workspaceFileEndpoint(fileId, "content")).build(), apiKey, read = ::readFilePreview)
 
     internal suspend fun downloadWorkspaceFile(apiKey: String, fileId: String, openDestination: () -> OutputStream) =
         execute(request(apiKey, workspaceFileEndpoint(fileId, "content")).build(), apiKey) {

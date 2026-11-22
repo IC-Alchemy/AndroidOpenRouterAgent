@@ -1,6 +1,6 @@
 import { runAgent } from './runtime.mjs';
 import { createNativeTransport } from './native-fetch.mjs';
-import { createPhoneBridge } from './phone.mjs';
+import { createLocalBridge } from './local-tools.mjs';
 
 const bridge = globalThis.AndroidAgent;
 const runs = new Map();
@@ -58,7 +58,7 @@ async function start(options) {
   });
   run.transport = createNativeTransport(options.id, bridge,
     (phase, detail) => update({ kind: 'phase', phase, detail }));
-  run.phone = options.phoneControl ? createPhoneBridge(options.id, bridge, run.controller.signal) : undefined;
+  run.local = createLocalBridge(options.id, bridge, run.controller.signal);
   try {
     const value = await runAgent(options, {
       fetcher: run.transport.fetcher,
@@ -70,8 +70,8 @@ async function start(options) {
       register: result => { run.result = result; },
       approval: (name, args, url, savesSettings) => askUser(name, args, url, false, savesSettings),
       ask: (name, args) => askUser(name, args, '', true),
+      local: request => { flush(); return run.local.call(request); },
       appAction,
-      phone: run.phone ? request => { flush(); return run.phone.call(request); } : undefined,
     }, run.controller.signal);
     flush();
     if (!run.controller.signal.aborted) {
@@ -86,9 +86,9 @@ async function start(options) {
     }
   } finally {
     run.transport.abort();
+    run.local.dispose();
     for (const { reject } of run.appRequests.values()) reject(new Error('The agent run ended.'));
     run.appRequests.clear();
-    run.phone?.dispose();
     runs.delete(options.id);
   }
 }
@@ -98,8 +98,8 @@ globalThis.AgentRuntime = Object.freeze({
   http(id, requestId, kind, value) {
     runs.get(id)?.transport.receive(requestId, kind, value);
   },
-  phone(id, requestId, json) {
-    runs.get(id)?.phone?.receive(requestId, json);
+  local(id, requestId, json) {
+    runs.get(id)?.local?.receive(requestId, json);
   },
   stop(id) {
     const run = runs.get(id);

@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -81,7 +82,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -101,6 +101,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.compose.ui.res.painterResource
+import android.net.Uri
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -117,9 +121,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CancellationException
@@ -132,7 +134,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val agent: AgentViewModel = viewModel()
+            // The process-wide store keeps a run going after this activity is closed.
+            val agent: AgentViewModel = viewModel(viewModelStoreOwner = application as AgentApplication,
+                factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application))
             val appearance = agent.config.sdk.theme
             val dark = appearance == "oled" || (appearance == "system" && isSystemInDarkTheme())
             SideEffect {
@@ -143,6 +147,30 @@ class MainActivity : ComponentActivity() {
             }
             OpenRouterAgentTheme(darkTheme = dark) { OpenRouterAgentScreen(agent) }
         }
+        takeVoiceRequest(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeVoiceRequest(intent)
+    }
+
+    private fun takeVoiceRequest(intent: Intent?) {
+        if (intent?.getBooleanExtra(AskTileService.EXTRA_START_VOICE, false) == true) {
+            intent.removeExtra(AskTileService.EXTRA_START_VOICE)
+            VoiceRequests.pending = true
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AppVisibility.visibleActivities++
+        RunNotifications.clearFinished(this)
+    }
+
+    override fun onStop() {
+        AppVisibility.visibleActivities--
+        super.onStop()
     }
 }
 
@@ -194,6 +222,7 @@ private val QUICK_PROMPTS = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
+    val scope = rememberCoroutineScope()
     val clipboard = LocalSelectionClipboard.current
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
@@ -219,6 +248,29 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     val usesOpenRouter = agent.usesOpenRouter
     val providerName = agent.providerName
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showMiniApps by rememberSaveable { mutableStateOf(false) }
+    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val heard = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
+        if (!heard.isNullOrEmpty()) agent.promptText = listOf(agent.promptText.trim(), heard)
+            .filter { it.isNotEmpty() }.joinToString(" ")
+    }
+    val voiceContext = LocalContext.current
+    val listen: () -> Unit = {
+        runCatching { speech.launch(speechIntent()) }.onFailure {
+            android.widget.Toast.makeText(voiceContext, "This phone has no speech recognizer. Install or enable " +
+                "Speech Recognition and Synthesis from Google, or another voice input app.",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    LaunchedEffect(VoiceRequests.pending) {
+        if (VoiceRequests.pending) {
+            VoiceRequests.pending = false
+            if (agent.activePrompt == null) listen()
+        }
+    }
+    NotificationPermissionPrompt(agent.activePrompt != null)
+    // Reopen Settings when an OpenRouter sign-in finishes while the sheet is closed.
+    LaunchedEffect(agent.signInKey) { if (agent.signInKey != null) showSettings = true }
     var showConfigure by remember { mutableStateOf(false) }
     var showSdkSettings by rememberSaveable { mutableStateOf(false) }
     var customizeTab by rememberSaveable { mutableStateOf<String?>(null) }
@@ -356,6 +408,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                             customizeTab = "tools"
                                         })
                                     }
+                                    DropdownMenuItem(text = { Text("Mini apps") }, onClick = {
+                                        showConfigure = false
+                                        showMiniApps = true
+                                    })
                                     DropdownMenuItem(text = { Text("Skills & app guide") }, onClick = {
                                         showConfigure = false
                                         customizeTab = "skills"
@@ -378,7 +434,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     AgentInputBar(
                         value = agent.promptText, onValueChange = { agent.promptText = it },
                         isRunning = isRunning, isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat,
-                        error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn
+                        error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
+                        onVoice = listen,
                     )
                 }
             }
@@ -459,8 +516,12 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     if (showProviders) {
         ProvidersSheet(config, editActiveProvider, { showProviders = false }, agent::saveSettings, agent::discoverModels)
     }
+    if (showMiniApps) MiniAppsSheet(onDismiss = { showMiniApps = false }) {
+        showMiniApps = false
+        if (agent.activePrompt == null) agent.promptText = "Build me a mini app that "
+    }
     if (showSettings) {
-        SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey)
+        SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey, agent)
     }
     if (showSdkSettings) {
         SdkSettingsSheet(config, agent.availableModels, { showSdkSettings = false }, agent::saveSettings)
@@ -479,22 +540,13 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         var answer by rememberSaveable(approval.decision) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { agent.decideTool(false) },
-            title = { Text(when {
-                approval.asksUser -> approval.name
-                approval.phone -> "${approval.name}?"
-                else -> "Allow ${approval.name}?"
-            }) },
+            title = { Text(if (approval.asksUser) approval.name else "Allow ${approval.name}?") },
             text = {
                 Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (approval.url.isNotBlank()) CopyableText(approval.url)
                     if (approval.savesSettings) Text("The change will be saved and available for future messages.")
-                    if (approval.phone) {
-                        Text("The agent wants to do this on your phone. Check the app, the recipient and the text. " +
-                            "If anything changes before it runs, nothing is done and you are asked again.",
-                            style = MaterialTheme.typography.bodySmall)
-                        OutlinedSection(title = "Details") { CopyableText(approval.arguments) }
-                    } else OutlinedSection(title = "Arguments") {
+                    OutlinedSection(title = "Arguments") {
                         CopyableText(approval.arguments, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
                     }
                     if (approval.asksUser) EditField("Your answer", answer, { answer = it }, 3)
@@ -506,14 +558,13 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     Text(when {
                         approval.asksUser -> "Send answer"
                         approval.savesSettings -> "Save change"
-                        approval.phone -> "Do it"
                         else -> "Allow once"
                     })
                 }
             },
             dismissButton = {
                 TextButton(onClick = { agent.decideTool(false) }) {
-                    Text(if (approval.asksUser) "Skip" else if (approval.phone) "Not now" else "Deny")
+                    Text(if (approval.asksUser) "Skip" else "Deny")
                 }
             },
         )
@@ -1194,7 +1245,8 @@ private fun AgentInputBar(
     isLoading: Boolean,
     error: String?,
     onSend: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onVoice: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1222,6 +1274,9 @@ private fun AgentInputBar(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { onSend() })
                 )
+                if (!isRunning) IconButton(onClick = onVoice, enabled = !isLoading, modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(R.drawable.ic_mic), contentDescription = "Speak a message")
+                }
                 FilledIconButton(
                     onClick = if (isRunning) onStop else onSend,
                     enabled = isRunning || (!isLoading && value.isNotBlank()),
@@ -1247,10 +1302,16 @@ private fun SettingsBottomSheet(
     initialConfig: AgentConfig,
     onDismiss: () -> Unit,
     onSave: suspend (AgentConfig) -> Unit,
-    onValidate: suspend (String) -> Unit
+    onValidate: suspend (String) -> Unit,
+    agent: AgentViewModel,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var apiKey by remember { mutableStateOf(initialConfig.apiKey) }
+    var signedIn by remember { mutableStateOf(false) }
+    val signInContext = LocalContext.current
+    LaunchedEffect(agent.signInKey) {
+        agent.takeSignInKey()?.let { apiKey = it; signedIn = true }
+    }
     var showApiKey by remember { mutableStateOf(false) }
     var enableShell by remember { mutableStateOf(initialConfig.enableShellSandbox) }
     var enableWeb by remember { mutableStateOf(initialConfig.enableWebSearch) }
@@ -1261,8 +1322,7 @@ private fun SettingsBottomSheet(
     var webFetch by remember { mutableStateOf(initialConfig.webFetch) }
     var workspaceFiles by remember { mutableStateOf(initialConfig.enableWorkspaceFiles) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
-    var phoneControl by remember { mutableStateOf(initialConfig.phoneControl) }
-    var phoneBlockedApps by remember { mutableStateOf(initialConfig.phoneBlockedApps) }
+    var miniApps by remember { mutableStateOf(initialConfig.miniApps) }
     var maxSteps by remember { mutableStateOf(initialConfig.maxSteps.toString()) }
     var maxCost by remember { mutableStateOf(initialConfig.maxCost?.toString().orEmpty()) }
     var temperature by remember { mutableStateOf(initialConfig.temperature?.toString().orEmpty()) }
@@ -1277,8 +1337,7 @@ private fun SettingsBottomSheet(
     val uriHandler = LocalUriHandler.current
     val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
         enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
-        deviceTools = deviceTools, phoneControl = phoneControl,
-        phoneBlockedApps = phoneBlockedApps.trim(), allowSandboxNetwork = allowNetwork,
+        deviceTools = deviceTools, miniApps = miniApps, allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
         mcpToken = mcpToken, extraToolsJson = toolsJson)
@@ -1344,6 +1403,26 @@ private fun SettingsBottomSheet(
                         }) { Text("Test key") }
                     }
                     testResult?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                    if (agent.signInBusy) {
+                        Text("Finish signing in on the OpenRouter page in your browser, then return here.",
+                            style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = agent::cancelSignIn) { Text("Cancel sign-in") }
+                    } else {
+                        FilledTonalButton(enabled = !working, onClick = {
+                            signedIn = false
+                            agent.signInWithOpenRouter { url ->
+                                runCatching {
+                                    signInContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        .addCategory(Intent.CATEGORY_BROWSABLE))
+                                }.isSuccess
+                            }
+                        }) { Text(if (apiKey.isBlank()) "Sign in with OpenRouter" else "Sign in again with OpenRouter") }
+                    }
+                    agent.signInError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (signedIn && apiKey.isNotBlank()) {
+                        Text("Signed in. OpenRouter created a key for this app. Tap Save to connect.",
+                            color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                    }
                     if (initialConfig.apiKey.isNotBlank() && apiKey.trim() != initialConfig.apiKey) {
                         Text("Changing the key starts a new conversation.",
                             style = MaterialTheme.typography.bodySmall)
@@ -1378,11 +1457,8 @@ private fun SettingsBottomSheet(
                     SubagentsSettings(toolsJson, enabled = !working, onChange = { toolsJson = it; error = null })
                     SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
                         { deviceTools = it })
-                    SettingsToggleRow("Phone control",
-                        "Lets the agent read the screen and tap, type and scroll in your other apps. Sends, " +
-                            "payments, deletes, calls and unlabelled buttons wait for your approval.",
-                        phoneControl, { phoneControl = it })
-                    if (phoneControl) PhoneControlSettings(phoneBlockedApps) { phoneBlockedApps = it }
+                    SettingsToggleRow("Mini apps", "Lets the agent build small apps you can open, add to your home " +
+                        "screen and share. Find them under Configure → Mini apps.", miniApps, { miniApps = it })
 
                     if (enableShell) {
                         SettingsToggleRow(
@@ -1479,43 +1555,29 @@ private fun SettingsBottomSheet(
     }
 }
 
+/** Set by the Ask tile; the screen starts voice input when it sees it. */
+object VoiceRequests {
+    var pending by mutableStateOf(false)
+}
+
+/** Android's speech recognizer, on the device when possible. */
+private fun speechIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+    .putExtra(RecognizerIntent.EXTRA_PROMPT, "Ask the agent")
+    .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+
+/** Asks once, when the first run starts, so background progress and replies can be shown. */
 @Composable
-private fun PhoneControlSettings(blockedApps: String, onBlockedAppsChange: (String) -> Unit) {
+private fun NotificationPermissionPrompt(running: Boolean) {
+    if (android.os.Build.VERSION.SDK_INT < 33) return
     val context = LocalContext.current
-    var enabled by remember { mutableStateOf(PhoneControlService.isEnabled(context)) }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) enabled = PhoneControlService.isEnabled(context)
-        }
-        lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            if (enabled) "The phone-control accessibility service is on."
-            else "Turn on “OpenRouter Agent phone control” in Android accessibility settings to use this tool.",
-            style = MaterialTheme.typography.bodySmall,
-            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-        )
-        TextButton(onClick = { PhoneControlService.openSettings(context) }) {
-            Text(if (enabled) "Accessibility settings" else "Open accessibility settings")
-        }
-        Text(
-            "The agent reads the screen as text, one action at a time, and shows a Stop button while it works. " +
-                "Banking, payment, authenticator, password manager and system settings apps are never operated. " +
-                "Screen text goes to the selected model. A phone task stops after 30 actions or 10 minutes. " +
-                "Raise the step limit under Advanced if tasks stop early.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        CopyableOutlinedTextField(
-            value = blockedApps,
-            onValueChange = onBlockedAppsChange,
-            label = { Text("Also block these apps (names or package IDs, comma-separated)") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-        )
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(running) {
+        if (!running || RunNotifications.canPost(context)) return@LaunchedEffect
+        val prefs = context.getSharedPreferences("ui_state", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("asked_notifications", false)) return@LaunchedEffect
+        prefs.edit().putBoolean("asked_notifications", true).apply()
+        launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 

@@ -5,10 +5,30 @@ The app embeds OpenRouter’s official TypeScript Agent SDK in a bundled, isolat
 ## Run the app
 
 1. Install the signed debug APK on Android 8.0 or later with a current Android System WebView. This build appears as OpenRouter Agent Studio and upgrades Studio 2.3 and imports its locally saved conversations. Enter your API key in Studio to connect it.
-2. Tap **Connect OpenRouter**, enter an [OpenRouter API key](https://openrouter.ai/settings/keys), and save. The app loads the key’s allowed text models from `GET /api/v1/models/user`. Tap **Models** to search or refresh the list. When tools are enabled, the picker shows models that advertise tool calling.
+2. Open **Settings** and tap **Sign in with OpenRouter**. Approve the key on the OpenRouter page, return to the app, and tap **Save**. You can also paste an [OpenRouter API key](https://openrouter.ai/settings/keys) instead. The app loads the key’s allowed text models from `GET /api/v1/models/user`. Tap **Models** to search or refresh the list. When tools are enabled, the picker shows models that advertise tool calling.
 3. Try “Use the sandbox to save the Python version to outputs/version.txt.” Follow the live response and tool activity. Open **Sandbox files** to preview and export the result.
 
 SQLite stores saved chats on the phone, including OpenRouter agent state and tool results for follow-up turns. Android Keystore protects provider keys and the optional MCP token. Shell commands run in OpenRouter’s hosted container. Shell egress is off by default, and changing the allowlist starts a fresh container. OpenRouter’s [container retention](https://openrouter.ai/docs/guides/features/containers) applies to sandbox files.
+
+## Sign in with OpenRouter
+
+**Sign in with OpenRouter** uses OpenRouter's [OAuth PKCE flow](https://openrouter.ai/docs/guides/overview/auth/oauth). The app opens the OpenRouter authorization page in your browser. After you approve, the browser returns to a one-time listener on `127.0.0.1`, which closes after one sign-in or 10 minutes. The app checks the random `state`, exchanges the code with its PKCE verifier, and fills in the new key. Tap **Return to the app** on the success page, then **Save**. The key is stored with Android Keystore like a pasted key. Manage or revoke it in your OpenRouter key settings.
+
+## Background runs
+
+A run keeps going when you switch apps, lock the phone, or close the app from recents. While a run is active, a foreground service keeps the app from being frozen. The ongoing notification shows the current step and has a **Stop** button. When a tool needs approval, the notification offers **Allow once** and **Deny**. Questions from the agent open the app. When a run finishes while the app is not on screen, a notification shows the start of the reply. The app asks for notification permission when your first run starts.
+
+A run still ends if Android stops the app, for example after a force stop or a restart. Its partial reply is not kept in that case. For a Google Play release, declare the `dataSync` foreground service type in Play Console.
+
+## Mini apps
+
+Ask for a small app, for example “make a habit tracker with a streak counter”. The agent builds one HTML file and saves it with the `mini_app_save` tool. The app checks the file before saving it. It needs a title and a viewport tag, all CSS and JavaScript must be inline, and it may not use external scripts, stylesheets, frames, form actions or redirects. Problems go back to the model so it can fix them.
+
+Open **Configure → Mini apps** to open, update, delete or share an app, or add it to your home screen. Each app runs in its own isolated WebView with no access to the agent, your files, the camera, the microphone or your location. It keeps its own data in `localStorage` and can call public HTTPS APIs. To change an app, ask the agent; it reads the app and saves a new version under the same id, so the app's data stays. Apps shared with you, opened from a `.html` file, are saved without internet access and cannot be changed by the agent. Switch the tools off under **Settings → Mini apps**. They are skipped for models without tool calling.
+
+## Voice
+
+Tap the microphone in the composer to dictate a message. Android's speech recognizer is used, preferring on-device recognition. Add the **Ask agent** tile from Quick Settings to open the app straight into voice input.
 
 ## Chats and projects
 
@@ -72,7 +92,7 @@ npm run build
 npm test
 ```
 
-The APK builds to `app/build/outputs/apk/debug/app-debug.apk`. The mock tests cover phone-control approvals and protected apps, account-filtered model discovery, streamed text, hosted shell and file handling, local tool execution, MCP approval and denial, and tool history across turns. Live verification requires an OpenRouter API key.
+The APK builds to `app/build/outputs/apk/debug/app-debug.apk`. The mock tests cover account-filtered model discovery, streamed text, hosted shell and file handling, local tool execution, MCP approval and denial, and tool history across turns. Live verification requires an OpenRouter API key.
 
 API references [Agent SDK](https://openrouter.ai/docs/agent-sdk/call-model/overview) · [Account-filtered models](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails) · [Remote MCP tools](https://openrouter.ai/docs/agent-sdk/call-model/mcp-tools) · [Hosted shell](https://openrouter.ai/docs/guides/features/server-tools/shell)
 
@@ -85,28 +105,6 @@ The stream connects within 10 seconds and fails after 90 seconds without any byt
 The transcript follows the newest answer until you scroll back. Tap **Latest** to resume following. If you stop a run or the provider disconnects, the app keeps the partial reply in view. You can retry normally or retry with tools disabled for that request. Tool settings remain available for your next run.
 
 Touch and hold to select text in chat messages, tool output, file previews, or the message you’re composing. Adjust the Android selection handles and the selected text copies automatically. Use **Copy reply** to copy the entire response at once.
-
-## Phone control
-
-Phone control lets the agent operate your other apps. It reads the app in front as a numbered list of buttons, fields and text, then taps, types, scrolls, presses Back or Home, or opens an app, one action at a time. The design follows [OpenCyclone](https://github.com/Exorust/opencyclone)'s approval gate, without its hidden display or developer-shell helper. It needs no root and works on the visible screen.
-
-1. Open **Settings → Agent tools** and switch on **Phone control**.
-2. Tap **Open accessibility settings** and turn on **OpenRouter Agent phone control**.
-3. Ask, for example, “Open Messages and reply to Alex that I'm on my way.”
-
-While the agent works, a small overlay shows its current step and a **Stop** button.
-
-The rules below are enforced in Kotlin before each action. The model cannot skip them.
-
-- **Approval gate:** a tap on a button labelled Send, Pay, Buy, Order, Delete, Confirm, Submit, Post, Call, Install, or a similar word waits for approval. So do a tap on an unlabelled button and pressing Enter in a text field. The app comes to the front and shows the app, the action, the text fields on screen (such as the recipient and the message), and **Do it** or **Not now**. A locked phone cannot approve.
-- **Re-check after approval:** the app returns to the target app and reads the screen again. If the app, the target button or any typed text changed, nothing is done and the agent must ask again.
-- **Stale element numbers:** an action must name an element from the screen the agent last read. If that element changed, the action is refused and the agent gets the current screen.
-- **Protected apps:** banking, payment, wallet, authenticator, password manager, system settings, permission and installer screens are never read or operated. Add more apps under **Also block these apps**.
-- **No secrets:** the agent never types into password fields, and their contents are never shown to the model.
-- **Untrusted screen text:** screen content goes to the model inside `<untrusted_screen>` markers, and the instructions say not to follow instructions found there.
-- **Limits:** a phone task stops after 30 actions, 10 minutes, or three repeats of the same action on an unchanged screen. Each action is one SDK step, so raise the step limit under **Settings → Advanced** for longer tasks.
-
-Screen text goes only to the selected model. The agent reads text, not screenshots, so apps drawn without accessibility labels, such as many games, are hard for it to use. Android may slow the agent while another app is in front. Google Play restricts accessibility automation, so distribute this build outside Play or review Play's accessibility policy first.
 
 ## Customize your agent
 
@@ -124,5 +122,5 @@ OpenRouter chat runs start with `callModel` from the bundled official Agent SDK.
 
 Advanced settings include SDK repetition detection, final-turn behavior, tool deadlines and concurrency, and stopping after a named function tool. Follow-up profiles use the SDK's dynamic model, instruction, and generation callbacks. Enabled skills can be discovered or pinned, and MCP and webhook calls request approval inside the app.
 
-The Android app handles approvals during an open run. It does not currently expose detached background jobs, approval resumption after process death, SDK telemetry, or native image previews. Server tool availability depends on the selected model and OpenRouter workspace.
+The Android app handles approvals during a run, including from the background notification. It does not currently resume a run after the process dies, and it does not expose SDK telemetry or native image previews. Server tool availability depends on the selected model and OpenRouter workspace.
 
