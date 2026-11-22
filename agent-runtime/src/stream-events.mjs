@@ -30,6 +30,13 @@ export function streamObserver(events) {
   const subagentIds = new Map();
   const textParts = new Map();
   const summaryParts = new Map();
+  const reasoningParts = new Map();
+  // A reasoning item streams raw text, a summary, or both. Show whichever source starts first.
+  const reasoningSource = new Map();
+  // Output item IDs map to call IDs so argument deltas reach the tool row that the model is writing.
+  const itemCalls = new Map();
+  const argumentBuffers = new Map();
+  const lastPart = { text: undefined, reasoning: undefined };
   const counts = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, cost: 0 };
   const accounted = new Set();
   let hasCost = false;
@@ -95,13 +102,46 @@ export function streamObserver(events) {
   }
 
   function text(map, id, value, type, snapshot = false) {
-    if (!value || typeof value !== 'string') return;
+    if (!value || typeof value !== 'string') return false;
     const previous = map.get(id) ?? '';
     const delta = snapshot ? (value.startsWith(previous) ? value.slice(previous.length) : '') : value;
-    if (!delta) return;
+    if (!delta) return false;
     map.set(id, previous + delta);
-    if (type === 'text') events.text(delta);
-    else events.update?.({ kind: 'reasoning', text: delta });
+    // Separate parts from different items or steps so the live view does not run sentences together.
+    const kind = type === 'text' ? 'text' : 'reasoning';
+    const separator = lastPart[kind] !== undefined && lastPart[kind] !== id && !previous ? '\n\n' : '';
+    lastPart[kind] = id;
+    if (type === 'text') events.text(separator + delta);
+    else events.update?.({ kind: 'reasoning', text: separator + delta });
+    return true;
+  }
+
+  function reasoning(source, itemId, part, value, snapshot = false) {
+    const owner = reasoningSource.get(itemId);
+    if (owner && owner !== source) return;
+    if (text(source === 'text' ? reasoningParts : summaryParts, part, value, 'reasoning', snapshot) && itemId) {
+      reasoningSource.set(itemId, source);
+    }
+  }
+
+  function toolInput(itemId, delta, name) {
+    if (!itemId || typeof delta !== 'string' || !delta) return;
+    phase('tools');
+    const id = itemCalls.get(itemId) ?? itemId;
+    const previous = argumentBuffers.get(id) ?? { value: '', sent: 0 };
+    // Keep the tail. The live row shows what the model is writing now.
+    const value = (previous.value + delta).slice(-4000);
+    const now = Date.now();
+    argumentBuffers.set(id, { value, sent: previous.sent });
+    if (now - previous.sent < 150 && tools.has(id)) return;
+    argumentBuffers.set(id, { value, sent: now });
+    tool(id, tools.has(id) ? undefined : name, 'preparing', value.length > 1100 ? '…' + value.slice(-1100) : value);
+  }
+
+  function toolInputDone(itemId, value) {
+    const id = itemCalls.get(itemId) ?? itemId;
+    argumentBuffers.delete(id);
+    if (id && typeof value === 'string' && value) tool(id, undefined, 'preparing', value);
   }
 
   function usage(response) {
@@ -140,14 +180,19 @@ export function streamObserver(events) {
     }
     if (item.type === 'reasoning') {
       phase('reasoning');
-      if (ready) item.summary?.forEach((part, index) =>
-        text(summaryParts, item.id + ':' + index, part.text, 'reasoning', true));
+      if (ready) {
+        item.content?.forEach((part, index) => {
+          if (part?.type === 'reasoning_text' || part?.text) reasoning('text', item.id, item.id + ':' + index, part.text, true);
+        });
+        item.summary?.forEach((part, index) => reasoning('summary', item.id, item.id + ':' + index, part.text, true));
+      }
       return;
     }
     if (item.type === 'function_call_output') {
       tool(id, undefined, 'completed', item.output);
       return;
     }
+    if (item.id && callId) itemCalls.set(item.id, callId);
     if (item.type === 'function_call') {
       phase('tools');
       const workerCallId = item.subagentId ?? item.subagent_id;
@@ -225,14 +270,24 @@ export function streamObserver(events) {
         break;
       case 'response.reasoning_summary_text.delta':
         phase('reasoning');
-        text(summaryParts, part, event.delta, 'reasoning');
+        reasoning('summary', itemId, part, event.delta);
         break;
       case 'response.reasoning_summary_text.done':
-        text(summaryParts, part, event.text, 'reasoning', true);
+        reasoning('summary', itemId, part, event.text, true);
         break;
-      case 'response.reasoning.delta':
+      case 'response.reasoning_summary_part.added':
+        phase('reasoning');
+        break;
       case 'response.reasoning_text.delta':
         phase('reasoning');
+        reasoning('text', itemId, part, event.delta);
+        break;
+      case 'response.reasoning_text.done':
+        reasoning('text', itemId, part, event.text, true);
+        break;
+      case 'response.reasoning.delta':
+        phase('reasoning');
+        if (typeof event.delta === 'string') reasoning('text', itemId, part, event.delta);
         break;
       case 'response.output_item.added':
         readItem(event.item, false);
@@ -242,11 +297,31 @@ export function streamObserver(events) {
         break;
       case 'response.function_call_arguments.delta':
       case 'response.custom_tool_call_input.delta':
-        phase('tools');
+      case 'response.mcp_call_arguments.delta':
+        toolInput(itemId, event.delta, event.type.includes('mcp') ? 'mcp' : undefined);
+        break;
+      case 'response.code_interpreter_call_code.delta':
+        toolInput(itemId, event.delta, 'code_interpreter');
+        break;
+      case 'response.apply_patch_call_operation_diff.delta':
+        toolInput(itemId, event.delta, 'apply_patch');
         break;
       case 'response.function_call_arguments.done':
+      case 'response.mcp_call_arguments.done':
+        phase('tools');
+        toolInputDone(itemId, event.arguments);
+        break;
       case 'response.custom_tool_call_input.done':
         phase('tools');
+        toolInputDone(itemId, event.input);
+        break;
+      case 'response.code_interpreter_call_code.done':
+        phase('tools');
+        toolInputDone(itemId, event.code);
+        break;
+      case 'response.apply_patch_call_operation_diff.done':
+        phase('tools');
+        toolInputDone(itemId);
         break;
       case 'response.output_text.annotation.added': {
         readSource(event.annotation);

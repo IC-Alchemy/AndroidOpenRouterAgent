@@ -314,9 +314,8 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                     ChatEntry(isUser = true, text = prompt),
                     ChatEntry(
                         isUser = false, text = result.assistantText,
-                        reasoningSummary = if (currentConfig.sdk.showReasoning) {
-                            result.reasoningSummary ?: progress?.summary?.ifBlank { null }
-                        } else null,
+                        // Keep the reasoning even while it is hidden, so turning it back on shows it.
+                        reasoningSummary = progress?.summary?.ifBlank { null } ?: result.reasoningSummary,
                         shellSteps = result.shellSteps, searchQueries = result.searchQueries,
                         citations = (result.citations + progress?.sources.orEmpty()).distinctBy { it.url },
                         usage = result.usage, modelUsed = result.modelUsed,
@@ -374,6 +373,24 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                 config = change.config
             }
             change.result
+        }
+    }
+
+    /** Shows or hides reasoning. Works during a run, because it changes only what the app displays. */
+    fun setShowReasoning(show: Boolean) {
+        if (config.sdk.showReasoning == show) return
+        viewModelScope.launch {
+            settingsMutex.withLock {
+                val next = config.copy(sdk = config.sdk.copy(showReasoning = show))
+                config = next
+                try {
+                    withContext(Dispatchers.IO) { storage.saveConfig(next) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    storageError = "Android could not save the reasoning setting."
+                }
+            }
         }
     }
 

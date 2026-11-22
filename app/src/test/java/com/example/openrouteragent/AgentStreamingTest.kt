@@ -52,6 +52,31 @@ class AgentStreamingTest {
     }
 
     @Test
+    fun liveTimelineKeepsThinkingToolsAndAnswerInStreamOrder() {
+        val progress = AgentProgress(1000).apply(parseRunUpdates(JSONArray("""
+            [
+              {"kind":"reasoning","text":"Let me "}, {"kind":"reasoning","text":"check."},
+              {"kind":"tool","id":"call_1","name":"web search","status":"running","detail":"{\"q\":"},
+              {"kind":"tool","id":"call_1","name":"web search","status":"completed","detail":"done"},
+              {"kind":"reasoning","text":"\n\nFound it."},
+              {"kind":"text","text":"The answer"}, {"kind":"text","text":" is 4."}
+            ]
+        """.trimIndent())), 3000)
+        assertEquals(listOf(
+            LiveBlock.Thinking("Let me check."),
+            LiveBlock.ToolCall("call_1"),
+            LiveBlock.Thinking("Found it."),
+            LiveBlock.Answer("The answer is 4."),
+        ), progress.timeline)
+        assertEquals("completed", progress.tool("call_1")?.status)
+        assertEquals("Let me check.\n\nFound it.", progress.summary)
+        assertEquals(3000L, progress.firstOutputAt)
+        assertEquals(progress.streamedChars / 4, progress.outputTokens.toLong())
+        assertNull(progress.tokensPerSecond(3500))
+        assertTrue(progress.tokensPerSecond(5000)!! > 0)
+    }
+
+    @Test
     fun liveProgressKeepsPartialTextAndDeduplicatesToolsSourcesAndFiles() {
         val progress = AgentProgress(1000).apply(parseRunUpdates(JSONArray("""
             [

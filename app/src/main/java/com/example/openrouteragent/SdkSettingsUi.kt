@@ -214,7 +214,7 @@ internal fun SdkSettingsSheet(
                     }
                     "display" -> {
                         Options("theme", "App theme", listOf("oled" to "OLED black", "system" to "System", "light" to "Light"))
-                        ToggleLine("Show streamed reasoning summaries", showReasoning) { showReasoning = it }
+                        ToggleLine("Show streamed reasoning", showReasoning) { showReasoning = it }
                         ToggleLine("Let the agent discover saved skills", discoverSkills) { discoverSkills = it }
                     }
                 }

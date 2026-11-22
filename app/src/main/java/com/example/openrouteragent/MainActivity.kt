@@ -408,6 +408,11 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                             customizeTab = "tools"
                                         })
                                     }
+                                    DropdownMenuItem(text = { Text("Show reasoning") }, onClick = {
+                                        agent.setShowReasoning(!config.sdk.showReasoning)
+                                    }, trailingIcon = {
+                                        Switch(checked = config.sdk.showReasoning, onCheckedChange = null)
+                                    })
                                     DropdownMenuItem(text = { Text("Mini apps") }, onClick = {
                                         showConfigure = false
                                         showMiniApps = true
@@ -476,17 +481,19 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         ) {
                             items(messages, key = { it.id }) { entry ->
                                 if (entry.isUser) UserMessageBubble(entry.text)
-                                else AgentResponseCard(entry, clipboard::copy, ::openFile)
+                                else AgentResponseCard(entry, clipboard::copy, ::openFile, config.sdk.showReasoning)
                             }
                             if (activePrompt != null) {
                                 item("active_prompt") { UserMessageBubble(activePrompt) }
                                 item("running") {
-                                    if (runProgress != null) LiveAgentReply(runProgress)
+                                    if (runProgress != null) LiveAgentReply(runProgress,
+                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning)
                                 }
                             }
                             if (interrupted != null) {
                                 item("interrupted") {
                                     LiveAgentReply(interrupted, interrupted = true,
+                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
                                         onRetry = { following = true; agent.retryTurn() },
                                         onRetryWithoutTools = if (usesOpenRouter && config.agentToolsEnabled()) {
                                             { following = true; agent.retryTurn(toolsOff = true) }
@@ -504,7 +511,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
 
     if (showRunActivity) {
         val selected = runProgress ?: interrupted
-        if (selected != null) RunActivityDialog(selected, providerName, { showRunActivity = false }) { file ->
+        if (selected != null) RunActivityDialog(selected, providerName, { showRunActivity = false },
+            config.sdk.showReasoning) { file ->
             showRunActivity = false
             openFile(file.containerId, file.file)
         }
@@ -901,7 +909,8 @@ private fun UserMessageBubble(text: String) {
 private fun AgentResponseCard(
     entry: ChatEntry,
     onCopyText: (String) -> Unit,
-    onFileClick: (containerId: String, fileRef: ContainerFileRef) -> Unit
+    onFileClick: (containerId: String, fileRef: ContainerFileRef) -> Unit,
+    showReasoning: Boolean = true,
 ) {
     val uriHandler = LocalUriHandler.current
     val containerColor = if (entry.isError) {
@@ -955,7 +964,7 @@ private fun AgentResponseCard(
                 }
                 if (showToolActivity) entry.toolActivity.forEach { ToolActivityRow(it) }
             }
-            if (!entry.reasoningSummary.isNullOrBlank()) {
+            if (showReasoning && !entry.reasoningSummary.isNullOrBlank()) {
                 CollapsibleReasoningBox(entry.reasoningSummary)
             }
 
@@ -1070,7 +1079,7 @@ private fun CollapsibleReasoningBox(summary: String) {
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Reasoning Summary",
+                        text = "Reasoning",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold
                     )
