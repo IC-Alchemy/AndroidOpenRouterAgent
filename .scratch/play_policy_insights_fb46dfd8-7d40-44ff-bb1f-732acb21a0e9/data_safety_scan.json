@@ -1,0 +1,628 @@
+{
+    "codebase_map": {
+        "all_files": [
+            [
+                ".gitignore",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\.gitignore",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "LICENSE",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\LICENSE",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "README.md",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\README.md",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "build.gradle.kts",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\build.gradle.kts",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "gradle.properties",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\gradle.properties",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "gradlew",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\gradlew",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "gradlew.bat",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\gradlew.bat",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "settings.gradle.kts",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\settings.gradle.kts",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent"
+            ],
+            [
+                "ci.yml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\.github\\workflows\\ci.yml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\.github\\workflows"
+            ],
+            [
+                "build.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\build.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime"
+            ],
+            [
+                "package-lock.json",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\package-lock.json",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime"
+            ],
+            [
+                "package.json",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\package.json",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime"
+            ],
+            [
+                "customization.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\customization.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "local-tools.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\local-tools.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "native-fetch.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\native-fetch.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "project-files.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\project-files.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "resource-actions.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\resource-actions.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "runtime.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\runtime.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "stream-events.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\stream-events.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "subagent.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\subagent.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "webview.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src\\webview.mjs",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\src"
+            ],
+            [
+                "build.gradle.kts",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\build.gradle.kts",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app"
+            ],
+            [
+                "app-debug.apk",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\APK\\app-debug.apk",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\APK"
+            ],
+            [
+                "AndroidManifest.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\AndroidManifest.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main"
+            ],
+            [
+                "THIRD_PARTY_NOTICES.txt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent\\THIRD_PARTY_NOTICES.txt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent"
+            ],
+            [
+                "agent.js",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent\\agent.js",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent"
+            ],
+            [
+                "agent.js.LEGAL.txt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent\\agent.js.LEGAL.txt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent"
+            ],
+            [
+                "index.html",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent\\index.html",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent"
+            ],
+            [
+                "text_moderation_int8.tflite",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\moderation\\text_moderation_int8.tflite",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\moderation"
+            ],
+            [
+                "vocab.txt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\moderation\\vocab.txt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\moderation"
+            ],
+            [
+                "SKILL.md",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\skills\\openrouter-app-guide\\SKILL.md",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\skills\\openrouter-app-guide"
+            ],
+            [
+                "AgentCustomization.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomization.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentCustomizationUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomizationUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentHttpTransport.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentHttpTransport.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentModels.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentModels.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentProgress.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentProgress.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentResourceActions.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentResourceActions.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentRunUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentRunUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentSdkRuntime.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentSdkRuntime.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentStorage.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentStorage.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AgentViewModel.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentViewModel.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "AskTileService.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AskTileService.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "BackgroundRuns.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\BackgroundRuns.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ChatDatabase.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ChatDatabase.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ChatLibraryUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ChatLibraryUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "CommandPreflight.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CommandPreflight.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "CompatibleChatClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CompatibleChatClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ContainerFilesDialogs.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ContainerFilesDialogs.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ContentModerator.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ContentModerator.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "CustomProvider.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CustomProvider.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "CustomizationAssistant.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CustomizationAssistant.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MainActivity.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MainActivity.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniAppActivity.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppActivity.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniAppDatabase.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppDatabase.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniAppGenerator.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppGenerator.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniAppIcons.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppIcons.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniAppLibraries.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppLibraries.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniAppRepository.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppRepository.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniApps.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniApps.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "MiniAppsUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppsUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ModelCatalog.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ModelCatalog.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ModelPicker.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ModelPicker.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ModerationReportClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ModerationReportClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "OpenRouterAgentClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterAgentClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "OpenRouterFiles.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterFiles.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "OpenRouterSignIn.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterSignIn.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "OpenUncensoredImages.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenUncensoredImages.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "OpenUncensoredImagesUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenUncensoredImagesUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "OutlinedSection.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OutlinedSection.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ProjectFileStore.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ProjectFileStore.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ProjectFilesUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ProjectFilesUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ProvidersUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ProvidersUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "SdkSettingsUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SdkSettingsUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "SelectionCopy.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SelectionCopy.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "SignInReturnActivity.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SignInReturnActivity.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "SkillsDirectoryClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SkillsDirectoryClient.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "SubagentSettings.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SubagentSettings.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "SubagentsUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SubagentsUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "WorkspaceFilesUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\WorkspaceFilesUi.kt",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent"
+            ],
+            [
+                "ic_mic.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\drawable\\ic_mic.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\drawable"
+            ],
+            [
+                "ic_sandbox.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\drawable\\ic_sandbox.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\drawable"
+            ],
+            [
+                "styles.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\values\\styles.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\values"
+            ],
+            [
+                "data_extraction_rules.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\xml\\data_extraction_rules.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\xml"
+            ],
+            [
+                "shared_files.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\xml\\shared_files.xml",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\xml"
+            ],
+            [
+                "gradle-wrapper.jar",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\gradle\\wrapper\\gradle-wrapper.jar",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\gradle\\wrapper"
+            ],
+            [
+                "gradle-wrapper.properties",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\gradle\\wrapper\\gradle-wrapper.properties",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\gradle\\wrapper"
+            ],
+            [
+                "export_moderation_model.py",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\scripts\\export_moderation_model.py",
+                "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\scripts"
+            ]
+        ],
+        "gradles": [
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\build.gradle.kts",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\settings.gradle.kts",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\build.gradle.kts"
+        ],
+        "manifests": [
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\AndroidManifest.xml"
+        ],
+        "source_code": [
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\agent-runtime\\package.json",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\assets\\agent\\agent.js",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomization.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomizationUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentHttpTransport.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentModels.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentProgress.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentResourceActions.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentRunUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentSdkRuntime.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentStorage.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AgentViewModel.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\AskTileService.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\BackgroundRuns.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ChatDatabase.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ChatLibraryUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CommandPreflight.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CompatibleChatClient.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ContainerFilesDialogs.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ContentModerator.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CustomProvider.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\CustomizationAssistant.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MainActivity.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppActivity.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppDatabase.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppGenerator.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppIcons.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppLibraries.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppRepository.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniApps.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppsUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ModelCatalog.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ModelPicker.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ModerationReportClient.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterAgentClient.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterFiles.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterSignIn.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenUncensoredImages.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OpenUncensoredImagesUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\OutlinedSection.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ProjectFileStore.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ProjectFilesUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\ProvidersUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SdkSettingsUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SelectionCopy.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SignInReturnActivity.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SkillsDirectoryClient.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SubagentSettings.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\SubagentsUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\java\\com\\example\\openrouteragent\\WorkspaceFilesUi.kt",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\values\\styles.xml",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\xml\\data_extraction_rules.xml",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\res\\xml\\shared_files.xml"
+        ]
+    },
+    "data_safety_scan": {
+        "data_sources": {
+            "AUDIO": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: record)"
+            ],
+            "FILES_AND_DOCS": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: localStorage)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentSdkRuntime.kt (Pattern: text/plain)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppActivity.kt (Pattern: text/plain)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppGenerator.kt (Pattern: localStorage)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppsUi.kt (Pattern: */*)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\ProjectFilesUi.kt (Pattern: */*)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\SkillsDirectoryClient.kt (Pattern: text/plain)"
+            ],
+            "MEDIA": [
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppsUi.kt (Pattern: image/*)"
+            ],
+            "MUSIC": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: track)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\BackgroundRuns.kt (Pattern: track)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppGenerator.kt (Pattern: music)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppIcons.kt (Pattern: music)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppsUi.kt (Pattern: track)"
+            ],
+            "OTHER_APP_PERFORMANCE": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: status_code)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomizationUi.kt (Pattern: telemetry)"
+            ],
+            "PERFORMANCE_DIAGNOSTICS": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: trace)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppActivity.kt (Pattern: ActivityManager)"
+            ],
+            "PERSONAL_INFO_OTHER": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: dob)"
+            ],
+            "PHOTOS": [
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppsUi.kt (Pattern: image/*)"
+            ],
+            "RACE_ETHNICITY": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: race)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppGenerator.kt (Pattern: race)"
+            ],
+            "USER_ACCOUNT": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: login)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomization.kt (Pattern: credentials)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomizationUi.kt (Pattern: uid)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentModels.kt (Pattern: credentials)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentSdkRuntime.kt (Pattern: uid)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentViewModel.kt (Pattern: signIn)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\CustomProvider.kt (Pattern: credentials)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\CustomizationAssistant.kt (Pattern: credentials)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MainActivity.kt (Pattern: signIn)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\SubagentsUi.kt (Pattern: uid)"
+            ],
+            "WEB_BROWSING_HISTORY": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: loadUrl)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomizationUi.kt (Pattern: WebView)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentSdkRuntime.kt (Pattern: WebView)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppActivity.kt (Pattern: WebView)"
+            ]
+        },
+        "disclosure": {
+            "-": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: Accept)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomizationUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentHttpTransport.kt (Pattern: Accept)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentResourceActions.kt (Pattern: share)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentRunUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\ChatLibraryUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\CompatibleChatClient.kt (Pattern: Accept)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\ContainerFilesDialogs.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\CustomizationAssistant.kt (Pattern: Accept)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MainActivity.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppActivity.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppGenerator.kt (Pattern: Accept)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniApps.kt (Pattern: share)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppsUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\ModelPicker.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\OpenUncensoredImagesUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\ProjectFilesUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\ProvidersUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\SdkSettingsUi.kt (Pattern: collect)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\SkillsDirectoryClient.kt (Pattern: Accept)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\SubagentsUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\WorkspaceFilesUi.kt (Pattern: AlertDialog)",
+                "app\\src\\main\\res\\xml\\data_extraction_rules.xml (Pattern: share)",
+                "app\\src\\main\\res\\xml\\shared_files.xml (Pattern: share)"
+            ]
+        },
+        "foreground_service": {
+            "-": [
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\BackgroundRuns.kt (Pattern: FOREGROUND_SERVICE)"
+            ]
+        },
+        "network_transmission": {
+            "-": [
+                "app\\src\\main\\assets\\agent\\agent.js (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentCustomizationUi.kt (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentHttpTransport.kt (Pattern: HttpClient)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentResourceActions.kt (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\AgentViewModel.kt (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\CompatibleChatClient.kt (Pattern: HttpClient)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\CustomizationAssistant.kt (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MainActivity.kt (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppGenerator.kt (Pattern: HttpClient)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\MiniAppLibraries.kt (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\ModerationReportClient.kt (Pattern: HttpClient)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterAgentClient.kt (Pattern: HttpClient)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\OpenRouterSignIn.kt (Pattern: HttpClient)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\SkillsDirectoryClient.kt (Pattern: fetch)",
+                "app\\src\\main\\java\\com\\example\\openrouteragent\\SubagentSettings.kt (Pattern: fetch)"
+            ]
+        }
+    },
+    "found_urls": [],
+    "semantic_files": {
+        "AUDIO": [
+            "ic_mic.xml"
+        ],
+        "PHOTOS": [
+            "OpenUncensoredImages.kt",
+            "OpenUncensoredImagesUi.kt"
+        ]
+    }
+}

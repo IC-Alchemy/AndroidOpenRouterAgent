@@ -1,0 +1,12 @@
+{
+    "key_files": {
+        "gradles": [
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\build.gradle.kts",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\settings.gradle.kts",
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\build.gradle.kts"
+        ],
+        "manifests": [
+            "Z:\\Codezzz\\android\\AndroidOpenRouterAgent\\app\\src\\main\\AndroidManifest.xml"
+        ]
+    }
+}

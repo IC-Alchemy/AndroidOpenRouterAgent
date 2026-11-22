@@ -457,6 +457,11 @@ class MiniAppsTest {
         assertEquals("Done. Saved the file.", replyPreview("## Done.\n\n**Saved** the file."))
         assertEquals("The agent finished.", replyPreview("   "))
         assertTrue(replyPreview("a".repeat(500)).length <= 240)
+        assertEquals("See the docs for my_file.py.", replyPreview("> See [the docs](https://x.dev) for `my_file.py`."))
+        assertEquals("One Two", replyPreview("- One\n* Two"))
+        // An emoji straddling the cut is dropped whole instead of leaving half a surrogate pair.
+        val cut = replyPreview("abc\uD83D\uDE00def", max = 5)
+        assertEquals("abc…", cut)
     }
 
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray =

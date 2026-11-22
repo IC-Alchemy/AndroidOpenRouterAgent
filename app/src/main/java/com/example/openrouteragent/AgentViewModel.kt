@@ -276,7 +276,7 @@ class AgentViewModel internal constructor(
     private val app get() = getApplication<Application>()
 
     /** Mirrors the live status, or a pending approval, into the ongoing run notification. */
-    private fun notifyBackground(force: Boolean = false) {
+    private fun notifyBackground() {
         val prompt = activePrompt ?: return
         val pending = approval
         val notice = if (pending != null) RunNotice(
@@ -286,12 +286,12 @@ class AgentViewModel internal constructor(
             approval = pending,
         ) else RunNotice("Working on: ${replyPreview(prompt, 60)}",
             progress?.status(providerName) ?: "Working")
-        RunNotifications.update(app, notice, force)
+        RunNotifications.update(notice)
     }
 
     private fun finishBackground(title: String, text: String) {
         AgentRunService.stop(app)
-        RunNotifications.reset()
+        RunNotifications.end(app)
         if (!AppVisibility.visible) RunNotifications.finished(app, title, text)
     }
 
@@ -339,8 +339,8 @@ class AgentViewModel internal constructor(
         interrupted = null
         retryPrompt = null
         progress = AgentProgress(SystemClock.elapsedRealtime())
-        RunNotifications.reset()
-        notifyBackground(force = true)
+        RunNotifications.begin(app)
+        notifyBackground()
         AgentRunService.start(app)
     }
 

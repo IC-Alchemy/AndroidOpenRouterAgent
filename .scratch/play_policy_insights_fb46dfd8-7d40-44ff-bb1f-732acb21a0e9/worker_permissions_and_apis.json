@@ -1,0 +1,16 @@
+{
+  "domain": "Permissions and APIs",
+  "findings": [
+    {
+      "policy_id": "foreground_services_policy",
+      "issue_summary": "Background agent runs require a Play Console foreground service declaration",
+      "severity": "SUGGESTION",
+      "files_involved": [
+        "app/src/main/AndroidManifest.xml",
+        "app/src/main/java/com/example/openrouteragent/BackgroundRuns.kt"
+      ],
+      "evidence": "AndroidManifest.xml lines 6–7 and 29–32 declare the foreground-service permissions and the dataSync type. BackgroundRuns.kt lines 109–111 start the foreground service with a notification. The app targets API 35.",
+      "recommendation": "Verify the dataSync declaration in Play Console under App content. Describe the user-initiated run and the impact of interruption, select the applicable use case, and provide a video showing how to trigger the foreground service. See https://support.google.com/googleplay/android-developer/answer/13392821."
+    }
+  ]
+}

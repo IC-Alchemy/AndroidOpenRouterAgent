@@ -166,17 +166,6 @@ class MainActivity : ComponentActivity() {
             VoiceRequests.pending = true
         }
     }
-
-    override fun onStart() {
-        super.onStart()
-        AppVisibility.visibleActivities++
-        RunNotifications.clearFinished(this)
-    }
-
-    override fun onStop() {
-        AppVisibility.visibleActivities--
-        super.onStop()
-    }
 }
 
 internal fun isDarkThemeForAppearance(appearance: String, systemDark: Boolean): Boolean =
