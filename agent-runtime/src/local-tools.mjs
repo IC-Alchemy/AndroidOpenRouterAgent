@@ -8,8 +8,13 @@ export function miniAppGuidance(options) {
     options.modelDetails?.[options.model]?.tools === false) return '';
   return 'Mini apps: when the user asks for a small app, tool, tracker, game or calculator for their phone, build ' +
     'it as one complete HTML file and save it with mini_app_save. Ask up to three short questions first only if the ' +
-    'request is unclear. Requirements: a <title>, a viewport meta tag, all CSS and JavaScript inline, no external ' +
-    'scripts, stylesheets, fonts, iframes or form actions. Design for a phone screen in light and dark mode with ' +
+    'request is unclear. Requirements: a <title>, a viewport meta tag, your own CSS and JavaScript inline, no ' +
+    'iframes or form actions. To use a library, add an empty <script src> or stylesheet <link> with a pinned ' +
+    'version on cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com, for example ' +
+    '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>. The phone downloads it ' +
+    'once and writes it into the file, so the app works offline. Pick a single-file build (UMD, IIFE or a bundled ' +
+    '.min.js); ES modules that import other files, and fonts or images a stylesheet links, do not load. No other ' +
+    'external scripts, stylesheets or fonts. Design for a phone screen in light and dark mode with ' +
     'touch targets of at least 44px. Store data with localStorage. fetch may call public HTTPS APIs that allow CORS ' +
     'and need no key. To change an existing app, read it with mini_app_read and save it with its id so the ' +
     'user\'s data is kept. If saving reports problems, fix them and save again.';
@@ -34,7 +39,8 @@ export function miniAppTools(call) {
       name: 'mini_app_save',
       description: 'Save a mini app: one complete HTML file the user can open, pin to the home screen and share. ' +
         'Pass id to save a new version of an existing app and keep its data. Returns problems to fix if the file ' +
-        'breaks the mini app rules.',
+        'breaks the mini app rules. Libraries linked from cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com are ' +
+        'downloaded and inlined.',
       inputSchema: z.object({
         name: z.string().min(1).max(40).describe('Short app name for the home screen.'),
         description: z.string().max(200).optional().describe('One sentence on what the app does.'),

@@ -12,10 +12,15 @@ import java.util.UUID
 /*
  * Mini apps are small single-file HTML apps that the agent builds on request. Each one runs in its own WebView origin
  * with no app bridge, no file access and no other scripts, can be pinned to the home screen, and can be shared as one
- * .html file. Apps received from someone else never get network access.
+ * .html file. Libraries the agent names on a public CDN are written into the file when it is saved. Apps received
+ * from someone else never get network access.
  */
 
-const val MINI_APP_MAX_CHARS = 400_000
+/** The largest saved app, including inlined libraries. */
+const val MINI_APP_MAX_CHARS = 6_000_000
+
+/** The largest HTML the agent may write itself. Libraries it links are inlined on top of this. */
+const val MINI_APP_SOURCE_MAX_CHARS = 400_000
 
 @Serializable
 data class MiniApp(
@@ -38,17 +43,36 @@ object MiniAppChecks {
 
     /** Problems that stop an app from being saved. The agent gets them back and can fix the file. */
     fun problems(html: String): List<String> = buildList {
-        if (html.length > MINI_APP_MAX_CHARS) add("The file is larger than ${MINI_APP_MAX_CHARS / 1000} KB.")
+        if (html.length > MINI_APP_MAX_CHARS) add("The file is larger than ${MINI_APP_MAX_CHARS / 1_000_000} MB.")
         if (!has(html, "<html[\\s>]") || !has(html, "</html>")) add("Wrap the app in <html> … </html>.")
         if (title(html) == null) add("Add a non-empty <title>.")
         if (!has(html, "<meta[^>]+name=[\"']?viewport")) add("Add a viewport meta tag for phones.")
-        if (has(html, "<script[^>]+\\bsrc\\s*=")) add("Inline all JavaScript; external <script src> files are not loaded.")
-        if (has(html, "<link[^>]+\\bhref\\s*=\\s*[\"']?(https?:)?//")) add("Inline all CSS and fonts; external <link> files are not loaded.")
+        if (has(html, "<script[^>]+\\bsrc\\s*=")) add("Inline all JavaScript; external <script src> files are not loaded. " +
+            "An empty <script src> tag for a library on ${MINI_APP_LIBRARY_HOSTS.joinToString()} is inlined when saved.")
+        if (has(html, "<link[^>]+\\bhref\\s*=\\s*[\"']?(https?:)?//")) add("Inline all CSS and fonts; external <link> files are not loaded. " +
+            "A stylesheet <link> on ${MINI_APP_LIBRARY_HOSTS.joinToString()} is inlined when saved.")
         if (has(html, "@import\\s+(url\\()?[\"']?(https?:)?//")) add("Remove CSS @import of external files.")
         if (has(html, "<(iframe|frame|frameset|object|embed)[\\s>]")) add("Remove iframes, frames, objects and embeds.")
         if (has(html, "<form[^>]+\\baction\\s*=")) add("Handle forms in JavaScript instead of a form action.")
         if (has(html, "http-equiv\\s*=\\s*[\"']?refresh")) add("Remove the meta refresh.")
         if (has(html, "<base[\\s>]")) add("Remove the <base> tag.")
+    }
+
+    /**
+     * Blocks scripts, styles, fonts and frames from anywhere but the page itself, even when the app's own code adds a
+     * <script src> tag at runtime. fetch and images still follow the app's network setting.
+     */
+    const val POLICY = "script-src 'unsafe-inline' 'unsafe-eval' blob: data:; style-src 'unsafe-inline' blob: data:; " +
+        "font-src blob: data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+
+    private val headTag = Regex("<head(\\s[^>]*)?>", RegexOption.IGNORE_CASE)
+    private val htmlTag = Regex("<html(\\s[^>]*)?>", RegexOption.IGNORE_CASE)
+
+    /** Adds [POLICY] as the first element of the page, before any of the app's own scripts run. */
+    fun withPolicy(html: String): String {
+        val meta = "<meta http-equiv=\"Content-Security-Policy\" content=\"$POLICY\">"
+        val anchor = headTag.find(html) ?: htmlTag.find(html) ?: return meta + html
+        return html.substring(0, anchor.range.last + 1) + meta + html.substring(anchor.range.last + 1)
     }
 }
 
@@ -121,7 +145,11 @@ class MiniAppStore(private val dir: File, private val clock: () -> Long = System
 }
 
 /** Handles the agent's mini app tool calls. Returns JSON for the model. */
-class MiniAppTools(private val store: MiniAppStore, private val onSaved: (MiniApp) -> Unit = {}) {
+class MiniAppTools(
+    private val store: MiniAppStore,
+    private val libraries: MiniAppLibraries = MiniAppLibraries(null),
+    private val onSaved: (MiniApp) -> Unit = {},
+) {
     fun handle(request: JSONObject): JSONObject = try {
         when (request.optString("type")) {
             "list" -> JSONObject().put("ok", true).put("apps", JSONArray(store.list().map {
@@ -130,7 +158,12 @@ class MiniAppTools(private val store: MiniAppStore, private val onSaved: (MiniAp
             }))
             "read" -> {
                 val app = store.find(request.optString("app")) ?: return fail("No mini app matches that id or name.")
-                JSONObject().put("ok", true).put("id", app.id).put("name", app.name).put("html", store.html(app.id).orEmpty())
+                val html = store.html(app.id).orEmpty()
+                val short = MiniAppLibraries.collapse(html)
+                JSONObject().put("ok", true).put("id", app.id).put("name", app.name).put("html", short).apply {
+                    if (short != html) put("note", "Inlined libraries are shown as their <script src> or <link> " +
+                        "tags. Keep those tags as they are; they are inlined again when you save.")
+                }
             }
             "save" -> save(request)
             else -> fail("Unknown mini app request.")
@@ -140,10 +173,16 @@ class MiniAppTools(private val store: MiniAppStore, private val onSaved: (MiniAp
     }
 
     private fun save(request: JSONObject): JSONObject {
-        val html = request.optString("html")
-        val name = request.optString("name").trim().ifEmpty { MiniAppChecks.title(html).orEmpty() }.take(40)
+        val source = request.optString("html")
+        val name = request.optString("name").trim().ifEmpty { MiniAppChecks.title(source).orEmpty() }.take(40)
         val id = request.optString("id").trim().ifEmpty { null }
-        val problems = MiniAppChecks.problems(html).toMutableList()
+        if (source.length > MINI_APP_SOURCE_MAX_CHARS) {
+            return fail("The app was not saved. It is larger than ${MINI_APP_SOURCE_MAX_CHARS / 1000} KB; link large " +
+                "libraries from a CDN instead of pasting them.")
+        }
+        val inlined = libraries.inline(source)
+        val html = inlined.html
+        val problems = (inlined.problems + MiniAppChecks.problems(html)).distinct().toMutableList()
         if (name.isEmpty()) problems += "Give the app a name."
         if (id != null && store.list().firstOrNull { it.id == id }?.imported == true) {
             problems += "Shared apps someone sent you cannot be changed. Save a new app instead."
@@ -154,6 +193,7 @@ class MiniAppTools(private val store: MiniAppStore, private val onSaved: (MiniAp
         val app = store.save(name, request.optString("description").trim().take(200), html, id)
         onSaved(app)
         return JSONObject().put("ok", true).put("id", app.id).put("name", app.name).put("version", app.version)
+            .apply { if (inlined.inlined.isNotEmpty()) put("inlined", JSONArray(inlined.inlined)) }
             .put("result", "Saved. Tell the user to open it from Configure → Mini apps, where they can also add it " +
                 "to the home screen or share it.")
     }
