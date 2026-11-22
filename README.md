@@ -83,15 +83,79 @@ The worker sees the task description supplied by the main model. Worker usage is
 
 ## Build and test
 
-Use the latest signed Studio APK as the baseline for changes. Compare its bundled `assets/agent/agent.js` with the source package and run the bundled SDK bridge smoke test before revising the runtime.
+### Prerequisites
 
-Open the project in Android Studio with JDK 17 or later and Android SDK 35. The prebuilt Agent SDK assets are checked in so a normal Android Studio build needs no Node step.
+- **JDK 17** or later (`java -version`)
+- **Android SDK Platform 35** and **Build-Tools 35.0.0**
+- *(Optional)* **Node.js 22+** — only required if you modify the bundled TypeScript Agent SDK runtime under `agent-runtime/` (the prebuilt `app/src/main/assets/agent/agent.js` bundle is checked into git).
+
+### Configure the Android SDK path
+
+If you build from the terminal outside Android Studio, point Gradle to your Android SDK using **either** a `local.properties` file at the repository root or the `ANDROID_HOME` environment variable:
+
+- **macOS / Linux (`local.properties` or shell):**
+  ```sh
+  export ANDROID_HOME="$HOME/Library/Android/sdk"   # macOS default
+  # or on Linux: export ANDROID_HOME="$HOME/Android/Sdk"
+  ```
+- **Windows PowerShell:**
+  ```powershell
+  $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+  ```
+  Or create `local.properties` in the project root:
+  ```properties
+  sdk.dir=C:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
+  ```
+
+### Build the APK
+
+Run the `assembleDebug` Gradle task to compile the app and package the signed debug APK (`com.icalchemy.openrouteragent.studio`):
+
+- **macOS / Linux:**
+  ```sh
+  ./gradlew :app:assembleDebug
+  ```
+- **Windows PowerShell:**
+  ```powershell
+  .\gradlew.bat :app:assembleDebug
+  ```
+
+Optional Gradle properties supported by `app/build.gradle.kts`:
+- `-PagentDebugKeystore=/path/to/debug.keystore` — sign the debug build with a specific debug keystore so upgrading an existing installation preserves local app data.
+- `-PmoderationReportUrl=https://...` — configure the endpoint used by the in-app response reporting dialog (`BuildConfig.MODERATION_REPORT_URL`).
+
+**APK output locations:**
+- Gradle output: `app/build/outputs/apk/debug/app-debug.apk`
+- Checked-in prebuilt copy: `app/APK/app-debug.apk`
+
+To update the checked-in APK and install on a connected Android device via `adb`:
 
 ```sh
-./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+# Copy the newly built APK to app/APK/app-debug.apk
+cp app/build/outputs/apk/debug/app-debug.apk app/APK/app-debug.apk
+
+# Install or upgrade on a connected phone / emulator
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-To rebuild the bundled runtime or run its tests, use Node.js 22 or later.
+On Windows PowerShell:
+
+```powershell
+Copy-Item app\build\outputs\apk\debug\app-debug.apk app\APK\app-debug.apk -Force
+adb install -r app\build\outputs\apk\debug\app-debug.apk
+```
+
+### Run unit tests and lint
+
+```sh
+./gradlew :app:testDebugUnitTest :app:lintDebug
+```
+
+The JVM/Robolectric test suite covers the Precision Studio Compose UI, account-filtered model discovery, streamed text, hosted shell and file handling, local tool execution, mini-app bundling and WebView isolation, on-device content moderation, MCP approval and denial, and tool history across turns. Live verification requires an OpenRouter API key.
+
+### Rebuild the bundled Agent SDK runtime (optional)
+
+Use the latest signed Studio APK as the baseline for runtime changes. Compare its bundled `assets/agent/agent.js` with the source package and run the bundled SDK bridge smoke test before revising the runtime. To rebuild `app/src/main/assets/agent/agent.js` or run its tests, use Node.js 22 or later:
 
 ```sh
 cd agent-runtime
@@ -99,8 +163,6 @@ npm ci
 npm run build
 npm test
 ```
-
-The APK builds to `app/build/outputs/apk/debug/app-debug.apk`. The mock tests cover account-filtered model discovery, streamed text, hosted shell and file handling, local tool execution, MCP approval and denial, and tool history across turns. Live verification requires an OpenRouter API key.
 
 API references [Agent SDK](https://openrouter.ai/docs/agent-sdk/call-model/overview) · [Account-filtered models](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails) · [Remote MCP tools](https://openrouter.ai/docs/agent-sdk/call-model/mcp-tools) · [Hosted shell](https://openrouter.ai/docs/guides/features/server-tools/shell)
 
