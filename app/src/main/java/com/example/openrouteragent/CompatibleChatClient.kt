@@ -156,6 +156,7 @@ private class ChatStream(
     private val publish: (RunUpdate) -> Unit,
 ) {
     private val text = StringBuilder()
+    private val reasoning = StringBuilder()
     private var usage: TokenUsage? = null
     private var done = false
     private var finishReason: String? = null
@@ -210,6 +211,12 @@ private class ChatStream(
         val choices = payload.optJSONArray("choices")
         val choice = choices?.optJSONObject(0)
         val part = choice?.optJSONObject(if (streamed) "delta" else "message")
+        // Providers name streamed reasoning differently: reasoning_content (DeepSeek, vLLM) or reasoning (OpenRouter).
+        val thought = (part?.opt("reasoning_content") as? String).orEmpty().ifEmpty { (part?.opt("reasoning") as? String).orEmpty() }
+        if (thought.isNotEmpty() && reasoning.length < 200_000) {
+            reasoning.append(thought)
+            publish(RunUpdate.Text(thought, summary = true))
+        }
         val snippet = contentText(part?.opt("content")).ifEmpty { contentText(part?.opt("refusal")) }
         if (snippet.isNotEmpty()) {
             text.append(snippet)
@@ -233,7 +240,7 @@ private class ChatStream(
         if (text.isBlank()) throw IOException(
             if (finishReason == "tool_calls") "The model requested a tool. Choose an OpenRouter model for agent tools."
             else "The provider returned no chat text.")
-        return AgentRunResult(assistantText = text.toString(), reasoningSummary = null, shellSteps = emptyList(),
+        return AgentRunResult(assistantText = text.toString(), reasoningSummary = reasoning.toString().trim().ifEmpty { null }, shellSteps = emptyList(),
             searchQueries = emptyList(), citations = emptyList(), discoveredContainerId = null, usage = usage,
             modelUsed = model, notice = if (finishReason == "length") "The reply reached the provider’s output limit." else null)
     }

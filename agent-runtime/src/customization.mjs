@@ -158,6 +158,8 @@ export function sdkParameters(options, hasTools) {
   if (prefs.reasoning === 'off') reasoning.enabled = false;
   else if (prefs.reasoning) reasoning.effort = prefs.reasoning;
   if (prefs.reasoningSummary) reasoning.summary = prefs.reasoningSummary;
+  // Models that only send summaries (OpenAI's) stream no reasoning unless one is requested.
+  else if (prefs.showReasoning !== false && prefs.reasoning !== 'off' && !reasoning.summary) reasoning.summary = 'auto';
   const text = { ...map(advanced.text) };
   if (prefs.responseFormat) text.format = { type: prefs.responseFormat };
   if (prefs.verbosity) text.verbosity = prefs.verbosity;

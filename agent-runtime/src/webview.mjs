@@ -64,7 +64,7 @@ async function start(options) {
       fetcher: run.transport.fetcher,
       text: text => update({ kind: 'text', text }),
       update: event => {
-        if (event.kind === 'reasoning' && options.sdk?.showReasoning === false) return;
+        // Reasoning always reaches Android. The app hides it, so the switch also works mid-run.
         update(event.detail ? { ...event, detail: sanitize(event.detail) } : event);
       },
       register: result => { run.result = result; },
