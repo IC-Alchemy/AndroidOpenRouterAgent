@@ -128,6 +128,25 @@ You can also ask in chat to create a subagent, custom tool, or skill, or to enab
 
 **SDK settings** separates generation, routing, follow-up behavior, advanced fields, and display.
 
+### Provider routing
+
+**SDK settings → Routing** controls which provider serves each OpenRouter request. Each option shows a short description when you select it. [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection)
+
+- **Auto** is OpenRouter's default routing. It balances price, speed, latency and reliability, and keeps a chat on one provider while its prompt cache is warm. When tools are sent, Auto Exacto also moves providers with better tool-calling results to the front.
+- **Floor**, **Nitro** and **Exacto** add the `:floor`, `:nitro` or `:exacto` routing variant to every model ID the app sends, including fallback and follow-up models.
+  - **Floor:** cheapest first, and flex-tier endpoints may be used. It turns off Auto Exacto.
+  - **Nitro:** fastest first, and priority-tier endpoints may be used at their higher rate.
+  - **Exacto:** tool-calling quality first.
+- **Price**, **Throughput** and **Latency** only sort the providers. With fallback models, **Sort across fallback models** can sort all of their endpoints together.
+- **Performance preferences** (minimum throughput and maximum latency) move slower providers to the back without removing them.
+- **Filters** remove providers, so a request fails if no provider is left. They cover:
+  - maximum input and output prices per million tokens
+  - allowed quantizations
+  - data collection
+  - zero data retention
+  - distillable models only
+  - required parameters
+
 ## OpenRouter Agent SDK coverage
 
 OpenRouter chat runs start with `callModel` from the bundled official Agent SDK. The app uses its full-response and item streams together for live text, reasoning summaries, tool activity, sources, usage, and available sandbox files. Each chat commits the SDK's versioned conversation state and visible transcript together. New requests are appended by the SDK when a chat is reopened. A cancelled or failed turn keeps its partial reply for review and retry.
