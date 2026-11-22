@@ -238,6 +238,7 @@ export async function runAgent(options, events, signal, createClient = opts => n
           totalTokens: usage.totalTokens ?? usage.inputTokens + usage.outputTokens,
           cost: usage.cost,
           cachedTokens: usage.cachedTokens,
+          reasoningTokens: usage.reasoningTokens,
         },
       }),
       history: conversation.messages,

@@ -84,7 +84,8 @@ data class TokenUsage(
     val outputTokens: Int,
     val totalTokens: Int,
     val cost: Double? = null,
-    val cachedTokens: Int = 0
+    val cachedTokens: Int = 0,
+    val reasoningTokens: Int = 0,
 )
 
 /**

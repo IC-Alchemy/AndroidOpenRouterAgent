@@ -37,7 +37,7 @@ export function streamObserver(events) {
   const itemCalls = new Map();
   const argumentBuffers = new Map();
   const lastPart = { text: undefined, reasoning: undefined };
-  const counts = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, cost: 0 };
+  const counts = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0, cost: 0 };
   const accounted = new Set();
   let hasCost = false;
   let step = 1;
@@ -124,24 +124,59 @@ export function streamObserver(events) {
     }
   }
 
+  const tail = value => value.length > 1100 ? '…' + value.slice(-1100) : value;
+
+  // Streamed input never moves a row back from running to preparing.
+  const inputStatus = id => {
+    const status = tools.get(id)?.status;
+    return status && status !== 'preparing' ? status : 'preparing';
+  };
+
   function toolInput(itemId, delta, name) {
     if (!itemId || typeof delta !== 'string' || !delta) return;
     phase('tools');
     const id = itemCalls.get(itemId) ?? itemId;
-    const previous = argumentBuffers.get(id) ?? { value: '', sent: 0 };
+    const previous = argumentBuffers.get(id) ?? { value: '', sent: 0, pending: false };
     // Keep the tail. The live row shows what the model is writing now.
     const value = (previous.value + delta).slice(-4000);
     const now = Date.now();
-    argumentBuffers.set(id, { value, sent: previous.sent });
-    if (now - previous.sent < 150 && tools.has(id)) return;
-    argumentBuffers.set(id, { value, sent: now });
-    tool(id, tools.has(id) ? undefined : name, 'preparing', value.length > 1100 ? '…' + value.slice(-1100) : value);
+    if (now - previous.sent < 150 && tools.has(id)) {
+      argumentBuffers.set(id, { value, sent: previous.sent, pending: true });
+      return;
+    }
+    argumentBuffers.set(id, { value, sent: now, pending: false });
+    tool(id, tools.has(id) ? undefined : name, inputStatus(id), tail(value));
+  }
+
+  /** Shows input the throttle held back, for streams that end without a done event. */
+  function flushInput(id) {
+    const buffer = argumentBuffers.get(id);
+    argumentBuffers.delete(id);
+    if (buffer?.pending && tools.has(id)) tool(id, undefined, inputStatus(id), tail(buffer.value));
   }
 
   function toolInputDone(itemId, value) {
     const id = itemCalls.get(itemId) ?? itemId;
-    argumentBuffers.delete(id);
-    if (id && typeof value === 'string' && value) tool(id, undefined, 'preparing', value);
+    if (!id) return;
+    if (typeof value === 'string' && value) {
+      argumentBuffers.delete(id);
+      tool(id, undefined, inputStatus(id), tail(value));
+    } else flushInput(id);
+  }
+
+  // Fusion runs several panel models in parallel inside one call. Each panel gets its own row.
+  const panels = new Map();
+  function panel(event, status, detail) {
+    if (!event.itemId || !event.model) return;
+    phase('tools');
+    const id = event.itemId + ':' + event.model;
+    const previous = panels.get(id) ?? { text: '', sent: 0 };
+    const value = detail ?? previous.text;
+    panels.set(id, { text: value.slice(-4000), sent: previous.sent });
+    const now = Date.now();
+    if (status === 'running' && tools.has(id) && now - previous.sent < 150) return;
+    panels.get(id).sent = now;
+    tool(id, 'fusion · ' + event.model, status, value ? tail(value) : undefined);
   }
 
   function usage(response) {
@@ -151,6 +186,7 @@ export function streamObserver(events) {
     counts.inputTokens += metrics.inputTokens ?? 0;
     counts.outputTokens += metrics.outputTokens ?? 0;
     counts.cachedTokens += metrics.inputTokensDetails?.cachedTokens ?? 0;
+    counts.reasoningTokens += metrics.outputTokensDetails?.reasoningTokens ?? 0;
     if (typeof metrics.cost === 'number') {
       hasCost = true;
       counts.cost += metrics.cost;
@@ -180,6 +216,11 @@ export function streamObserver(events) {
     }
     if (item.type === 'reasoning') {
       phase('reasoning');
+      if (ready && !reasoningSource.has(item.id) && item.encryptedContent &&
+          !item.summary?.some(part => part?.text) && !item.content?.some(part => part?.text)) {
+        // The provider reasoned privately. Say so instead of showing nothing.
+        events.update?.({ kind: 'phase', phase: 'reasoning', detail: 'hidden', step });
+      }
       if (ready) {
         item.content?.forEach((part, index) => {
           if (part?.type === 'reasoning_text' || part?.text) reasoning('text', item.id, item.id + ':' + index, part.text, true);
@@ -193,6 +234,7 @@ export function streamObserver(events) {
       return;
     }
     if (item.id && callId) itemCalls.set(item.id, callId);
+    if (ready) flushInput(id);
     if (item.type === 'function_call') {
       phase('tools');
       const workerCallId = item.subagentId ?? item.subagent_id;
@@ -285,10 +327,6 @@ export function streamObserver(events) {
       case 'response.reasoning_text.done':
         reasoning('text', itemId, part, event.text, true);
         break;
-      case 'response.reasoning.delta':
-        phase('reasoning');
-        if (typeof event.delta === 'string') reasoning('text', itemId, part, event.delta);
-        break;
       case 'response.output_item.added':
         readItem(event.item, false);
         break;
@@ -321,8 +359,39 @@ export function streamObserver(events) {
         break;
       case 'response.apply_patch_call_operation_diff.done':
         phase('tools');
-        toolInputDone(itemId);
+        toolInputDone(itemId, event.diff);
         break;
+      case 'response.fusion_call.panel.added':
+        panel(event, 'running');
+        break;
+      case 'response.fusion_call.panel.delta':
+        panel(event, 'running', (panels.get(event.itemId + ':' + event.model)?.text ?? '') + (event.delta ?? ''));
+        break;
+      case 'response.fusion_call.panel.reasoning.delta':
+        // The panel is thinking. Its reasoning belongs to another model, so it is not shown as this run's.
+        panel(event, 'reasoning');
+        break;
+      case 'response.fusion_call.panel.completed':
+        panel(event, 'completed', typeof event.content === 'string' ? event.content : undefined);
+        break;
+      case 'response.fusion_call.panel.failed':
+        panel(event, 'failed', [event.statusCode && 'HTTP ' + event.statusCode, event.error].filter(Boolean).join(' · '));
+        break;
+      case 'response.fusion_call.analysis.in_progress':
+        phase('tools');
+        tool(itemId, 'fusion', 'running', ['Comparing panels', event.judgeModel && 'judge ' + event.judgeModel]
+          .filter(Boolean).join(' · '));
+        break;
+      case 'response.fusion_call.analysis.completed': {
+        phase('tools');
+        const analysis = event.analysis ?? {};
+        const lines = [
+          analysis.consensus && 'Consensus\n' + preview(analysis.consensus, 600),
+          analysis.contradictions && 'Contradictions\n' + preview(analysis.contradictions, 400),
+        ].filter(Boolean).join('\n\n');
+        tool(itemId, 'fusion', 'running', lines || 'Analysis complete');
+        break;
+      }
       case 'response.output_text.annotation.added': {
         readSource(event.annotation);
         break;
@@ -349,10 +418,11 @@ export function streamObserver(events) {
       case 'response.failed':
         usage(event.response);
         event.response?.output?.forEach(item => readItem(item, true));
+        for (const id of [...argumentBuffers.keys()]) flushInput(id);
         if (event.type === 'response.failed') settleSubagents('failed', event.response?.error);
         break;
       default: {
-        const match = /^response\.(web_search_call|file_search_call|mcp_call|mcp_list_tools|code_interpreter_call|image_generation_call|fusion_call(?:\.panel|\.analysis)?)\.([a-z_]+)$/.exec(event.type);
+        const match = /^response\.(web_search_call|file_search_call|mcp_call|mcp_list_tools|code_interpreter_call|image_generation_call|fusion_call)\.([a-z_]+)$/.exec(event.type);
         if (!match) break;
         phase('tools');
         const status = match[2];

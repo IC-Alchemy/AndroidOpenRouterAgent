@@ -72,8 +72,24 @@ class AgentStreamingTest {
         assertEquals("Let me check.\n\nFound it.", progress.summary)
         assertEquals(3000L, progress.firstOutputAt)
         assertEquals(progress.streamedChars / 4, progress.outputTokens.toLong())
-        assertNull(progress.tokensPerSecond(3500))
-        assertTrue(progress.tokensPerSecond(5000)!! > 0)
+        assertNull(progress.tokensPerSecond())
+        // Speed counts streaming time only. The 10 s tool gap is left out.
+        val later = progress.apply(listOf(RunUpdate.Text("x".repeat(400), false)), 4500)
+            .apply(listOf(RunUpdate.Text("y".repeat(400), false)), 14_500)
+        assertEquals(1500L, later.streamingMillis)
+        assertTrue(later.tokensPerSecond()!! > 100)
+    }
+
+    @Test
+    fun trimmedTimelineKeepsStablePositionsAndDoesNotReorderOldTools() {
+        var progress = AgentProgress(0)
+        repeat(85) { progress = progress.apply(listOf(RunUpdate.Tool(LiveTool("t$it", "tool", "running", null))), 1) }
+        assertEquals(80, progress.timeline.size)
+        assertEquals(5, progress.timelineOffset)
+        progress = progress.apply(listOf(RunUpdate.Tool(LiveTool("t10", "tool", "completed", null))), 2)
+        assertEquals(LiveBlock.ToolCall("t84"), progress.timeline.last())
+        val usage = parseRunUpdates(JSONArray("""[{"kind":"usage","inputTokens":1,"outputTokens":9,"reasoningTokens":4}]"""))
+        assertEquals(4, (usage.single() as RunUpdate.Usage).value.reasoningTokens)
     }
 
     @Test

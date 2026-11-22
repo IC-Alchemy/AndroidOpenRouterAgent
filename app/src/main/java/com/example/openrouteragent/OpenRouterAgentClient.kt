@@ -378,7 +378,7 @@ internal fun parseAgentResult(raw: String): AgentRunResult {
     }
     val usage = root.optJSONObject("usage")?.let {
         TokenUsage(it.optInt("input_tokens"), it.optInt("output_tokens"), it.optInt("total_tokens"),
-            it.optDouble("cost").takeIf { cost -> cost.isFinite() }, it.optInt("cached_tokens"))
+            it.optDouble("cost").takeIf { cost -> cost.isFinite() }, it.optInt("cached_tokens"), it.optInt("reasoning_tokens"))
     }
     val text = finalText.ifEmpty { intermediateText }.joinToString("\n\n").ifBlank {
         root.string("output_text") ?: when {

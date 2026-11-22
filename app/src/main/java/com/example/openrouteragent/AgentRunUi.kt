@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -90,7 +91,7 @@ internal fun AgentRunStatus(
                 val model = progress.model?.let { " · $it" }.orEmpty()
                 val tokens = progress.outputTokens.takeIf { it > 0 }?.let { count ->
                     val estimate = if ((progress.usage?.outputTokens ?: 0) >= count) "" else "~"
-                    val speed = progress.tokensPerSecond(now)?.let { " · ${it.toInt()} tok/s" }.orEmpty()
+                    val speed = progress.tokensPerSecond()?.let { " · ${it.toInt()} tok/s" }.orEmpty()
                     " · $estimate${compactCount(count)} tokens$speed"
                 }.orEmpty()
                 Text("Step ${progress.step} · $duration$tokens$model", maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -115,17 +116,29 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
         listOfNotNull(progress.summary.takeIf { it.isNotBlank() }?.let { LiveBlock.Thinking(it) },
             progress.answer.takeIf { it.isNotBlank() }?.let { LiveBlock.Answer(it) })
     }
-    if (!interrupted && blocks.isEmpty()) return
+    // The model is reasoning but no reasoning text is streaming yet, or the provider keeps it private.
+    val silentThinking = !interrupted && progress.phase == "reasoning" && blocks.lastOrNull() !is LiveBlock.Thinking
+    if (!interrupted && blocks.isEmpty() && !silentThinking) return
     OutlinedSection(title = if (interrupted) "Run interrupted" else null) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             blocks.forEachIndexed { index, block ->
-                val live = !interrupted && index == blocks.lastIndex
-                when (block) {
-                    is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning, onShowReasoning)
-                    is LiveBlock.ToolCall -> progress.tool(block.id)?.let { LiveToolRow(it) }
-                    is LiveBlock.Answer -> CopyableText(block.text, style = MaterialTheme.typography.bodyMedium,
-                        keepSelectionOnReplacement = live)
+                val live = !interrupted && !silentThinking && index == blocks.lastIndex
+                // Keys follow each block, so expanded state stays put when old blocks are trimmed.
+                key(progress.timelineOffset + index) {
+                    when (block) {
+                        is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning, onShowReasoning)
+                        is LiveBlock.ToolCall -> progress.tool(block.id)?.let { LiveToolRow(it) }
+                        is LiveBlock.Answer -> CopyableText(block.text, style = MaterialTheme.typography.bodyMedium,
+                            keepSelectionOnReplacement = live)
+                    }
                 }
+            }
+            if (silentThinking) Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                Text(if (progress.detail == "hidden") "Thinking privately · the provider does not share its reasoning"
+                    else "Thinking…", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (interrupted) {
@@ -184,7 +197,7 @@ private val finishedToolStatuses = setOf("completed", "failed", "cancelled", "ti
 /** One tool call in the live timeline: a spinner while it runs, its streaming input or result underneath. */
 @Composable
 private fun LiveToolRow(tool: LiveTool) {
-    var expanded by rememberSaveable(tool.id) { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val active = tool.status !in finishedToolStatuses
     val failed = tool.status in setOf("failed", "cancelled", "timed_out", "expired", "declined")
     Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { expanded = !expanded }.padding(vertical = 2.dp),
@@ -281,6 +294,7 @@ internal fun compactCount(value: Int): String = when {
 internal fun TokenUsage.display(): String = buildString {
     append("$totalTokens tokens · $inputTokens in / $outputTokens out")
     if (cachedTokens > 0) append(" · $cachedTokens cached")
+    if (reasoningTokens > 0) append(" · $reasoningTokens reasoning")
     cost?.let { value ->
         append(" · ")
         append(NumberFormat.getCurrencyInstance(Locale.US).apply { maximumFractionDigits = 5 }.format(value))
@@ -295,7 +309,7 @@ internal fun AgentProgress.status(providerName: String = "OpenRouter"): String =
     "retrying" -> "Retrying $providerName" + detail?.let { " · $it" }.orEmpty()
     "connected" -> "Connected · waiting for model events"
     "waiting" -> "Waiting for the model"
-    "reasoning" -> "Model is reasoning"
+    "reasoning" -> if (detail == "hidden") "Model is reasoning privately" else "Model is reasoning"
     "tools" -> {
         val active = tools.lastOrNull { it.status in setOf("preparing", "in_progress", "searching", "running", "running in background") }
         active?.let { "Tool · ${it.name}" } ?: "Processing tools"

@@ -43,20 +43,24 @@ internal data class AgentProgress(
     val files: List<LiveFile> = emptyList(),
     val usage: TokenUsage? = null,
     val timeline: List<LiveBlock> = emptyList(),
+    /** How many blocks were trimmed from the start of the timeline, so each block keeps a stable position key. */
+    val timelineOffset: Int = 0,
     /** Characters of reply and reasoning streamed so far, for a live token estimate before usage arrives. */
     val streamedChars: Long = 0,
-    /** When the first reply or reasoning text arrived, for a live output speed. */
+    /** When the first reply or reasoning text arrived. */
     val firstOutputAt: Long? = null,
+    val lastOutputAt: Long? = null,
+    /** Time spent streaming text. Gaps longer than [STREAM_GAP_MS], such as tool runs, are left out. */
+    val streamingMillis: Long = 0,
     val revision: Int = 0,
 ) {
     /** Output tokens so far: the reported count when the provider sent one, else an estimate. */
     val outputTokens: Int get() = maxOf(usage?.outputTokens ?: 0, (streamedChars / 4).toInt())
 
-    /** Tokens per second since the first streamed text, or null before there is enough to measure. */
-    fun tokensPerSecond(now: Long): Double? {
-        val start = firstOutputAt ?: return null
-        val seconds = (now - start) / 1000.0
-        return if (seconds < 1.0 || outputTokens == 0) null else outputTokens / seconds
+    /** Estimated tokens per second while text was streaming, or null before there is enough to measure. */
+    fun tokensPerSecond(): Double? {
+        if (streamingMillis < 1_000 || streamedChars == 0L) return null
+        return streamedChars / 4.0 / (streamingMillis / 1000.0)
     }
 
     fun tool(id: String): LiveTool? = tools.lastOrNull { it.id == id }
@@ -71,8 +75,10 @@ internal data class AgentProgress(
                     step = update.step ?: result.step,
                     model = if (update.phase == "waiting") update.detail ?: result.model else result.model)
                 is RunUpdate.Text -> {
+                    val gap = result.lastOutputAt?.let { now - it }?.takeIf { it in 0..STREAM_GAP_MS } ?: 0
                     val streamed = result.copy(streamedChars = result.streamedChars + update.text.length,
-                        firstOutputAt = result.firstOutputAt ?: now, timeline = result.timeline.append(update))
+                        firstOutputAt = result.firstOutputAt ?: now, lastOutputAt = now,
+                        streamingMillis = result.streamingMillis + gap).withTimeline(result.timeline.append(update))
                     if (update.summary) {
                         streamed.copy(summary = (result.summary + update.text).takeLast(MAX_SUMMARY), phase = "reasoning")
                     } else {
@@ -82,11 +88,11 @@ internal data class AgentProgress(
                 is RunUpdate.Tool -> {
                     val next = update.entry
                     val index = result.tools.indexOfFirst { it.id == next.id }
-                    val tools = if (index < 0) (result.tools + next).takeLast(48)
+                    val tools = if (index < 0) (result.tools + next).takeLast(MAX_BLOCKS)
                         else result.tools.toMutableList().apply { set(index, next) }
-                    val timeline = if (result.timeline.any { it is LiveBlock.ToolCall && it.id == next.id }) result.timeline
-                        else (result.timeline + LiveBlock.ToolCall(next.id)).takeLast(MAX_BLOCKS)
-                    result.copy(tools = tools, timeline = timeline)
+                    // Only a new tool gets a block. An update to a tool whose block was trimmed stays out of order.
+                    if (index < 0) result.copy(tools = tools).withTimeline(result.timeline + LiveBlock.ToolCall(next.id))
+                    else result.copy(tools = tools)
                 }
                 is RunUpdate.Usage -> result.copy(usage = update.value)
                 is RunUpdate.Source -> result.copy(sources = (result.sources + update.value).distinctBy { it.url }.take(32))
@@ -96,6 +102,13 @@ internal data class AgentProgress(
         }
         return result.copy(lastEvent = now, revision = revision + 1)
     }
+}
+
+private const val STREAM_GAP_MS = 2_000L
+
+private fun AgentProgress.withTimeline(next: List<LiveBlock>): AgentProgress {
+    val dropped = (next.size - MAX_BLOCKS).coerceAtLeast(0)
+    return copy(timeline = next.drop(dropped), timelineOffset = timelineOffset + dropped)
 }
 
 private fun List<LiveBlock>.append(update: RunUpdate.Text): List<LiveBlock> {
@@ -110,7 +123,7 @@ private fun List<LiveBlock>.append(update: RunUpdate.Text): List<LiveBlock> {
             // The runtime separates parts with blank lines. A new block does not need them.
             val text = update.text.trimStart('\n')
             if (text.isEmpty()) this
-            else (this + if (update.summary) LiveBlock.Thinking(text) else LiveBlock.Answer(text)).takeLast(MAX_BLOCKS)
+            else this + if (update.summary) LiveBlock.Thinking(text) else LiveBlock.Answer(text)
         }
     }
 }
@@ -129,7 +142,8 @@ internal fun parseRunUpdates(events: JSONArray): List<RunUpdate> = buildList {
                 val input = event.optInt("inputTokens")
                 val output = event.optInt("outputTokens")
                 add(RunUpdate.Usage(TokenUsage(input, output, input + output,
-                    event.optDouble("cost").takeIf { it.isFinite() }, event.optInt("cachedTokens"))))
+                    event.optDouble("cost").takeIf { it.isFinite() }, event.optInt("cachedTokens"),
+                    event.optInt("reasoningTokens"))))
             }
             "source" -> {
                 val url = event.string("url")?.takeIf { it.toHttpUrlOrNull() != null } ?: continue
