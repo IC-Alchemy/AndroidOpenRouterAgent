@@ -30,6 +30,11 @@ internal class CompatibleChatClient(
         requireNotNull(normalizeChatBase(it.baseUrl)) { "Enter a valid provider API URL." }
     },
 ) {
+    // The image API can take four minutes before sending a response.
+    private val imageHttp by lazy {
+        http.newBuilder().readTimeout(5, TimeUnit.MINUTES).callTimeout(6, TimeUnit.MINUTES).build()
+    }
+
     suspend fun models(profile: CustomProvider): List<CatalogModel> {
         val url = base(profile).newBuilder().addPathSegment("models").apply {
             if (profile.id == OPENUNCENSORED_ID) addQueryParameter("available", "true")
@@ -44,6 +49,25 @@ internal class CompatibleChatClient(
                 selected.put(entry)
             }
             parseModelCatalog(JSONObject().put("data", selected).toString())
+        }
+    }
+
+    suspend fun imageModels(profile: CustomProvider): List<OpenUncensoredImageModel> {
+        require(profile.id == OPENUNCENSORED_ID)
+        val url = base(profile).newBuilder().addPathSegments("images/models").build()
+        val request = Request.Builder().url(url).build()
+        return execute(profile, request) { response ->
+            parseImageModels(JSONObject(readBody(response)).getJSONArray("data"))
+        }
+    }
+
+    suspend fun generateImages(profile: CustomProvider, settings: ImageGenerationRequest): ImageGenerationResult {
+        require(profile.id == OPENUNCENSORED_ID)
+        require(profile.canChat) { "Enter the OpenUncensored API key first." }
+        val url = base(profile).newBuilder().addPathSegments("images/generations").build()
+        val request = request(profile, url).post(settings.payload().toString().toRequestBody(JSON_MEDIA)).build()
+        return execute(profile, request, imageHttp) { response ->
+            parseGeneratedImages(JSONObject(readBody(response, maxBytes = 32_000_000)), settings.count)
         }
     }
 
@@ -91,9 +115,11 @@ internal class CompatibleChatClient(
         if (profile.apiKey.isNotBlank()) header("Authorization", "Bearer ${profile.apiKey.trim()}")
     }
 
-    private suspend fun <T> execute(profile: CustomProvider, request: Request, handle: (Response) -> T): T =
+    private suspend fun <T> execute(
+        profile: CustomProvider, request: Request, client: OkHttpClient = http, handle: (Response) -> T,
+    ): T =
         suspendCancellableCoroutine { continuation ->
-            val call = http.newCall(request)
+            val call = client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -121,9 +147,9 @@ internal class CompatibleChatClient(
             })
         }
 
-    private fun readBody(response: Response): String {
+    private fun readBody(response: Response, maxBytes: Long = 2_000_000): String {
         val source = response.body?.source() ?: throw IOException("The provider returned an empty response.")
-        if (source.request(2_000_001)) throw IOException("The provider response exceeded 2 MB.")
+        if (source.request(maxBytes + 1)) throw IOException("The provider response exceeded ${maxBytes / 1_000_000} MB.")
         return source.readUtf8()
     }
 }
@@ -250,7 +276,7 @@ private fun contentText(value: Any?): String = when (value) {
     else -> ""
 }
 
-private fun providerError(payload: JSONObject): String? = when (val error = payload.opt("error")) {
+internal fun providerError(payload: JSONObject): String? = when (val error = payload.opt("error")) {
     is JSONObject -> error.optString("message").ifBlank { "The provider returned an error." }
     is String -> error.takeIf(String::isNotBlank)
     else -> (payload.opt("message") as? String)?.takeIf { payload.optJSONArray("choices") == null }

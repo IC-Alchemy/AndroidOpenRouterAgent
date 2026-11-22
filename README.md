@@ -49,6 +49,8 @@ Chats are scoped to the selected provider and credential. Reopening an OpenRoute
 
 Open **Configure → Providers** or tap the provider name in the header. The **OpenUncensored** preset uses `https://api.openuncensored.com/v1`, the model `deepseek-v4.1-flash-1017-uncensored`, and quality routing. Tap **Use**, enter your OpenUncensored API key, and tap **Save and use**.
 
+With OpenUncensored selected, tap **Generate images** above the message field. Choose a model from the live catalog, enter a prompt, and select a size and 1–4 images. The dialog shows the estimated cost before you generate. Preview the results and tap **Save image** to keep a copy on your device.
+
 Use **Add provider** to connect another HTTPS API that implements OpenAI-compatible Chat Completions. Enter the base URL or the full `/chat/completions` URL. **Load models** discovers models when the server exposes `GET /models`. Enter a model ID directly if discovery is unavailable. Each profile also has a streaming toggle, system instructions, and optional JSON request fields for provider-specific settings.
 
 Custom providers support text chat and pinned skills. Select OpenRouter to use the Agent SDK, hosted sandbox, SDK tools, and on-demand skill discovery.
@@ -122,5 +124,5 @@ OpenRouter chat runs start with `callModel` from the bundled official Agent SDK.
 
 Advanced settings include SDK repetition detection, final-turn behavior, tool deadlines and concurrency, and stopping after a named function tool. Follow-up profiles use the SDK's dynamic model, instruction, and generation callbacks. Enabled skills can be discovered or pinned, and MCP and webhook calls request approval inside the app.
 
-The Android app handles approvals during a run, including from the background notification. It does not currently resume a run after the process dies, and it does not expose SDK telemetry or native image previews. Server tool availability depends on the selected model and OpenRouter workspace.
+The Android app handles approvals during a run, including from the background notification. It does not currently resume a run after the process dies. SDK telemetry and previews of images from OpenRouter server tools are unavailable. Server tool availability depends on the selected model and OpenRouter workspace.
 

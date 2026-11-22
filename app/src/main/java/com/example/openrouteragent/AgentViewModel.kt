@@ -80,6 +80,18 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var catalogError by mutableStateOf<String?>(null)
         private set
+    internal var imageModels by mutableStateOf<List<OpenUncensoredImageModel>>(emptyList())
+        private set
+    internal var imageModelsLoading by mutableStateOf(false)
+        private set
+    internal var imageModelsError by mutableStateOf<String?>(null)
+        private set
+    internal var generatingImages by mutableStateOf(false)
+        private set
+    internal var imageResult by mutableStateOf<ImageGenerationResult?>(null)
+        private set
+    internal var imageError by mutableStateOf<String?>(null)
+        private set
     val provider: CustomProvider? get() = config.customProviders.firstOrNull { it.id == config.activeProviderId }
     val usesOpenRouter: Boolean get() = config.activeProviderId == OPENROUTER_ID
     val providerName: String get() = provider?.name ?: "OpenRouter"
@@ -102,6 +114,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     val approval: ToolApproval? get() = approvals.firstOrNull()
 
     private var catalogJob: Job? = null
+    private var imageJob: Job? = null
     private var running: Job? = null
 
     init {
@@ -159,6 +172,48 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         clean.error()?.let { throw IllegalArgumentException(it) }
         require(clean.canChat) { "Enter the ${clean.name} API key first." }
         return chatClient.models(clean)
+    }
+
+    internal fun refreshImageModels() {
+        val active = provider?.takeIf { it.id == OPENUNCENSORED_ID } ?: return
+        if (imageModelsLoading) return
+        imageModelsLoading = true
+        imageModelsError = null
+        viewModelScope.launch {
+            try {
+                imageModels = chatClient.imageModels(active)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                imageModelsError = providerMessage(active, failure)
+            } finally {
+                imageModelsLoading = false
+            }
+        }
+    }
+
+    internal fun generateImages(request: ImageGenerationRequest) {
+        val active = provider?.takeIf { it.id == OPENUNCENSORED_ID && it.canChat } ?: return
+        if (generatingImages || request.model !in imageModels) return
+        generatingImages = true
+        imageError = null
+        imageJob = viewModelScope.launch {
+            try {
+                imageResult = chatClient.generateImages(active, request)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                imageError = providerMessage(active, failure)
+            } finally {
+                if (kotlin.coroutines.coroutineContext[Job]?.isCancelled != true) generatingImages = false
+            }
+        }
+    }
+
+    internal fun cancelImageGeneration() {
+        imageJob?.cancel()
+        imageJob = null
+        generatingImages = false
     }
 
     fun chooseModel(model: CatalogModel) {
@@ -504,6 +559,9 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 config = clean
                 next?.let { (saved, index) ->
+                    cancelImageGeneration()
+                    imageResult = null
+                    imageError = null
                     showWorkspace(saved)
                     library = index
                     refreshModels(clear = true)
