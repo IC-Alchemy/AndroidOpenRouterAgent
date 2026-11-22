@@ -179,30 +179,15 @@ fun OpenRouterAgentTheme(
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val clipboard = remember(context, scope) { SelectionClipboard(scope) { copyText(context, it) } }
-    val colorScheme = if (darkTheme) darkColorScheme(
-        primary = Color(0xFFCFC4FF), onPrimary = Color(0xFF23154F),
-        primaryContainer = Color(0xFF272046), onPrimaryContainer = Color(0xFFF0EAFF),
-        secondary = Color(0xFF9EE4D3), onSecondary = Color(0xFF00382E),
-        secondaryContainer = Color(0xFF142E2C), onSecondaryContainer = Color(0xFFD2F3EA),
-        background = Color.Black, surface = Color.Black, surfaceTint = Color.Black,
-        surfaceDim = Color.Black, surfaceBright = Color(0xFF191821),
-        surfaceContainerLowest = Color.Black, surfaceContainerLow = Color(0xFF09090D),
-        surfaceContainer = Color(0xFF101017), surfaceContainerHigh = Color(0xFF181820),
-        surfaceContainerHighest = Color(0xFF21212A), surfaceVariant = Color(0xFF16161D),
-        onSurface = Color(0xFFF1EFF6), onBackground = Color(0xFFF1EFF6),
-        onSurfaceVariant = Color(0xFFC2BFCD), outline = Color(0xFF817B96), outlineVariant = Color(0xFF524C62)
-    ) else lightColorScheme(
-        primary = Color(0xFF544294), onPrimary = Color.White,
-        primaryContainer = Color(0xFFEAE2FF), onPrimaryContainer = Color(0xFF271650),
-        secondary = Color(0xFF1E665B), secondaryContainer = Color(0xFFCFEDE7),
-        background = Color(0xFFFAF8FE), surface = Color(0xFFFAF8FE),
-        onSurface = Color(0xFF211C2A), onBackground = Color(0xFF211C2A),
-        surfaceVariant = Color(0xFFEAE5F0), onSurfaceVariant = Color(0xFF51495C),
-        outline = Color(0xFF81758D), outlineVariant = Color(0xFFC1B6CC)
-    )
+    val colorScheme = if (darkTheme) StudioDarkColorScheme else StudioLightColorScheme
 
     CompositionLocalProvider(LocalSelectionClipboard provides clipboard) {
-        MaterialTheme(colorScheme = colorScheme, content = content)
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = StudioTypography,
+            shapes = StudioShapes,
+            content = content,
+        )
     }
 }
 

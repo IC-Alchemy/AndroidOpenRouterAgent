@@ -152,7 +152,7 @@ internal fun CopyableOutlinedTextField(
     singleLine: Boolean = false,
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
-    shape: CornerBasedShape = MaterialTheme.shapes.extraSmall,
+    shape: CornerBasedShape = MaterialTheme.shapes.small,
 ) {
     SelectionCopyField(value, enabled = enabled, onTextChange = onValueChange) { fieldValue, onChange ->
         OutlinedTextField(

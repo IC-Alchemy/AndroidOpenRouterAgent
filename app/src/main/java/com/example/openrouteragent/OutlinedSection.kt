@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -26,12 +27,21 @@ internal fun OutlinedSection(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = if (highlighted) colors.primaryContainer else colors.surfaceContainerLow,
-        border = BorderStroke(1.dp, if (highlighted) colors.primary else colors.outline),
+        color = if (highlighted) colors.primaryContainer.copy(alpha = 0.45f) else colors.surfaceContainerLow,
+        border = BorderStroke(
+            StudioHairlineWidth,
+            if (highlighted) colors.primary.copy(alpha = 0.7f) else colors.outlineVariant,
+        ),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (title != null) {
-                Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    title,
+                    Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                )
             }
             content()
         }
