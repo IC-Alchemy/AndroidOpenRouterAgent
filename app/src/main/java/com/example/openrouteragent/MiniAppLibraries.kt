@@ -47,7 +47,7 @@ class OkHttpLibraryFetcher(
                 if (!response.isSuccessful) throw IOException("$url could not be downloaded (HTTP ${response.code}).")
                 val body = response.body ?: throw IOException("$url returned nothing.")
                 if (body.contentLength() > MINI_APP_LIBRARY_MAX_BYTES) throw tooLarge(url)
-                val bytes = body.byteStream().use { it.readNBytesLimited(MINI_APP_LIBRARY_MAX_BYTES + 1) }
+                val bytes = body.byteStream().use { it.readBytesLimited(MINI_APP_LIBRARY_MAX_BYTES + 1) }
                 if (bytes.size > MINI_APP_LIBRARY_MAX_BYTES) throw tooLarge(url)
                 return bytes
             }
@@ -190,15 +190,4 @@ class MiniAppLibraries(private val cacheDir: File?, private val fetcher: Library
         private fun sha256Hex(text: String) =
             MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
     }
-}
-
-private fun java.io.InputStream.readNBytesLimited(limit: Int): ByteArray {
-    val out = java.io.ByteArrayOutputStream()
-    val buffer = ByteArray(16 * 1024)
-    while (out.size() < limit) {
-        val read = read(buffer, 0, minOf(buffer.size, limit - out.size()))
-        if (read < 0) break
-        out.write(buffer, 0, read)
-    }
-    return out.toByteArray()
 }

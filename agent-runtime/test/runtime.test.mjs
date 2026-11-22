@@ -120,6 +120,8 @@ test('the bundled SDK handles project files, subagent approval and mini apps tog
       /\"name\":\"Editor\"/);
     assert.deepEqual(localCalls, [{ tool: 'mini_app', type: 'list' }]);
     assert.match(requests[0].instructions, /one complete HTML file/);
+    assert.match(requests[0].instructions, /themeColor/);
+    assert.match(requests[0].instructions, /iconSvg/);
     assert.match(requests[0].instructions, /projects\/test/);
     assert.match(requests[3].input.find(item => item.call_id === 'call_3' && item.type === 'function_call_output').output,
       /Done/);
@@ -751,13 +753,19 @@ test('the ask-me tool pauses the SDK until a user answer arrives', { timeout: 70
 
 test('mini app tools reach Android through the local bridge and carry build guidance', { timeout: 7000 }, async () => {
   const requests = [];
+  const iconSvg = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke="#FFFFFF" fill="none"/></svg>';
   const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const bytes of req) chunks.push(bytes);
     requests.push(JSON.parse(Buffer.concat(chunks)));
     const item = requests.length === 1 ? {
       type: 'function_call', name: 'mini_app_save', call_id: 'call_m', id: 'fc_m', status: 'completed',
-      arguments: JSON.stringify({ name: 'Tips', html: '<html><head><title>Tips</title></head></html>' }),
+      arguments: JSON.stringify({
+        name: 'Tips',
+        themeColor: '#16A34A',
+        iconSvg,
+        html: '<html><head><title>Tips</title></head></html>',
+      }),
     } : answer('msg_' + requests.length, 'Saved your app.');
     res.setHeader('Content-Type', 'text/event-stream');
     res.end(stream(requests.length, item));
@@ -775,9 +783,14 @@ test('mini app tools reach Android through the local bridge and carry build guid
     const names = requests[0].tools.map(tool => tool.name ?? tool.type);
     assert.deepEqual(names.filter(name => name.startsWith('mini_app_')), ['mini_app_list', 'mini_app_read', 'mini_app_save']);
     assert.match(requests[0].instructions, /one complete HTML file/);
+    assert.match(requests[0].instructions, /themeColor/);
+    assert.match(requests[0].instructions, /iconSvg/);
+    assert.match(requests[0].instructions, /custom HTML modals instead of alert\(\), confirm\(\) or prompt\(\)/);
     assert.equal(calls[0].tool, 'mini_app');
     assert.equal(calls[0].type, 'save');
     assert.equal(calls[0].name, 'Tips');
+    assert.equal(calls[0].themeColor, '#16A34A');
+    assert.equal(calls[0].iconSvg, iconSvg);
     const output = requests[1].input.find(item => item.type === 'function_call_output');
     assert.match(output.output, /abc12345/);
   } finally {

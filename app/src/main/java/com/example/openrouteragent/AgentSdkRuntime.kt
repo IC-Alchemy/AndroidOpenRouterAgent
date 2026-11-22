@@ -90,8 +90,11 @@ internal class AgentSdkRuntime(private val context: Context) {
         val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
             settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval,
             CoroutineScope(coroutineContext + SupervisorJob(coroutineContext[Job])), onAppAction,
-            miniApps = if (settings.miniApps && settings.sdk.toolChoice != "none") MiniAppTools(miniAppStore(context),
-                MiniAppLibraries(File(context.applicationContext.cacheDir, "miniapp-libraries"))) else null)
+            miniApps = if (settings.miniApps && settings.sdk.toolChoice != "none") MiniAppTools(
+                repository = miniAppRepository(context),
+                libraries = MiniAppLibraries(File(context.applicationContext.cacheDir, "miniapp-libraries")),
+                renderIcon = { svg, color, name -> MiniAppIconRenderer.renderSvgToPng(svg, color, name) },
+            ) else null)
         try {
             val runtime = view ?: createWebView()
             try {

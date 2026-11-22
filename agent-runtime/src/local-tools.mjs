@@ -7,14 +7,15 @@ export function miniAppGuidance(options) {
   if (!options.miniApps || options.sdk?.toolChoice === 'none' ||
     options.modelDetails?.[options.model]?.tools === false) return '';
   return 'Mini apps: when the user asks for a small app, tool, tracker, game or calculator for their phone, build ' +
-    'it as one complete HTML file and save it with mini_app_save. Ask up to three short questions first only if the ' +
-    'request is unclear. Requirements: a <title>, a viewport meta tag, your own CSS and JavaScript inline, no ' +
-    'iframes or form actions. To use a library, add an empty <script src> or stylesheet <link> with a pinned ' +
-    'version on cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com, for example ' +
-    '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>. The phone downloads it ' +
-    'once and writes it into the file, so the app works offline. Pick a single-file build (UMD, IIFE or a bundled ' +
-    '.min.js); ES modules that import other files, and fonts or images a stylesheet links, do not load. No other ' +
-    'external scripts, stylesheets or fonts. Design for a phone screen in light and dark mode with ' +
+    'it as one complete HTML file and save it with mini_app_save, including a vibrant hex themeColor and a minimal ' +
+    '24x24 iconSvg using #FFFFFF strokes or fills for the launcher icon. Ask up to three short questions first only ' +
+    'if the request is unclear. Requirements: a <title>, a viewport meta tag, your own CSS and JavaScript inline, no ' +
+    'iframes or form actions, and custom HTML modals instead of alert(), confirm() or prompt(). To use a library, ' +
+    'add an empty <script src> or stylesheet <link> with a pinned version on cdn.jsdelivr.net, cdnjs.cloudflare.com ' +
+    'or unpkg.com, for example <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>. ' +
+    'The phone downloads it once and writes it into the file, so the app works offline. Pick a single-file build ' +
+    '(UMD, IIFE or a bundled .min.js); ES modules that import other files, and fonts or images a stylesheet links, do ' +
+    'not load. No other external scripts, stylesheets or fonts. Design for a phone screen in light and dark mode with ' +
     'touch targets of at least 44px. Store data with localStorage. fetch may call public HTTPS APIs that allow CORS ' +
     'and need no key. To change an existing app, read it with mini_app_read and save it with its id so the ' +
     'user\'s data is kept. If saving reports problems, fix them and save again.';
@@ -44,8 +45,10 @@ export function miniAppTools(call) {
       inputSchema: z.object({
         name: z.string().min(1).max(40).describe('Short app name for the home screen.'),
         description: z.string().max(200).optional().describe('One sentence on what the app does.'),
+        themeColor: z.string().max(16).optional().describe('Hex color code for the app icon and header (e.g. #2563EB).'),
+        iconSvg: z.string().max(16000).optional().describe('Minimal 24x24 <svg> markup using #FFFFFF strokes/fills.'),
         html: z.string().min(1).max(400000).describe('The complete HTML document.'),
-        id: z.string().max(32).optional().describe('Id of the app to update.'),
+        id: z.string().max(64).optional().describe('UUID of the existing app to update.'),
       }),
       execute: async args => send({ type: 'save', ...args }),
     }),

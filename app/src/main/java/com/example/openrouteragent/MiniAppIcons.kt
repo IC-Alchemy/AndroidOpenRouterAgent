@@ -6,6 +6,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
@@ -21,7 +23,55 @@ const val ICON_URI_FILE = MINI_APP_ICON_FILE_NAME
 const val ICON_URI_EMOJI_PREFIX = "emoji:"
 const val ICON_URI_PRESET_PREFIX = "preset:"
 
-fun emojiIconUri(emoji: String): String = "$ICON_URI_EMOJI_PREFIX${emoji.trim().take(12)}"
+/**
+ * Extracts up to [maxClusters] complete extended grapheme clusters without splitting surrogate pairs,
+ * ZWJ emoji sequences (e.g., 👨‍👩‍👧‍👦), variation selectors, skin-tone modifiers, or flag pairs.
+ */
+internal fun sanitizeEmojiText(raw: String, maxClusters: Int = 2): String {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty() || maxClusters <= 0) return ""
+    var i = 0
+    var clusters = 0
+    val len = trimmed.length
+    while (i < len && clusters < maxClusters) {
+        val cp = trimmed.codePointAt(i)
+        i += Character.charCount(cp)
+        // Consume second codepoint of a Regional Indicator flag pair (e.g., 🇺🇸).
+        if (cp in 0x1F1E6..0x1F1FF && i < len) {
+            val next = trimmed.codePointAt(i)
+            if (next in 0x1F1E6..0x1F1FF) i += Character.charCount(next)
+        }
+        // Consume extending characters (variation selectors, skin tones, combining marks, tags) and ZWJ joins.
+        while (i < len) {
+            val next = trimmed.codePointAt(i)
+            if (next == 0x200D) { // Zero-Width Joiner connects the next base codepoint into this same cluster.
+                i += Character.charCount(next)
+                if (i < len) {
+                    val joined = trimmed.codePointAt(i)
+                    i += Character.charCount(joined)
+                }
+            } else if (isEmojiExtender(next)) {
+                i += Character.charCount(next)
+            } else {
+                break
+            }
+        }
+        clusters++
+    }
+    return trimmed.substring(0, i)
+}
+
+private fun isEmojiExtender(cp: Int): Boolean {
+    if (cp == 0xFE0E || cp == 0xFE0F || cp == 0x20E3) return true
+    if (cp in 0x1F3FB..0x1F3FF) return true // Skin tone modifiers
+    if (cp in 0xE0020..0xE007F) return true // Tag sequences (subdivision flags)
+    val type = Character.getType(cp)
+    return type == Character.NON_SPACING_MARK.toInt() ||
+        type == Character.ENCLOSING_MARK.toInt() ||
+        type == Character.COMBINING_SPACING_MARK.toInt()
+}
+
+fun emojiIconUri(emoji: String): String = "$ICON_URI_EMOJI_PREFIX${sanitizeEmojiText(emoji)}"
 fun presetIconUri(presetId: String): String = "$ICON_URI_PRESET_PREFIX${presetId.trim()}"
 
 fun parseEmojiFromIconUri(iconUri: String?): String? =
@@ -103,6 +153,73 @@ object MiniAppIconRenderer {
     private fun linearize(channel: Double): Double =
         if (channel <= 0.03928) channel / 12.92 else ((channel + 0.055) / 1.055).pow(2.4)
 
+    private class BoundedBitmapCache(private val maxEntries: Int) {
+        private val entries = object : LinkedHashMap<String, Bitmap>(maxEntries, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean =
+                size > maxEntries
+        }
+
+        @Synchronized
+        fun get(key: String): Bitmap? = entries[key]?.takeUnless { it.isRecycled }
+
+        @Synchronized
+        fun put(key: String, bitmap: Bitmap): Bitmap {
+            entries[key] = bitmap
+            return bitmap
+        }
+    }
+
+    private val presetForegroundCache = BoundedBitmapCache(maxEntries = 32)
+    private val presetTileCache = BoundedBitmapCache(maxEntries = 48)
+    private val decodedIconCache = BoundedBitmapCache(maxEntries = 48)
+
+    internal fun cachedPresetTileBitmap(
+        preset: MiniAppPresetIcon,
+        themeColor: String,
+        sizePx: Int = 96,
+    ): Bitmap? = presetTileCache.get("${preset.id}:${MiniAppSanitizer.sanitizeThemeColor(themeColor)}:$sizePx")
+
+    /** Renders a preset icon tile, caching parsed SVG foregrounds and rendered tiles with WCAG foreground contrast. */
+    fun renderPresetTileBitmap(
+        preset: MiniAppPresetIcon,
+        themeColor: String,
+        sizePx: Int = 96,
+    ): Bitmap {
+        val safeColor = MiniAppSanitizer.sanitizeThemeColor(themeColor)
+        val tileKey = "${preset.id}:$safeColor:$sizePx"
+        presetTileCache.get(tileKey)?.let { return it }
+
+        val fgKey = "${preset.id}:$sizePx"
+        val foreground = presetForegroundCache.get(fgKey) ?: run {
+            val layer = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val layerCanvas = Canvas(layer)
+            val rendered = drawSanitizedSvg(layerCanvas, MiniAppSanitizer.sanitizeSvg(preset.svg), "#FFFFFF", sizePx)
+            if (!rendered) {
+                drawCenteredText(layerCanvas, fallbackIconInitial(preset.label), sizePx, 0.46f, true, Color.WHITE)
+            }
+            presetForegroundCache.put(fgKey, layer)
+        }
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawRoundedBackground(canvas, sizePx, parseColorInt(safeColor))
+        val tintPaint = if (isLightColor(safeColor)) {
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                colorFilter = PorterDuffColorFilter(0xFF111827.toInt(), PorterDuff.Mode.SRC_IN)
+            }
+        } else {
+            null
+        }
+        canvas.drawBitmap(foreground, 0f, 0f, tintPaint)
+        return presetTileCache.put(tileKey, bitmap)
+    }
+
+    internal fun cachedDecodedIcon(cacheKey: String): Bitmap? = decodedIconCache.get(cacheKey)
+
+    internal fun decodeBitmapFileCached(file: File, cacheKey: String): Bitmap? {
+        decodedIconCache.get(cacheKey)?.let { return it }
+        return decodeBitmapFileSafe(file)?.also { decodedIconCache.put(cacheKey, it) }
+    }
+
     fun renderSvgBitmap(
         svgMarkup: String?,
         themeColor: String,
@@ -114,32 +231,13 @@ object MiniAppIconRenderer {
         drawRoundedBackground(canvas, sizePx, parseColorInt(themeColor))
 
         val cleanSvg = MiniAppSanitizer.sanitizeSvg(svgMarkup)
-        val rendered = if (cleanSvg != null) {
-            runCatching {
-                val svg = SVG.getFromString(cleanSvg)
-                val pad = sizePx * 0.22f
-                val targetSize = sizePx - pad * 2f
-                if (svg.documentViewBox == null) {
-                    val w = svg.documentWidth.takeIf { it > 0f } ?: 24f
-                    val h = svg.documentHeight.takeIf { it > 0f } ?: 24f
-                    svg.setDocumentViewBox(0f, 0f, w, h)
-                }
-                svg.setDocumentWidth(targetSize)
-                svg.setDocumentHeight(targetSize)
-                canvas.save()
-                canvas.translate(pad, pad)
-                svg.renderToCanvas(canvas)
-                canvas.restore()
-                true
-            }.getOrDefault(false)
-        } else {
-            false
-        }
+        val foregroundHex = if (isLightColor(themeColor)) "#111827" else "#FFFFFF"
+        val rendered = drawSanitizedSvg(canvas, cleanSvg, foregroundHex, sizePx)
 
         if (!rendered) {
             drawCenteredText(
                 canvas = canvas,
-                text = fallbackLabel.trim().firstOrNull()?.uppercase() ?: "A",
+                text = fallbackIconInitial(fallbackLabel),
                 sizePx = sizePx,
                 scale = 0.46f,
                 bold = true,
@@ -148,6 +246,38 @@ object MiniAppIconRenderer {
         }
         return bitmap
     }
+
+    private fun drawSanitizedSvg(
+        canvas: Canvas,
+        cleanSvg: String?,
+        foregroundHex: String,
+        sizePx: Int,
+    ): Boolean {
+        if (cleanSvg == null) return false
+        return runCatching {
+            val resolvedSvg = currentColorPattern.replace(cleanSvg, foregroundHex)
+            val svg = SVG.getFromString(resolvedSvg)
+            val pad = sizePx * 0.22f
+            val targetSize = sizePx - pad * 2f
+            if (svg.documentViewBox == null) {
+                val w = svg.documentWidth.takeIf { it > 0f } ?: 24f
+                val h = svg.documentHeight.takeIf { it > 0f } ?: 24f
+                svg.setDocumentViewBox(0f, 0f, w, h)
+            }
+            svg.setDocumentWidth(targetSize)
+            svg.setDocumentHeight(targetSize)
+            canvas.save()
+            try {
+                canvas.translate(pad, pad)
+                svg.renderToCanvas(canvas)
+            } finally {
+                canvas.restore()
+            }
+            true
+        }.getOrDefault(false)
+    }
+
+    private val currentColorPattern = Regex("\\bcurrentColor\\b", RegexOption.IGNORE_CASE)
 
     fun renderSvgToPng(
         svgMarkup: String?,
@@ -190,10 +320,17 @@ object MiniAppIconRenderer {
         sizePx: Int = MINI_APP_ICON_SIZE_PX,
     ): Bitmap = renderSvgBitmap(null, themeColor, name, sizePx)
 
+    /** Reads [file] into memory and closes the descriptor before PNG decoding so concurrent atomic updates never clash. */
+    fun decodeBitmapFileSafe(file: File): Bitmap? = runCatching {
+        if (!file.isFile) return null
+        val bytes = file.readBytes()
+        if (bytes.isEmpty()) null else BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }.getOrNull()
+
     /** Renders or loads a 192x192 launcher icon Bitmap suitable for Home Screen shortcuts and Recents. */
     fun loadOrRenderAppIconBitmap(app: MiniApp, iconFile: File?): Bitmap {
-        if (iconFile != null && iconFile.isFile) {
-            val decoded = runCatching { BitmapFactory.decodeFile(iconFile.absolutePath) }.getOrNull()
+        if (iconFile != null) {
+            val decoded = decodeBitmapFileSafe(iconFile)
             if (decoded != null) {
                 if (decoded.width == MINI_APP_ICON_SIZE_PX && decoded.height == MINI_APP_ICON_SIZE_PX) return decoded
                 val scaled = Bitmap.createScaledBitmap(decoded, MINI_APP_ICON_SIZE_PX, MINI_APP_ICON_SIZE_PX, true)
@@ -205,7 +342,7 @@ object MiniAppIconRenderer {
             return renderEmojiBitmap(emoji, app.themeColor)
         }
         parsePresetFromIconUri(app.iconUri)?.let { preset ->
-            return renderSvgBitmap(preset.svg, app.themeColor, app.name)
+            return renderPresetTileBitmap(preset, app.themeColor, MINI_APP_ICON_SIZE_PX)
         }
         return renderInitialBitmap(app.name, app.themeColor)
     }

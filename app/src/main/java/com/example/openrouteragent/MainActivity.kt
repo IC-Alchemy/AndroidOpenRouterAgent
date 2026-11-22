@@ -143,7 +143,7 @@ class MainActivity : ComponentActivity() {
             val agent: AgentViewModel = viewModel(viewModelStoreOwner = application as AgentApplication,
                 factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application))
             val appearance = agent.config.sdk.theme
-            val dark = appearance == "oled" || (appearance == "system" && isSystemInDarkTheme())
+            val dark = isDarkThemeForAppearance(appearance, isSystemInDarkTheme())
             SideEffect {
                 WindowCompat.getInsetsController(window, window.decorView).apply {
                     isAppearanceLightStatusBars = !dark
@@ -178,6 +178,9 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 }
+
+internal fun isDarkThemeForAppearance(appearance: String, systemDark: Boolean): Boolean =
+    appearance == "oled" || (appearance == "system" && systemDark)
 
 @Composable
 fun OpenRouterAgentTheme(
@@ -557,9 +560,18 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     if (showProviders) {
         ProvidersSheet(config, editActiveProvider, { showProviders = false }, agent::saveSettings, agent::discoverModels)
     }
-    if (showMiniApps) MiniAppsSheet(onDismiss = { showMiniApps = false }) {
-        showMiniApps = false
-        if (agent.activePrompt == null) agent.promptText = "Build me a mini app that "
+    if (showMiniApps) {
+        MiniAppsSheet(
+            onDismiss = { showMiniApps = false },
+            providerReady = agent.providerReady,
+            selectedModelName = model?.name,
+            onCreateWithAi = agent::createMiniAppWithModel,
+            onEditWithAi = agent::editMiniAppWithModel,
+            onAskInChat = {
+                showMiniApps = false
+                if (agent.activePrompt == null) agent.promptText = "Build me a mini app that "
+            },
+        )
     }
     if (showSettings) {
         SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey, agent)

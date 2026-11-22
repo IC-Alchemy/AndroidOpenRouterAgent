@@ -110,7 +110,7 @@ internal class MiniAppGenerator(
                 html = html,
                 description = requestPrompt.take(200),
                 themeColor = sanitized.themeColor,
-                iconUpdate = MiniAppIconUpdate.PngBytes(iconPng, iconSvg = sanitized.iconSvg),
+                iconUpdate = MiniAppIconUpdate.PngBytes(iconPng, iconSvg = sanitized.iconSvg, aiGenerated = true),
                 imported = false,
                 allowNetwork = true,
             )
@@ -167,11 +167,21 @@ internal class MiniAppGenerator(
             val html = inlineTrustedLibrariesBestEffort(sanitized.htmlCode)
             val colorChanged = !sanitized.themeColor.equals(existingManifest.themeColor, ignoreCase = true)
             val svgChanged = sanitized.iconSvg != null &&
-                normalizeSvgForDiff(sanitized.iconSvg) != normalizeSvgForDiff(existingManifest.iconSvg)
-            val iconUpdate = if (colorChanged || svgChanged) {
+                MiniAppSanitizer.normalizeSvgForDiff(sanitized.iconSvg) != MiniAppSanitizer.normalizeSvgForDiff(existingManifest.iconSvg)
+            val isAiOwnedIcon = existingManifest.aiGeneratedIcon || existingManifest.iconSvg != null
+            val fallbackInitialChanged = existingManifest.aiGeneratedIcon &&
+                existingManifest.iconSvg == null &&
+                sanitized.iconSvg == null &&
+                fallbackIconInitial(sanitized.name) != fallbackIconInitial(existingManifest.name)
+            val shouldRegenerateIcon = when {
+                isAiOwnedIcon -> colorChanged || svgChanged || fallbackInitialChanged
+                existingManifest.iconUri == null -> sanitized.iconSvg != null
+                else -> false // Preserve custom user-uploaded gallery photo, emoji, or preset icon.
+            }
+            val iconUpdate = if (shouldRegenerateIcon) {
                 val svgToUse = sanitized.iconSvg ?: existingManifest.iconSvg
                 val png = renderIcon(svgToUse, sanitized.themeColor, sanitized.name)
-                MiniAppIconUpdate.PngBytes(png, iconSvg = svgToUse)
+                MiniAppIconUpdate.PngBytes(png, iconSvg = svgToUse, aiGenerated = true)
             } else {
                 MiniAppIconUpdate.Keep
             }
@@ -193,9 +203,6 @@ internal class MiniAppGenerator(
         return if (result.problems.isEmpty()) result.html else html
     }
 
-    private fun normalizeSvgForDiff(svg: String?): String =
-        svg.orEmpty().replace(Regex("\\s+"), " ").trim()
-
     private enum class ResponseFormatMode {
         JSON_SCHEMA,
         JSON_OBJECT,
@@ -210,7 +217,7 @@ internal class MiniAppGenerator(
     ): String {
         val activeProvider = config.customProviders.firstOrNull { it.id == config.activeProviderId }
         val modes = when {
-            activeProvider == null && "structured_outputs" in model.parameters ->
+            activeProvider == null && (model.parameters.isEmpty() || "structured_outputs" in model.parameters) ->
                 listOf(ResponseFormatMode.JSON_SCHEMA, ResponseFormatMode.JSON_OBJECT, ResponseFormatMode.PLAIN)
             activeProvider == null && "response_format" in model.parameters ->
                 listOf(ResponseFormatMode.JSON_OBJECT, ResponseFormatMode.PLAIN)
@@ -223,12 +230,24 @@ internal class MiniAppGenerator(
                 return sendCompletionRequest(config, activeProvider, model, systemPrompt, userPrompt, mode)
             } catch (e: HttpStatusException) {
                 lastError = e
-                // If an endpoint rejects response_format (HTTP 400/422), retry once with a softer mode.
-                val canFallback = idx < modes.lastIndex && (e.code == 400 || e.code == 422)
+                // If an endpoint rejects response_format (HTTP 400/422 or OpenRouter 404 parameter mismatch), retry softer.
+                val canFallback = idx < modes.lastIndex && (
+                    e.code == 400 ||
+                        e.code == 422 ||
+                        (e.code == 404 && isUnsupportedParameterError(e.message))
+                    )
                 if (!canFallback) throw e
             }
         }
         throw lastError ?: IOException("Mini app generation failed.")
+    }
+
+    private fun isUnsupportedParameterError(message: String?): Boolean {
+        val lower = message?.lowercase().orEmpty()
+        return lower.contains("parameter") ||
+            lower.contains("structured") ||
+            lower.contains("response_format") ||
+            lower.contains("json_schema")
     }
 
     private suspend fun sendCompletionRequest(

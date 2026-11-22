@@ -47,6 +47,9 @@ class AgentViewModel internal constructor(
     private val storage = AgentStorage(application)
     private val sdk = AgentSdkRuntime(application)
     private val customizationAssistant = CustomizationAssistant()
+    private val miniAppGenerator by lazy {
+        MiniAppGenerator(libraries = MiniAppLibraries(File(application.cacheDir, "miniapp-libraries")))
+    }
     private val skillsDirectory = SkillsDirectoryClient()
     private val chats = ChatDatabase(application)
     private val settingsMutex = Mutex()
@@ -658,6 +661,22 @@ class AgentViewModel internal constructor(
         val update = customizationAssistant.improve(config, model, target, prompt)
         saveSettings(update.config)
         return update.summary
+    }
+
+    internal suspend fun createMiniAppWithModel(prompt: String): MiniApp {
+        require(providerReady) {
+            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
+        }
+        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        return miniAppGenerator.createMiniApp(config, model, miniAppRepository(app), prompt)
+    }
+
+    internal suspend fun editMiniAppWithModel(id: String, changeRequest: String): MiniApp {
+        require(providerReady) {
+            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
+        }
+        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        return miniAppGenerator.editMiniApp(config, model, miniAppRepository(app), id, changeRequest)
     }
 
     internal suspend fun searchSkillsDirectory(query: String): List<RemoteSkillSummary> =

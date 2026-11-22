@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import android.util.Base64
 import kotlinx.serialization.json.Json
+import org.json.JSONObject
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -27,6 +28,11 @@ class AgentStorage(private val context: Context) {
         return AtomicFile(File(context.noBackupFilesDir, name))
     }
     private val json = Json { ignoreUnknownKeys = true }
+
+    fun loadTheme(): String = runCatching {
+        prefs.getString("config", null)
+            ?.let { JSONObject(it).optJSONObject("sdk")?.optString("theme")?.takeIf(String::isNotBlank) }
+    }.getOrNull() ?: "oled"
 
     fun loadConfig(): AgentConfig {
         val saved = prefs.getString("config", null)?.let { json.decodeFromString<AgentConfig>(it) } ?: AgentConfig()

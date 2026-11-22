@@ -31,7 +31,7 @@ In version 2.5 and later, a run continues when the user switches apps, locks the
 
 ## Mini apps and voice
 
-Ask the agent for a small app, such as a tracker, calculator or game. It saves a single HTML file that the user opens from Configure → Mini apps. There the user can add it to the home screen, share it as a file, or delete it. Each app runs on its own, keeps its own data, and can only reach public HTTPS APIs. Apps shared by someone else have no internet access. To change an app, ask the agent; it keeps the app's data. Mini apps can be switched off in Settings.
+Open Configure → Mini apps to view your installed mini apps in a launcher grid, or ask the agent in chat for a small tool, tracker, calculator, or game. Tap **Create with AI** to generate a self-contained `.miniapp` bundle (with an automatic name, theme color, and icon) from a plain-English description, or tap **Import** to add a `.miniapp` bundle or `.html` file from device storage (or share one from another app). Tap any icon to open it in its own window with Restart and Close controls. Hold an icon for options: **Edit with AI** (describe changes while keeping saved data), **Rename**, **Change Icon** (preset icon, emoji, gallery photo, or theme color), **Add to Home Screen**, **Export / Share** (share as a `.miniapp` bundle), **Save .miniapp File** (save a backup to device storage), **Clear App Data** (reset saved state without deleting the app), or **Delete**. Each mini app keeps its own private storage and can only reach public HTTPS APIs; imported or shared apps run offline with no internet access. Mini apps can be switched off in Settings.
 
 Tap the microphone in the composer to dictate. The Ask agent Quick Settings tile opens the app ready to listen.
 

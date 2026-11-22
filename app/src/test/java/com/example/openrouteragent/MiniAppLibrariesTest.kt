@@ -96,7 +96,7 @@ class MiniAppLibrariesTest {
 
     @Test
     fun theSaveToolInlinesLibrariesAndReadShowsTheShortForm() {
-        val store = MiniAppStore(folder.newFolder("apps"))
+        val store = MiniAppRepository(folder.newFolder("apps"), InMemoryMiniAppIndex())
         val tools = MiniAppTools(store, MiniAppLibraries(null, Fake(mapOf(chart to code))))
         val saved = tools.handle(JSONObject().put("type", "save").put("html", page("""<script src="$chart"></script>""")))
         assertTrue(saved.toString(), saved.getBoolean("ok"))
