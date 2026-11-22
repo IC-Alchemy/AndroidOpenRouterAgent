@@ -1040,20 +1040,20 @@ internal fun EmptyAgentState(
 }
 
 @Composable
-private fun UserMessageBubble(text: String) {
+internal fun UserMessageBubble(text: String) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
         horizontalArrangement = Arrangement.End
     ) {
         Surface(
-            shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
             modifier = Modifier.widthIn(max = 560.dp),
         ) {
             CopyableText(
                 text = text,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             )
@@ -1079,11 +1079,11 @@ internal fun AgentResponseCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = BorderStroke(
-            1.dp,
-            if (isWarningCard) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+            StudioHairlineWidth,
+            if (isWarningCard) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
         Column(
@@ -1131,7 +1131,7 @@ internal fun AgentResponseCard(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
@@ -1181,7 +1181,10 @@ internal fun AgentResponseCard(
             }
 
             // Footer with usage metadata, Copy reply (when safe), and Report button on every AI bubble
-            HorizontalDivider()
+            HorizontalDivider(
+                thickness = StudioHairlineWidth,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1191,7 +1194,7 @@ internal fun AgentResponseCard(
                     entry.modelUsed?.let {
                         CopyableText(
                             it,
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                             color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1200,6 +1203,7 @@ internal fun AgentResponseCard(
                         Text(
                             it.display(),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
                             color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1233,75 +1237,70 @@ internal fun AgentResponseCard(
 }
 
 @Composable
-private fun CollapsibleReasoningBox(summary: String) {
+internal fun CollapsibleReasoningBox(summary: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    StudioRailBlock(
+        railColor = MaterialTheme.colorScheme.primary,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
-                    .clickable(role = Role.Button) { expanded = !expanded }
-                    .padding(horizontal = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Reasoning",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .clickable(role = Role.Button) { expanded = !expanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    Icons.Default.Info,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "Reasoning",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
-            AnimatedVisibility(visible = expanded) {
-                CopyableText(
-                    text = summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
-                )
-            }
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            CopyableText(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun SandboxTerminalCard(
+internal fun SandboxTerminalCard(
     stepIndex: Int,
     step: ShellExecutionStep,
     onFileClick: (containerId: String, fileRef: ContainerFileRef) -> Unit
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val terminalBg = Color(0xFF0D1117)
-    val terminalHeaderBg = Color(0xFF161B22)
-    val terminalText = Color(0xFFE6EDF3)
-    val terminalMuted = Color(0xFFA1AAB5)
-    val terminalGreen = Color(0xFF3FB950)
-    val terminalRed = Color(0xFFF85149)
+    val terminalBg = StudioTerminalColors.background
+    val terminalHeaderBg = StudioTerminalColors.headerBackground
+    val terminalText = StudioTerminalColors.text
+    val terminalMuted = StudioTerminalColors.muted
+    val terminalGreen = StudioTerminalColors.green
+    val terminalRed = StudioTerminalColors.red
     val terminalStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
     val outputStyle = terminalStyle.copy(fontSize = 11.sp, lineHeight = 16.sp)
 
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = terminalBg,
-        border = BorderStroke(1.dp, Color(0xFF626E7C)),
+        border = BorderStroke(StudioHairlineWidth, StudioTerminalColors.border),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
@@ -1318,12 +1317,7 @@ private fun SandboxTerminalCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(terminalGreen)
-                    )
+                    StudioStatusDot(color = terminalGreen, size = 6.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "Sandbox run $stepIndex",
@@ -1397,7 +1391,7 @@ private fun SandboxTerminalCard(
 
                     // Clickable container output files (`cfile_*`)
                     if (step.files.isNotEmpty() && !step.containerId.isNullOrBlank()) {
-                        HorizontalDivider(color = Color(0xFF30363D))
+                        HorizontalDivider(thickness = StudioHairlineWidth, color = StudioTerminalColors.divider)
                         Text(
                             text = "Created or updated files",
                             color = terminalMuted,

@@ -94,8 +94,14 @@ internal fun AgentRunStatus(
                     val speed = progress.tokensPerSecond()?.let { " · ${it.toInt()} tok/s" }.orEmpty()
                     " · $estimate${compactCount(count)} tokens$speed"
                 }.orEmpty()
-                Text("Step ${progress.step} · $duration$tokens$model", maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Step ${progress.step} · $duration$tokens$model",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (!following) TextButton(onClick = onFollow) { Text("Latest") }
             TextButton(onClick = onActivity) { Text("Activity") }
@@ -167,9 +173,11 @@ private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((
         }
         return
     }
-    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 10.dp, end = 4.dp, bottom = 8.dp)) {
+    StudioRailBlock(
+        railColor = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(bottom = 8.dp)) {
             Row(Modifier.fillMaxWidth().heightIn(min = 40.dp)
                 .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
                 .clickable(role = Role.Button) { expanded = !expanded },

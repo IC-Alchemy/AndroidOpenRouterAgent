@@ -1,16 +1,21 @@
 package com.example.openrouteragent
 
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -172,5 +177,122 @@ class PrecisionStudioUiTest {
         composeRule.onNodeWithText("Tools on").assertIsDisplayed()
         composeRule.onNodeWithText("Generate images").assertIsDisplayed()
         composeRule.onNodeWithText("Turn failed").assertIsDisplayed()
+    }
+
+    @Test
+    fun conversationCardsReasoningRailAndSandboxTerminalHandleExpandAndFailureStates() {
+        var clickedFile: ContainerFileRef? = null
+        val stepWithFailure = ShellExecutionStep(
+            containerId = "c8f2a91000xyz",
+            commands = listOf("python3 sim.py"),
+            results = listOf(
+                ShellCommandResult(
+                    command = "python3 sim.py",
+                    stdout = "Mean: 7.002",
+                    stderr = "Warning: low entropy",
+                    outcome = "exit 1",
+                )
+            ),
+            files = listOf(ContainerFileRef(fileId = "cfile_1", path = "/workspace/home/report.txt")),
+        )
+        val stepWithPendingCommandsOnly = ShellExecutionStep(
+            containerId = null,
+            commands = listOf("uname -a"),
+            results = emptyList(),
+            files = emptyList(),
+        )
+        val entry = ChatEntry(
+            id = "msg-1",
+            isUser = false,
+            text = "Simulation complete.",
+            reasoningSummary = "Checked distribution parameters.",
+            shellSteps = listOf(stepWithFailure, stepWithPendingCommandsOnly),
+            modelUsed = "anthropic/claude-3.7-sonnet",
+            usage = TokenUsage(inputTokens = 400, outputTokens = 1000, totalTokens = 1400, cost = 0.0042),
+        )
+
+        composeRule.setContent {
+            OpenRouterAgentTheme(darkTheme = true) {
+                androidx.compose.foundation.layout.Column(
+                    modifier = androidx.compose.ui.Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    UserMessageBubble("Run simulation")
+                    AgentResponseCard(
+                        entry = entry,
+                        onCopyText = {},
+                        onFileClick = { _, file -> clickedFile = file },
+                        showReasoning = true,
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Run simulation").assertIsDisplayed()
+        composeRule.onNodeWithText("Simulation complete.").assertIsDisplayed()
+        composeRule.onNodeWithText("anthropic/claude-3.7-sonnet").performScrollTo().assertIsDisplayed()
+
+        // Expand reasoning rail
+        composeRule.onNodeWithText("Reasoning").performScrollTo().performClick()
+        composeRule.onNodeWithText("Checked distribution parameters.").performScrollTo().assertIsDisplayed()
+
+        // Expand sandbox terminal cards and click file chip
+        composeRule.onNodeWithText("Sandbox run 1").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("[exit 1]").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Warning: low entropy").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("/workspace/home/report.txt")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals("cfile_1", clickedFile?.fileId)
+
+        composeRule.onNodeWithText("Sandbox run 2").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("uname -a").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun liveAgentReplyAndRunStatusRenderTelemetryAndRespectShowReasoningFlag() {
+        val progress = AgentProgress(
+            started = 1_000L,
+            lastEvent = 2_000L,
+            step = 2,
+            phase = "reasoning",
+            model = "claude-3.7-sonnet",
+            streamedChars = 1_280L,
+            timeline = listOf(
+                LiveBlock.Thinking("Analyzing sandbox environment"),
+                LiveBlock.Answer("Partial stream"),
+            ),
+        )
+
+        composeRule.setContent {
+            OpenRouterAgentTheme(darkTheme = true) {
+                androidx.compose.foundation.layout.Column {
+                    AgentRunStatus(
+                        progress = progress,
+                        waitingForApproval = false,
+                        following = false,
+                        providerName = "OpenRouter",
+                        onActivity = {},
+                        onFollow = {},
+                    )
+                    LiveAgentReply(
+                        progress = progress,
+                        interrupted = false,
+                        showReasoning = true,
+                    )
+                    LiveAgentReply(
+                        progress = progress,
+                        interrupted = false,
+                        showReasoning = false,
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Model is reasoning").assertIsDisplayed()
+        composeRule.onNodeWithText("Latest").assertIsDisplayed()
+        composeRule.onNodeWithText("Activity").assertIsDisplayed()
+        composeRule.onNodeWithText("Thought").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Partial stream")[0].assertIsDisplayed()
     }
 }
