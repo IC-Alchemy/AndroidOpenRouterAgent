@@ -172,7 +172,15 @@ data class Workspace(
     val sessionId: String? = null,
     val sdkState: String? = null,
     val interruptedTurn: InterruptedTurn? = null,
+    /** Chat mode sends messages without tools: cheaper, faster, and fine for models without tool calling. */
+    val chatMode: Boolean = false,
 )
+
+/** The settings for a message sent in chat mode, or retried without tools: every tool and tool source is off. */
+fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, enableWebSearch = false,
+    enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false,
+    miniApps = false, mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
+    sdk = sdk.copy(discoverSkills = false, toolChoice = "none"))
 
 @Serializable
 data class InterruptedTurn(val prompt: String, val reply: String, val reasoningSummary: String, val error: String?)

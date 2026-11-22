@@ -58,7 +58,9 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     internal val attachedFiles: List<WorkspaceFileRef> get() = attachmentSelection
         ?.takeIf { it.area == fileArea() && it.account == workspaceTag(config) }?.files.orEmpty()
     internal val canAttachWorkspaceFiles: Boolean get() = usesOpenRouter && providerReady && activePrompt == null &&
-        config.enableShellSandbox && config.sdk.toolChoice != "none"
+        config.enableShellSandbox && config.sdk.toolChoice != "none" && !chatMode
+    /** Chat mode applies to OpenRouter chats; other providers already send messages without tools. */
+    val chatMode: Boolean get() = usesOpenRouter && workspace.chatMode
     var promptText by mutableStateOf("")
     var isLoading by mutableStateOf(true)
         private set
@@ -323,7 +325,8 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         }
         val priorWorkspace = workspace
         val area = fileArea()
-        val attachments = if (active == null && !toolsOff) attachedFiles else emptyList()
+        val noTools = toolsOff || chatMode
+        val attachments = if (active == null && !noTools) attachedFiles else emptyList()
         if (attachments.isNotEmpty() && !canAttachWorkspaceFiles) {
             turnError = "Turn on the hosted shell or remove the file attachments before sending."
             return
@@ -333,11 +336,7 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
             projectSandbox = area.projectId?.let { projectSandboxId(it, config) },
             attachments = attachments,
         )
-        val currentConfig = if (toolsOff) config.copy(enableShellSandbox = false, enableWebSearch = false,
-            enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false,
-            miniApps = false, mcpUrl = "", mcpToken = "",
-            extraToolsJson = "", customTools = emptyList(),
-            sdk = config.sdk.copy(discoverSkills = false, toolChoice = "none")) else config
+        val currentConfig = if (noTools) config.withoutTools() else config
         activePrompt = prompt
         promptText = ""
         turnError = null
@@ -478,8 +477,18 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
         running?.cancel()
     }
 
+    /** Switches this chat between chat mode and agent mode. New chats keep the mode of the chat they replace. */
+    fun setChatMode(chat: Boolean) = chatAction { scope ->
+        if (workspace.chatMode == chat) return@chatAction
+        val next = workspace.copy(chatMode = chat)
+        workspace = next
+        if (next.messages.isNotEmpty() || library.chats.any { it.id == next.id }) {
+            withContext(Dispatchers.IO + NonCancellable) { chats.save(scope, next) }
+        }
+    }
+
     fun newConversation(projectId: String? = chatProject?.id) = chatAction { scope ->
-        val fresh = scopedWorkspace(Workspace())
+        val fresh = scopedWorkspace(Workspace(chatMode = workspace.chatMode))
         withContext(Dispatchers.IO) { chats.save(scope, fresh, projectId) }
         showWorkspace(fresh)
     }
