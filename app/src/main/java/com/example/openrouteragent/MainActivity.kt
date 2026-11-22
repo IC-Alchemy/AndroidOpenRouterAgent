@@ -61,6 +61,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -446,6 +447,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
                         onVoice = listen,
                         onImages = if (usesOpenUncensored) ({ showImageGeneration = true }) else null,
+                        chatMode = if (usesOpenRouter && !agent.isLoading) agent.chatMode else null,
+                        onChatMode = agent::setChatMode,
                     )
                 }
             }
@@ -454,7 +457,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 .background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (!agent.isLoading && usesOpenRouter) {
                     StatusCapabilitiesBar(
-                        config = config, activeContainerId = activeContainerId, canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
+                        config = if (agent.chatMode) config.withoutTools() else config, activeContainerId = activeContainerId, canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
                         inProject = agent.chatProject != null, attachmentCount = agent.attachedFiles.size,
                         onOpenProjectFiles = { deviceFilesTarget = "current" },
                         onOpenWorkspaceFiles = if (agent.providerReady) ({ workspaceFilesTarget = "current" }) else null,
@@ -500,7 +503,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     LiveAgentReply(interrupted, interrupted = true,
                                         showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
                                         onRetry = { following = true; agent.retryTurn() },
-                                        onRetryWithoutTools = if (usesOpenRouter && config.agentToolsEnabled()) {
+                                        onRetryWithoutTools = if (usesOpenRouter && !agent.chatMode && config.agentToolsEnabled()) {
                                             { following = true; agent.retryTurn(toolsOff = true) }
                                         } else null,
                                         onActivity = { showRunActivity = true })
@@ -1271,13 +1274,28 @@ private fun AgentInputBar(
     onStop: () -> Unit,
     onVoice: () -> Unit,
     onImages: (() -> Unit)?,
+    chatMode: Boolean? = null,
+    onChatMode: (Boolean) -> Unit = {},
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-            if (onImages != null) {
-                Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp)) {
-                    TextButton(onClick = onImages, enabled = !isLoading && !isRunning) { Text("Generate images") }
+            if (onImages != null || chatMode != null) {
+                Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (chatMode != null) {
+                        // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
+                        listOf(false to "Agent", true to "Chat").forEach { (chat, label) ->
+                            FilterChip(selected = chatMode == chat, onClick = { onChatMode(chat) },
+                                enabled = !isLoading && !isRunning, label = { Text(label) })
+                        }
+                        Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    }
+                    if (onImages != null) {
+                        TextButton(onClick = onImages, enabled = !isLoading && !isRunning) { Text("Generate images") }
+                    }
                 }
             }
             if (error != null) {
@@ -1295,7 +1313,7 @@ private fun AgentInputBar(
                 CopyableOutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
-                    placeholder = { Text("Message the agent") },
+                    placeholder = { Text(if (chatMode == true) "Message" else "Message the agent") },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
                     shape = RoundedCornerShape(22.dp),

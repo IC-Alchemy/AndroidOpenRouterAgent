@@ -20,6 +20,10 @@ A run keeps going when you switch apps, lock the phone, or close the app from re
 
 A run still ends if Android stops the app, for example after a force stop or a restart. Its partial reply is not kept in that case. For a Google Play release, declare the `dataSync` foreground service type in Play Console.
 
+## Chat and agent mode
+
+With OpenRouter, the switch above the message field picks how each chat works. **Agent** is the default: the model can use the tools you turned on in Settings, such as the hosted shell, web search, files, mini apps, MCP and custom tools, over several steps. **Chat** sends messages without tools. Replies start sooner and cost less, because tool definitions are not sent with every message, and models without tool calling work too. Reasoning and streaming work the same in both modes. The mode is saved with the chat, a new chat starts in the mode of the chat you were in, and you can switch at any time between messages. Other providers always work like chat mode.
+
 ## Mini apps
 
 Ask for a small app, for example “make a habit tracker with a streak counter”. The agent builds one HTML file and saves it with the `mini_app_save` tool. The app checks the file before saving it. It needs a title and a viewport tag, the app's own CSS and JavaScript must be inline, and it may not use frames, form actions or redirects. Problems go back to the model so it can fix them.
