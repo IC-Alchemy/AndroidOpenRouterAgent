@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 internal data class ResourceChange(val config: AgentConfig, val result: JSONObject)
 
-private val reservedCustomNames = setOf("shared", "task", "create_subagent", "create_custom_tool",
+internal val RESERVED_CUSTOM_TOOL_NAMES = setOf("shared", "task", "create_subagent", "create_custom_tool",
     "create_skill", "enable_server_tool") + projectFileActions
 
 internal fun prepareResourceAction(config: AgentConfig, name: String, args: JSONObject): ResourceChange {
@@ -40,7 +40,7 @@ private fun prepareSubagent(config: AgentConfig, args: JSONObject): ResourceChan
 private fun prepareCustomTool(config: AgentConfig, args: JSONObject): ResourceChange {
     args.requireFields("name", "description", "schema", "handler", "value")
     val name = args.requiredText("name", 63)
-    require(name !in reservedCustomNames && config.customTools.none { it.name == name }) {
+    require(name !in RESERVED_CUSTOM_TOOL_NAMES && config.customTools.none { it.name == name }) {
         "Choose a unique custom tool name."
     }
     val tool = CustomAgentTool(name = name, description = args.requiredText("description", 1024),

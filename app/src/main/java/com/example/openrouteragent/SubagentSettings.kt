@@ -22,6 +22,7 @@ private val subagentFields = basicSubagentFields + setOf(
     "tools", "maxToolCalls", "maxCompletionTokens", "temperature", "reasoning",
     "inheritFunctions", "inheritedFunctionNames",
 )
+internal val SUBAGENT_ADVANCED_FIELDS: Set<String> = subagentFields - basicSubagentFields
 private val reasoningFields = setOf("effort", "maxTokens")
 private val workerToolFields = setOf("type", "parameters", "additionalProperties")
 private val formattedJson = Json { prettyPrint = true }
@@ -169,3 +170,52 @@ internal fun editSubagent(
     else tool["parameters"] = JsonObject(settings)
     return JsonObject(tool)
 }
+
+internal data class SubagentDraft(
+    val index: Int?,
+    val name: String = "",
+    val model: String = "",
+    val instructions: String = "",
+    val advancedJson: String = "",
+)
+
+internal fun JsonObject.toSubagentDraft(index: Int): SubagentDraft {
+    val params = subagentParameters()
+    return SubagentDraft(
+        index = index,
+        name = params?.stringValue("name").orEmpty(),
+        model = params?.stringValue("model").orEmpty(),
+        instructions = params?.stringValue("instructions").orEmpty(),
+        advancedJson = subagentAdvancedJson(params),
+    )
+}
+
+internal fun JsonObject.subagentDisplayName(): String =
+    subagentParameters()?.stringValue("name")?.trim()?.takeIf { it.isNotBlank() } ?: "Default subagent"
+
+internal fun JsonObject.subagentModelLabel(models: List<CatalogModel>): String {
+    val id = subagentParameters()?.stringValue("model")?.trim()?.takeIf { it.isNotBlank() } ?: return "Main model"
+    return models.firstOrNull { it.id == id }?.name ?: id
+}
+
+internal fun JsonObject.subagentSummary(models: List<CatalogModel>): String {
+    val params = subagentParameters()
+    val instructions = params?.stringValue("instructions")?.trim()?.takeIf { it.isNotBlank() }
+    val extras = buildList {
+        params?.wholeNumberValue("maxToolCalls")?.let { add("max $it tool calls") }
+        val toolCount = (params?.get("tools") as? JsonArray)?.size ?: 0
+        if (toolCount > 0) add("$toolCount server ${if (toolCount == 1) "tool" else "tools"}")
+        if (params?.get("inheritFunctions") != null || params?.get("inheritedFunctionNames") != null) {
+            add("inherits client tools")
+        }
+    }
+    return when {
+        instructions != null && extras.isNotEmpty() -> "$instructions · ${extras.joinToString(" · ")}"
+        instructions != null -> instructions
+        extras.isNotEmpty() -> "Uses ${subagentModelLabel(models)} · ${extras.joinToString(" · ")}"
+        else -> "No custom instructions"
+    }
+}
+
+private fun JsonObject.wholeNumberValue(key: String): Long? =
+    numberValue(key)?.takeIf { it.stripTrailingZeros().scale() <= 0 }?.toLong()

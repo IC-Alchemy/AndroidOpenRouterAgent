@@ -412,6 +412,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                             showConfigure = false
                                             customizeTab = "tools"
                                         })
+                                        DropdownMenuItem(text = { Text("Subagents") }, onClick = {
+                                            showConfigure = false
+                                            customizeTab = "subagents"
+                                        })
                                     }
                                     DropdownMenuItem(text = { Text("Show reasoning") }, onClick = {
                                         agent.setShowReasoning(!config.sdk.showReasoning)
@@ -543,7 +547,23 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         SdkSettingsSheet(config, agent.availableModels, { showSdkSettings = false }, agent::saveSettings)
     }
     customizeTab?.let { tab ->
-        CustomizationSheet(config, agent.builtInGuide, tab, { customizeTab = null }, agent::saveSettings)
+        CustomizationSheet(
+            config = config,
+            guide = agent.builtInGuide,
+            initialTab = tab,
+            availableModels = agent.availableModels,
+            selectedModel = model,
+            providerReady = agent.providerReady,
+            catalogLoading = agent.catalogLoading,
+            catalogError = agent.catalogError,
+            onRefreshModels = { agent.refreshModels() },
+            onCreateWithModel = agent::createCustomizationWithModel,
+            onImproveWithModel = agent::improveCustomizationWithModel,
+            onSearchSkills = agent::searchSkillsDirectory,
+            onFetchRemoteSkill = agent::fetchRemoteSkill,
+            onDismiss = { customizeTab = null },
+            onSave = agent::saveSettings,
+        )
     }
     if (showModels) {
         ModelPicker(agent.availableModels, model, usesOpenRouter && config.agentToolsEnabled(), agent.catalogLoading,
@@ -1501,7 +1521,15 @@ private fun SettingsBottomSheet(
                     SettingsToggleRow("Web fetch", "Reads pages supplied by URL.", webFetch, { webFetch = it })
                     SettingsToggleRow("Workspace files tool", "Lets unfiled chats work with files in your OpenRouter workspace.",
                         workspaceFiles, { workspaceFiles = it })
-                    SubagentsSettings(toolsJson, enabled = !working, onChange = { toolsJson = it; error = null })
+                    SubagentsSettings(
+                        json = toolsJson,
+                        enabled = !working,
+                        availableModels = agent.availableModels,
+                        catalogLoading = agent.catalogLoading,
+                        catalogError = agent.catalogError,
+                        onRefreshModels = { agent.refreshModels() },
+                        onChange = { toolsJson = it; error = null },
+                    )
                     SettingsToggleRow("Device time zone", "Lets the agent read your time zone and UTC offset.", deviceTools,
                         { deviceTools = it })
                     SettingsToggleRow("Mini apps", "Lets the agent build small apps you can open, add to your home " +

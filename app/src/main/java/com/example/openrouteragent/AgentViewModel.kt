@@ -32,6 +32,8 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
     private val storage = AgentStorage(application)
     private val sdk = AgentSdkRuntime(application)
     private val chatClient = CompatibleChatClient()
+    private val customizationAssistant = CustomizationAssistant()
+    private val skillsDirectory = SkillsDirectoryClient()
     private val chats = ChatDatabase(application)
     private val settingsMutex = Mutex()
     var isSavingSettings by mutableStateOf(false)
@@ -557,6 +559,38 @@ class AgentViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    internal suspend fun createCustomizationWithModel(kind: CustomizationKind, prompt: String): String {
+        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting) {
+            "Wait for the current task to finish before updating settings."
+        }
+        require(providerReady) {
+            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
+        }
+        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        val update = customizationAssistant.create(config, model, kind, prompt)
+        saveSettings(update.config)
+        return update.summary
+    }
+
+    internal suspend fun improveCustomizationWithModel(target: CustomizationTarget, prompt: String): String {
+        check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting) {
+            "Wait for the current task to finish before updating settings."
+        }
+        require(providerReady) {
+            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
+        }
+        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        val update = customizationAssistant.improve(config, model, target, prompt)
+        saveSettings(update.config)
+        return update.summary
+    }
+
+    internal suspend fun searchSkillsDirectory(query: String): List<RemoteSkillSummary> =
+        skillsDirectory.search(query)
+
+    internal suspend fun fetchRemoteSkill(skill: RemoteSkillSummary): SavedAgentSkill =
+        skillsDirectory.fetchSkill(skill)
 
     suspend fun saveSettings(updated: AgentConfig) = settingsMutex.withLock {
         check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting)

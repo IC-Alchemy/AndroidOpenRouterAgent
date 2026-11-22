@@ -18,7 +18,7 @@ Use these instructions to answer questions about the app's controls. Mention the
 - Open Configure → SDK settings for fallback models, routing, reasoning effort, sampling, output and run limits, and response format. In Advanced, configure repetition detection, local and MCP tool deadlines, concurrency, and final-answer behavior when a stop condition is met. Unset fields use the model or provider default.
 - A follow-up profile can switch models, change sampling or output length, and append instructions after a chosen number of SDK inference turns. This applies to later requests in the current run. Hosted tools can do several steps within one request.
 - Tools in Settings controls the hosted sandbox, web search, date and time, local time zone, and optional MCP. The sandbox can produce files. Open Sandbox files to preview or export them.
-- Open Settings → OpenRouter Server Tools → Subagents to add a worker the main model can delegate to. Apply the worker, then save Settings. Open Activity during a run to see the worker's task, status, and outcome.
+- Open Configure → Subagents (or Settings → Agent tools → Subagents) to add or edit workers the main model can delegate to and assign each subagent's default model. Open Activity during a run to see the worker's task, status, and outcome.
 - Project files opens the device folder shared by the project's chats. Import files, create folders, and edit UTF-8 text there. Unfiled chats have their own Chat files folder. Use the project file functions when asked to create, read, or edit a saved file.
 - Upload to OpenRouter saves a device file under the project's path in Workspace files. Attach a workspace file to make a copy available to the hosted shell on the next message. Sandbox files can be copied to device files or saved to Workspace from their preview.
 - When asked to create a subagent, custom tool, or skill, or enable a supported OpenRouter server tool, use the app's resource tools. After the user approves the change, check the tool result to confirm it was saved. The resource is available on the next message.
@@ -43,19 +43,20 @@ Tap Chats to open saved conversations for the active provider. Use New project t
 
 In version 2.3 and later, open Configure → Providers or tap the provider name in the header. Use the OpenUncensored preset with its own API key, or add an HTTPS provider that supports OpenAI-compatible Chat Completions. Load models from the provider or enter an exact model ID. Profiles have separate conversations and can enable streaming or add provider-specific JSON request fields. Select OpenRouter for hosted tools, custom SDK tools, and on-demand skill discovery.
 
-## Create custom tools
+## Create and improve tools, skills, and subagents
 
-Open Configure → Tools and create a tool with a lowercase underscore-separated name, a specific description, and a JSON object input schema. Choose its handler:
+Open Configure → Custom tools, Subagents, or Skills & app guide to access the unified panel across Tools, Skills, and Subagents:
 
-- Template fills placeholders such as `{{city}}` from validated inputs and returns text to the model.
-- Ask me pauses the run to collect a text response from the user.
-- Webhook sends validated arguments to a fixed HTTPS endpoint after approval. The endpoint should allow this app's WebView origin. Keep credentials out of tool descriptions, templates, URLs, and skill instructions.
+- Use **Create with AI** in any section or **Improve Tool / Skill / Subagent** on a saved item to generate or refine its configuration using the currently selected model via Chat Completions.
+- For **Tools**, create a tool with a lowercase underscore-separated name, a specific description, and a JSON object input schema. Choose its handler:
+  - Template fills placeholders such as `{{city}}` from validated inputs and returns text to the model.
+  - Ask me pauses the run to collect a text response from the user.
+  - Webhook sends validated arguments to a fixed HTTPS endpoint after approval. The endpoint should allow this app's WebView origin. Keep credentials out of tool descriptions, templates, URLs, and skill instructions.
+- Use a descriptive tool name and required input keys. Enable only tools relevant to your current task. Tool approvals and network settings are controlled by the app.
 
-Use a descriptive tool name and required input keys. Enable only tools relevant to your current task. Tool approvals and network settings are controlled by the app.
+## Save, search, and reuse skills
 
-## Save and reuse skills
-
-Open Configure → Skills. A good skill has a lowercase hyphen-separated name, a description of when to use it, and concise steps. Import or export a Markdown SKILL.md file to share it. Enable discovery to let a tool-capable agent request its instructions as needed. Use Pin to include the instructions in each new run. Imported instructions are disabled until you review and enable them. The built-in guide is available inside the app without a model request.
+Open the **Skills** section. A good skill has a lowercase hyphen-separated name, a description of when to use it, and concise steps. Import or export a Markdown SKILL.md file to share it, or use **Search skills** to look up community skills from `skills.sh` (`vercel-labs/skills`) with telemetry disabled (`ADISABLE_TELEMETRY=1 DISABLE_TELEMETRY=1`). Enable discovery to let a tool-capable agent request its instructions as needed. Use Pin to include the instructions in each new run. Imported instructions are disabled until you review and enable them. The built-in guide is available inside the app without a model request.
 
 ## Recover a stalled run
 
