@@ -34,7 +34,7 @@ internal fun OutlinedSection(
         ),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (title != null) {
+            if (!title.isNullOrBlank()) {
                 Text(
                     title,
                     Modifier.semantics { heading() },

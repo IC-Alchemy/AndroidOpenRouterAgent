@@ -1061,6 +1061,11 @@ internal fun UserMessageBubble(text: String) {
     }
 }
 
+internal fun agentResponseReportContentColor(
+    isWarningCard: Boolean,
+    colors: androidx.compose.material3.ColorScheme,
+): Color = if (isWarningCard) colors.onErrorContainer else colors.primary
+
 @Composable
 internal fun AgentResponseCard(
     entry: ChatEntry,
@@ -1191,7 +1196,7 @@ internal fun AgentResponseCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    entry.modelUsed?.let {
+                    entry.modelUsed?.takeIf { it.isNotBlank() }?.let {
                         CopyableText(
                             it,
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
@@ -1220,6 +1225,9 @@ internal fun AgentResponseCard(
                     }
                     TextButton(
                         onClick = onReport,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = agentResponseReportContentColor(isWarningCard, MaterialTheme.colorScheme),
+                        ),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
                         Icon(

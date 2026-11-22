@@ -177,25 +177,34 @@ private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((
         railColor = MaterialTheme.colorScheme.primary,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(bottom = 8.dp)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 40.dp)
-                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
-                .clickable(role = Role.Button) { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (live) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
-                Text(if (live) "Thinking…" else "Thought", style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                onShow?.let { TextButton(onClick = { it(false) }) { Text("Hide") } }
-                Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null, modifier = Modifier.size(18.dp))
-            }
-            val style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
-            val color = MaterialTheme.colorScheme.onSurfaceVariant
-            when {
-                expanded -> CopyableText(text.trim(), style = style, color = color, keepSelectionOnReplacement = live)
-                live -> Text(if (text.length > LIVE_THINKING_TAIL) "…" + text.takeLast(LIVE_THINKING_TAIL).trimStart()
-                    else text.trim(), style = style, color = color)
-            }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+            .clickable(role = Role.Button) { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (live) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+            Text(if (live) "Thinking…" else "Thought", style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            onShow?.let { TextButton(onClick = { it(false) }) { Text("Hide") } }
+            Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        val style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
+        val color = MaterialTheme.colorScheme.onSurfaceVariant
+        when {
+            expanded -> CopyableText(
+                text.trim(),
+                modifier = Modifier.padding(bottom = 8.dp),
+                style = style,
+                color = color,
+                keepSelectionOnReplacement = live,
+            )
+            live -> Text(
+                if (text.length > LIVE_THINKING_TAIL) "…" + text.takeLast(LIVE_THINKING_TAIL).trimStart()
+                else text.trim(),
+                modifier = Modifier.padding(bottom = 8.dp),
+                style = style,
+                color = color,
+            )
         }
     }
 }

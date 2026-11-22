@@ -6,9 +6,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -16,7 +21,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -36,12 +43,14 @@ class PrecisionStudioUiTest {
         var darkBackground = Color.Unspecified
         var lightPrimary = Color.Unspecified
         var lightBackground = Color.Unspecified
+        var headlineTracking = TextUnit.Unspecified
         var mediumShape = RoundedCornerShape(0.dp)
 
         composeRule.setContent {
             OpenRouterAgentTheme(darkTheme = true) {
                 darkPrimary = MaterialTheme.colorScheme.primary
                 darkBackground = MaterialTheme.colorScheme.background
+                headlineTracking = MaterialTheme.typography.headlineSmall.letterSpacing
                 mediumShape = MaterialTheme.shapes.medium as RoundedCornerShape
             }
             OpenRouterAgentTheme(darkTheme = false) {
@@ -54,6 +63,7 @@ class PrecisionStudioUiTest {
         assertEquals(Color(0xFF050608), darkBackground)
         assertEquals(Color(0xFF0284C7), lightPrimary)
         assertEquals(Color(0xFFF7F8FA), lightBackground)
+        assertEquals((-0.4).sp, headlineTracking)
         assertEquals(RoundedCornerShape(14.dp), mediumShape)
         assertEquals(0.75.dp, StudioHairlineWidth)
     }
@@ -69,6 +79,9 @@ class PrecisionStudioUiTest {
                     OutlinedSection(title = null, highlighted = false) {
                         Text("Untitled body")
                     }
+                    OutlinedSection(title = "   ", highlighted = false) {
+                        Text("Blank title body")
+                    }
                     StudioRailBlock {
                         Text("Rail content")
                     }
@@ -79,7 +92,11 @@ class PrecisionStudioUiTest {
         composeRule.onNodeWithText("Connection").assertIsDisplayed()
         composeRule.onNodeWithText("Section body").assertIsDisplayed()
         composeRule.onNodeWithText("Untitled body").assertIsDisplayed()
+        composeRule.onNodeWithText("Blank title body").assertIsDisplayed()
         composeRule.onNodeWithText("Rail content").assertIsDisplayed()
+        composeRule
+            .onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+            .assertCountEquals(1)
     }
 
     @Test
@@ -138,9 +155,9 @@ class PrecisionStudioUiTest {
 
     @Test
     fun agentInputBarHandlesAgentAndChatModeAndCustomProviderWithoutModeSwitch() {
-        var currentMode = false
+        var currentMode by mutableStateOf(false)
         composeRule.setContent {
-            OpenRouterAgentTheme(darkTheme = true) {
+            OpenRouterAgentTheme(darkTheme = false) {
                 androidx.compose.foundation.layout.Column {
                     AgentInputBar(
                         value = "Run check",
@@ -171,10 +188,11 @@ class PrecisionStudioUiTest {
             }
         }
 
-        composeRule.onNodeWithText("Agent").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Agent").assertCountEquals(1)
+        composeRule.onNodeWithText("Tools on").assertIsDisplayed()
         composeRule.onNodeWithText("Chat").performClick()
         assertEquals(true, currentMode)
-        composeRule.onNodeWithText("Tools on").assertIsDisplayed()
+        composeRule.onNodeWithText("No tools · faster, cheaper").assertIsDisplayed()
         composeRule.onNodeWithText("Generate images").assertIsDisplayed()
         composeRule.onNodeWithText("Turn failed").assertIsDisplayed()
     }
@@ -292,7 +310,23 @@ class PrecisionStudioUiTest {
         composeRule.onNodeWithText("Model is reasoning").assertIsDisplayed()
         composeRule.onNodeWithText("Latest").assertIsDisplayed()
         composeRule.onNodeWithText("Activity").assertIsDisplayed()
-        composeRule.onNodeWithText("Thought").assertIsDisplayed()
+        composeRule.onNodeWithText("Thought").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        composeRule
+            .onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+            .assertCountEquals(1)
+        composeRule.onNodeWithText("Thought").performClick()
+        composeRule
+            .onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+            .assertCountEquals(1)
+        composeRule.onNodeWithText("Analyzing sandbox environment").assertIsDisplayed()
         composeRule.onAllNodesWithText("Partial stream")[0].assertIsDisplayed()
+        assertEquals(
+            StudioLightColorScheme.onErrorContainer,
+            agentResponseReportContentColor(isWarningCard = true, colors = StudioLightColorScheme),
+        )
+        assertEquals(
+            StudioLightColorScheme.primary,
+            agentResponseReportContentColor(isWarningCard = false, colors = StudioLightColorScheme),
+        )
     }
 }
