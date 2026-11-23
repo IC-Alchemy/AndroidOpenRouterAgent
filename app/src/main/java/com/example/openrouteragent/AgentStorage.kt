@@ -76,6 +76,16 @@ class AgentStorage(private val context: Context) {
         edit.putString(ivKey, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
     }
 
+    internal fun githubCredentials() = object : GitHubCredentials {
+        override fun read(id: String): String = readSecret("encrypted_github_$id", "github_iv_$id")
+
+        override fun save(id: String, token: String) {
+            val edit = prefs.edit()
+            putSecret(edit, "encrypted_github_$id", "github_iv_$id", token)
+            if (!edit.commit()) throw IOException("Android could not save the GitHub token.")
+        }
+    }
+
     fun readLegacyWorkspace(provider: String): Workspace? = try {
         json.decodeFromString<Workspace>(workspaceFile(provider).readFully().toString(Charsets.UTF_8))
     } catch (_: FileNotFoundException) {

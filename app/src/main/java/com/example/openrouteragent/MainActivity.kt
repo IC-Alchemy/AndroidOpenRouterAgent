@@ -265,6 +265,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var showChatLibrary by rememberSaveable { mutableStateOf(false) }
     var deviceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var workspaceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var githubTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
     var browserContainer by rememberSaveable { mutableStateOf<String?>(null) }
     var previewContainer by rememberSaveable { mutableStateOf<String?>(null) }
@@ -623,7 +624,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             })
         }
     }
-    agent.approval?.let { approval ->
+    agent.approval?.takeIf { agent.githubReview == null }?.let { approval ->
         var answer by rememberSaveable(approval.decision) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { agent.decideTool(false) },
@@ -659,9 +660,18 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     if (showChatLibrary) ChatLibrarySheet(agent, onProjectFiles = { id ->
         deviceFilesTarget = id
         showChatLibrary = false
+    }, onGitHub = { id ->
+        githubTarget = id
+        showChatLibrary = false
     }) {
         following = true
         showChatLibrary = false
+    }
+    agent.library.projects.firstOrNull { it.id == githubTarget }?.let { project ->
+        GitHubProjectDialog(project, agent.github) { githubTarget = null }
+    }
+    agent.githubReview?.let { review ->
+        GitHubReviewDialog(review) { approved -> agent.decideGitHubReview(review, approved) }
     }
     val currentArea = agent.fileArea()
     val localTarget = deviceFilesTarget

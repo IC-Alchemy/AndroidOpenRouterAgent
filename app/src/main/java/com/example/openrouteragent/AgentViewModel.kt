@@ -44,6 +44,10 @@ class AgentViewModel internal constructor(
     val client = OpenRouterAgentClient()
     internal val files = OpenRouterFiles(application, client)
     private val storage = AgentStorage(application)
+    internal val github = GitHubProjects(File(application.noBackupFilesDir, "github"), storage.githubCredentials())
+    private var githubDecision: CompletableDeferred<Boolean>? = null
+    internal var githubReview by mutableStateOf<GitHubReview?>(null)
+        private set
     private val sdk = AgentSdkRuntime(application)
     private val customizationAssistant = CustomizationAssistant()
     private val miniAppGenerator by lazy {
@@ -272,13 +276,37 @@ class AgentViewModel internal constructor(
         notifyBackground()
     }
 
+    internal fun decideGitHubReview(review: GitHubReview, approve: Boolean) {
+        if (githubReview === review) githubDecision?.complete(approve)
+    }
+
+    private suspend fun reviewGitHub(review: GitHubReview, access: GitHubAgentAccess): String =
+        withContext(Dispatchers.Main.immediate) {
+            check(githubDecision == null) { "Another GitHub change is waiting for review." }
+            val decision = CompletableDeferred<Boolean>()
+            githubDecision = decision
+            githubReview = review
+            notifyBackground()
+            val approved = try {
+                decision.await()
+            } finally {
+                githubDecision = null
+                githubReview = null
+                notifyBackground()
+            }
+            check(approved) { "The user declined the GitHub change." }
+            github.submit(review, access)
+        }
+
     private val app get() = getApplication<Application>()
 
     /** Mirrors the live status, or a pending approval, into the ongoing run notification. */
     private fun notifyBackground() {
         val prompt = activePrompt ?: return
         val pending = approval
-        val notice = if (pending != null) RunNotice(
+        val notice = if (githubReview != null) {
+            RunNotice("GitHub change ready for review", "Open the app to see the details and decide.")
+        } else if (pending != null) RunNotice(
             title = if (pending.asksUser) "The agent has a question" else "Allow ${pending.name}?",
             text = if (pending.asksUser) "${pending.name}. Open the app to answer."
                 else (pending.url.ifBlank { pending.arguments }).take(400),
@@ -406,11 +434,13 @@ class AgentViewModel internal constructor(
             var finishedText = "The agent finished."
             try {
                 val sdkResult = if (active == null) {
+                    val gitHubAccess = if (noTools || currentConfig.sdk.toolChoice == "none") null
+                        else area.projectId?.let { github.session(it) }
                     sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
                         onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
-                        files = runFiles,
+                        files = runFiles.copy(github = gitHubAccess != null),
                         onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
-                            executeAppAction(area, name, args)
+                            executeAppAction(area, gitHubAccess, name, args)
                         })
                 } else {
                     SdkRunResult(chatClient.run(active, currentConfig, priorWorkspace, prompt, model.id, ::updateProgress), null)
@@ -493,7 +523,15 @@ class AgentViewModel internal constructor(
         }
     }
 
-    private suspend fun executeAppAction(area: ProjectFileArea, name: String, args: JSONObject): JSONObject {
+    private suspend fun executeAppAction(
+        area: ProjectFileArea, gitHubAccess: GitHubAgentAccess?, name: String, args: JSONObject,
+    ): JSONObject {
+        if (name in githubActions) {
+            check(gitHubAccess != null && gitHubAccess.project == area.projectId) {
+                "GitHub tools are unavailable in this chat."
+            }
+            return github.performAction(gitHubAccess, name, args, ::reviewGitHub)
+        }
         if (name in projectFileActions) {
             if (name == "write_project_file" || name == "edit_project_file") prepareFileArea(area)
             return withContext(Dispatchers.IO) { files.store.performAction(area, name, args) }
@@ -606,6 +644,7 @@ class AgentViewModel internal constructor(
     }
 
     fun deleteProject(id: String) = chatAction {
+        github.disconnect(id)
         withContext(Dispatchers.IO) { chats.deleteProject(id) }
     }
 

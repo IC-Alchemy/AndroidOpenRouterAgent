@@ -22,6 +22,7 @@ internal data class OpenRouterRunFiles(
     val projectFolder: String? = null,
     val projectSandbox: String? = null,
     val attachments: List<WorkspaceFileRef> = emptyList(),
+    val github: Boolean = false,
 )
 
 internal fun projectSandboxId(projectId: String, config: AgentConfig): String {

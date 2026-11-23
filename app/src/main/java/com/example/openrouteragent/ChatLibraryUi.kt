@@ -45,7 +45,9 @@ private const val UNFILED_CHATS = "unfiled"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ChatLibrarySheet(agent: AgentViewModel, onProjectFiles: (String) -> Unit, onClose: () -> Unit) {
+internal fun ChatLibrarySheet(
+    agent: AgentViewModel, onProjectFiles: (String) -> Unit, onGitHub: (String) -> Unit, onClose: () -> Unit,
+) {
     val library = agent.library
     val busy = agent.isWorkingChat
     var filter by rememberSaveable { mutableStateOf(agent.chatProject?.id ?: ALL_CHATS) }
@@ -92,6 +94,10 @@ internal fun ChatLibrarySheet(agent: AgentViewModel, onProjectFiles: (String) ->
                         Icon(Icons.Default.MoreVert, contentDescription = "Manage project")
                     }
                     DropdownMenu(expanded = projectsMenu, onDismissRequest = { projectsMenu = false }) {
+                        DropdownMenuItem(text = { Text("GitHub") }, onClick = {
+                            projectsMenu = false
+                            onGitHub(project.id)
+                        })
                         DropdownMenuItem(text = { Text("Rename project") }, onClick = {
                             projectsMenu = false
                             nameDialog = NameDialog("Rename project", project.name) { agent.renameProject(project.id, it) }
