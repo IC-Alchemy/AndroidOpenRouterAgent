@@ -394,7 +394,7 @@ internal fun runtimeOptions(
         .put("domains", JSONArray(config.sandboxDomains())).put("webSearch", config.enableWebSearch)
         .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
         .put("workspaceFiles", config.enableWorkspaceFiles).put("projectFolder", files.projectFolder)
-        .put("appActions", appActions)
+        .put("appActions", appActions).put("github", appActions && files.github)
         .put("fileIds", JSONArray(files.attachments.map { it.id }))
         .put("attachmentNames", JSONArray(files.attachments.map { it.id.takeLast(8) + "-" + it.filename.substringAfterLast('/') }))
         .put("miniApps", config.miniApps)

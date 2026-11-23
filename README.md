@@ -51,6 +51,14 @@ Chats are scoped to the selected provider and credential. Reopening an OpenRoute
 
 **Workspace files tool** in Settings gives unfiled OpenRouter chats the hosted `openrouter:files` tool. OpenRouter scopes that tool to the entire workspace. Project chats use app file functions scoped to their project folder. [OpenRouter Files server tool](https://openrouter.ai/docs/guides/features/server-tools/files)
 
+### Work with a GitHub repository
+
+1. Open **Chats**, select a project, then open the project’s **Manage project → GitHub** menu. Enter the repository URL and a fine-grained GitHub token scoped to that repository. Grant **Contents: Read and write** for publishing and **Pull requests: Read and write** for opening PRs. Find the repository, then confirm the base branch.
+2. Turn on **Let the agent work with this repo** and start a message in Agent mode. Try “Find the settings screen and draft a change to its Help text.” The app lists paths first and downloads only the small text files requested by you or the agent. Text the agent reads is sent to OpenRouter.
+3. Ask the agent to publish, or use **Review and publish** in the GitHub panel. Review the files, diff, commit message, and destination branch. A confirmed publish creates one commit on the project’s work branch. Use a separate review to open a PR.
+
+Drafts and cached files are available offline. Use **Refresh** to check for upstream changes and resolve overlapping drafts. GitHub availability, token permissions, and repository rules apply to commits and pull requests.
+
 ## Providers
 
 Open **Configure → Providers** or tap the provider name in the header. The **OpenUncensored** preset uses `https://api.openuncensored.com/v1`, the model `deepseek-v4.1-flash-1017-uncensored`, and quality routing. Tap **Use**, enter your OpenUncensored API key, and tap **Save and use**.
