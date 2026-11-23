@@ -87,19 +87,9 @@ class CustomizationAssistantTest {
     }
 
     @Test
-    fun createsSkillAndSubagentUsingCustomProviderAndFlatOrNestedAdvancedFields() = withAssistant { server, assistant ->
-        val custom = CustomProvider(
-            id = OPENUNCENSORED_ID,
-            name = "OpenUncensored",
-            baseUrl = "https://api.openuncensored.com/v1/",
-            apiKey = "provider-key",
-            model = "custom/model",
-            strategy = "speed",
-            requestJson = """{"temperature":0.2}""",
-        )
+    fun createsSkillAndSubagentWithFlatOrNestedAdvancedFields() = withAssistant { server, assistant ->
         val config = AgentConfig(
-            activeProviderId = OPENUNCENSORED_ID,
-            customProviders = listOf(custom),
+            apiKey = "sk-or-test",
             extraToolsJson = """[{"type":"openrouter:advisor"}]""",
         )
 
@@ -109,11 +99,10 @@ class CustomizationAssistantTest {
         """.trimIndent()))
         val skillUpdate = assistant.create(config, plainModel, CustomizationKind.SKILL, "Kotlin coroutine review")
         val skillReq = server.takeRequest()
-        assertEquals("/v1/chat/completions", skillReq.path)
-        assertEquals("Bearer provider-key", skillReq.getHeader("Authorization"))
+        assertEquals("/api/v1/chat/completions", skillReq.path)
+        assertEquals("Bearer sk-or-test", skillReq.getHeader("Authorization"))
         val reqBody = JSONObject(skillReq.body.readUtf8())
-        assertEquals("speed", reqBody.getJSONObject("routing").getString("strategy"))
-        assertEquals(0.2, reqBody.getDouble("temperature"), 0.001)
+        assertEquals(plainModel.id, reqBody.getString("model"))
 
         val savedSkill = skillUpdate.config.savedSkills.single()
         assertEquals("kotlin-audit", savedSkill.name)
@@ -311,7 +300,6 @@ class CustomizationAssistantTest {
             server.start()
             val assistant = CustomizationAssistant(
                 openRouterBaseUrl = server.url("/api/v1/"),
-                providerBase = { server.url("/v1/") },
             )
             block(server, assistant)
         }

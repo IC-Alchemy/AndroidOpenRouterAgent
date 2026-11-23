@@ -209,7 +209,6 @@ internal fun ColumnScope.SubagentEditorFields(
             error = catalogError,
             onRefresh = onRefreshModels,
             onDismiss = { showModelPicker = false },
-            providerName = "OpenRouter",
             allowManual = true,
         ) { chosen ->
             onModelChange(chosen.id)

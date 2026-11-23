@@ -36,7 +36,6 @@ internal fun ModelPicker(
     error: String?,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
-    providerName: String = "OpenRouter",
     allowManual: Boolean = false,
     onSelect: (CatalogModel) -> Unit,
 ) {
@@ -47,7 +46,7 @@ internal fun ModelPicker(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("$providerName models") },
+        title = { Text("OpenRouter models") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 CopyableOutlinedTextField(query, { query = it }, label = { Text("Search models") },
@@ -65,7 +64,7 @@ internal fun ModelPicker(
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (error != null) CopyableText(error, color = MaterialTheme.colorScheme.error)
                 if (!loading && error == null && visible.isEmpty()) {
-                    Text(if (query.isNotBlank()) "No matches." else "$providerName returned no eligible models.")
+                    Text(if (query.isNotBlank()) "No matches." else "OpenRouter returned no eligible models.")
                 }
                 LazyColumn(Modifier.heightIn(max = 330.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(visible, key = { it.id }) { model ->

@@ -58,34 +58,27 @@ class AgentViewModelModerationTest {
             application = app,
             textModerator = moderator,
             reportClient = ModerationReportClient(endpointUrl = server.url("/report").toString()),
-            chatClient = CompatibleChatClient(base = { server.url("/v1/") }),
+            client = OpenRouterAgentClient(baseUrl = server.url("/v1/")),
+            sdk = TestAgentSdkRuntime(app, server),
+            storage = testAgentStorage(app),
         )
         awaitCondition { !vm.isLoading }
-        val mockProvider = CustomProvider(
-            id = "mock-provider",
-            name = "Mock Provider",
-            baseUrl = "https://mock.example.com/v1/",
-            apiKey = "",
-            model = "mock/model",
-            stream = false,
-        )
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"data":[{"id":"mock/model","name":"Mock","modality":"text"}]}""")
+                .setBody("""{"data":[{"id":"mock/model","name":"Mock","supported_parameters":["tools"]}]}""")
         )
         runBlocking {
             vm.saveSettings(
                 AgentConfig(
-                    activeProviderId = mockProvider.id,
-                    customProviders = listOf(mockProvider),
+                    apiKey = "test-openrouter-key",
+                    model = "mock/model",
                     enableModeration = enableModeration,
                 )
             )
         }
         awaitCondition { !vm.catalogLoading }
-        // Drain the /v1/models request issued by refreshModels() on provider switch.
-        server.takeRequest()
+        assertEquals("/v1/models/user", server.takeRequest().path)
         return vm
     }
 
@@ -112,7 +105,7 @@ class AgentViewModelModerationTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"choices":[{"message":{"content":"Unfiltered AI response"},"finish_reason":"stop"}]}""")
+                    .setBody("Unfiltered AI response")
             )
 
             vm.promptText = "Potentially flagged user prompt"
@@ -137,7 +130,7 @@ class AgentViewModelModerationTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"choices":[{"message":{"content":"Normal response without engine"},"finish_reason":"stop"}]}""")
+                    .setBody("Normal response without engine")
             )
 
             vm.send("Hello")
@@ -161,7 +154,7 @@ class AgentViewModelModerationTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"choices":[{"message":{"content":"First reply"},"finish_reason":"stop"}]}""")
+                    .setBody("First reply")
             )
             vm.send("First prompt")
             awaitCondition { vm.workspace.messages.size == 2 && vm.activePrompt == null }
@@ -169,7 +162,7 @@ class AgentViewModelModerationTest {
 
             // Toggle ON and persist
             runBlocking { vm.saveSettings(vm.config.copy(enableModeration = true)) }
-            assertTrue(AgentStorage(app).loadConfig().enableModeration)
+            assertTrue(testAgentStorage(app).loadConfig().enableModeration)
 
             vm.send("Second prompt")
             awaitCondition { !vm.isModerating && vm.turnError != null }
@@ -178,12 +171,12 @@ class AgentViewModelModerationTest {
 
             // Toggle OFF and persist
             runBlocking { vm.saveSettings(vm.config.copy(enableModeration = false)) }
-            assertFalse(AgentStorage(app).loadConfig().enableModeration)
+            assertFalse(testAgentStorage(app).loadConfig().enableModeration)
 
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"choices":[{"message":{"content":"Third reply"},"finish_reason":"stop"}]}""")
+                    .setBody("Third reply")
             )
             vm.send("Third prompt")
             awaitCondition { vm.workspace.messages.size == 4 && vm.activePrompt == null }
@@ -204,7 +197,7 @@ class AgentViewModelModerationTest {
 
             awaitCondition { !vm.isModerating && vm.turnError != null }
 
-            assertEquals(1, server.requestCount) // Only the initial /v1/models from setup; 0 chat requests
+            assertEquals(1, server.requestCount) // Only the initial /v1/models/user from setup; 0 chat requests
             assertNull(vm.activePrompt)
             assertEquals(POLICY_PROMPT_BLOCKED, vm.turnError)
             assertEquals("Flagged unsafe user prompt", vm.promptText)
@@ -221,7 +214,7 @@ class AgentViewModelModerationTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"choices":[{"message":{"content":"Unsafe AI output"},"finish_reason":"stop"}]}""")
+                    .setBody("Unsafe AI output")
             )
 
             vm.promptText = "Safe user prompt"
@@ -234,7 +227,7 @@ class AgentViewModelModerationTest {
                     "err=${vm.turnError}, storage=${vm.storageError}, reqs=${server.requestCount}"
             }) { vm.workspace.messages.size == 2 && vm.activePrompt == null }
 
-            assertEquals(2, server.requestCount) // 1 initial /v1/models + 1 /v1/chat/completions
+            assertEquals(2, server.requestCount) // 1 initial /v1/models/user + 1 /v1/responses
             assertEquals(listOf("Safe user prompt", "Unsafe AI output"), moderator.calls)
             val assistant = vm.workspace.messages[1]
             assertFalse(assistant.isUser)
@@ -246,14 +239,13 @@ class AgentViewModelModerationTest {
             assertTrue(assistant.citations.isEmpty())
             assertNull(assistant.notice)
 
-            val nextPayload = chatPayload(
-                profile = vm.provider!!,
+            val nextPayload = runtimeOptions(
                 config = vm.config,
-                prior = vm.workspace,
+                workspace = vm.workspace,
                 prompt = "Follow up",
-                model = "mock/model",
+                model = checkNotNull(vm.selectedModel),
             )
-            val historyMessages = nextPayload.getJSONArray("messages")
+            val historyMessages = nextPayload.getJSONArray("history")
             val contents = (0 until historyMessages.length()).map {
                 historyMessages.getJSONObject(it).getString("content")
             }
@@ -270,7 +262,7 @@ class AgentViewModelModerationTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"choices":[{"message":{"content":"Helpful safe answer."},"finish_reason":"stop"}]}""")
+                    .setBody("Helpful safe answer.")
             )
 
             vm.send("Explain Kotlin coroutines.")
@@ -281,7 +273,7 @@ class AgentViewModelModerationTest {
                     "err=${vm.turnError}, storage=${vm.storageError}, reqs=${server.requestCount}"
             }) { vm.workspace.messages.size == 2 && vm.activePrompt == null }
 
-            assertEquals(2, server.requestCount) // 1 initial /v1/models + 1 /v1/chat/completions
+            assertEquals(2, server.requestCount) // 1 initial /v1/models/user + 1 /v1/responses
             assertEquals(listOf("Explain Kotlin coroutines.", "Helpful safe answer."), moderator.calls)
             assertNull(vm.turnError)
             val assistant = vm.workspace.messages[1]
@@ -293,8 +285,8 @@ class AgentViewModelModerationTest {
     @Test
     fun reportResponseSubmitsOnlyPromptResponseAndReason() {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(200))
             val vm = createConfiguredViewModel(server, RecordingTextModerator { true })
+            server.enqueue(MockResponse().setResponseCode(200))
 
             vm.reportResponse("Prompt A", "Response B", "Sexual content")
             awaitCondition { vm.reportMessage != null }
