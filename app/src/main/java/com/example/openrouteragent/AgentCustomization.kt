@@ -185,6 +185,8 @@ data class SdkSettings(
     val streamIdleSeconds: Int? = null,
     val toolConcurrency: Int? = null,
     val showReasoning: Boolean = true,
+    /** Renders agent replies as Markdown; off shows the raw text the model sent. */
+    val renderMarkdown: Boolean = true,
     val discoverSkills: Boolean = true,
     val theme: String = "oled",
 ) {

@@ -415,6 +415,11 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     }, trailingIcon = {
                                         Switch(checked = config.sdk.showReasoning, onCheckedChange = null)
                                     })
+                                    DropdownMenuItem(text = { Text("Render Markdown") }, onClick = {
+                                        agent.setRenderMarkdown(!config.sdk.renderMarkdown)
+                                    }, trailingIcon = {
+                                        Switch(checked = config.sdk.renderMarkdown, onCheckedChange = null)
+                                    })
                                     DropdownMenuItem(text = { Text("Mini apps") }, onClick = {
                                         showConfigure = false
                                         showMiniApps = true
@@ -491,6 +496,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         onCopyText = clipboard::copy,
                                         onFileClick = ::openFile,
                                         showReasoning = config.sdk.showReasoning,
+                                        renderMarkdown = config.sdk.renderMarkdown,
                                         onReport = { reportTarget = ReportTarget(prompt = prompt, response = entry.text) },
                                     )
                                 }
@@ -499,13 +505,15 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 item("active_prompt") { UserMessageBubble(activePrompt) }
                                 item("running") {
                                     if (runProgress != null) LiveAgentReply(runProgress,
-                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning)
+                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
+                                        renderMarkdown = config.sdk.renderMarkdown)
                                 }
                             }
                             if (interrupted != null) {
                                 item("interrupted") {
                                     LiveAgentReply(interrupted, interrupted = true,
                                         showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
+                                        renderMarkdown = config.sdk.renderMarkdown,
                                         onRetry = { following = true; agent.retryTurn() },
                                         onRetryWithoutTools = if (!agent.chatMode && config.agentToolsEnabled()) {
                                             { following = true; agent.retryTurn(toolsOff = true) }
@@ -1031,6 +1039,7 @@ internal fun AgentResponseCard(
     onCopyText: (String) -> Unit,
     onFileClick: (containerId: String, fileRef: ContainerFileRef) -> Unit,
     showReasoning: Boolean = true,
+    renderMarkdown: Boolean = true,
     onReport: () -> Unit = {},
 ) {
     val uriHandler = LocalUriHandler.current
@@ -1066,12 +1075,17 @@ internal fun AgentResponseCard(
                             .size(18.dp)
                     )
                 }
-                CopyableText(
-                    text = entry.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
-                        else MaterialTheme.colorScheme.onSurface,
-                )
+                // Errors and moderation notices come from the app, not the model, so they stay plain text.
+                if (renderMarkdown && !isWarningCard) {
+                    MarkdownText(entry.text, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+                } else {
+                    CopyableText(
+                        text = entry.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
+                            else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
 
             entry.notice?.let {

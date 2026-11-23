@@ -115,7 +115,7 @@ internal fun AgentRunStatus(
 
 @Composable
 internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, showReasoning: Boolean = true,
-    onShowReasoning: ((Boolean) -> Unit)? = null, onRetry: (() -> Unit)? = null,
+    onShowReasoning: ((Boolean) -> Unit)? = null, renderMarkdown: Boolean = true, onRetry: (() -> Unit)? = null,
     onRetryWithoutTools: (() -> Unit)? = null, onActivity: (() -> Unit)? = null) {
     // Interrupted turns restored from storage have no timeline, only the joined text.
     val blocks = progress.timeline.ifEmpty {
@@ -134,8 +134,12 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
                     when (block) {
                         is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning, onShowReasoning)
                         is LiveBlock.ToolCall -> progress.tool(block.id)?.let { LiveToolRow(it) }
-                        is LiveBlock.Answer -> CopyableText(block.text, style = MaterialTheme.typography.bodyMedium,
-                            keepSelectionOnReplacement = live)
+                        is LiveBlock.Answer -> if (renderMarkdown) {
+                            MarkdownText(block.text, keepSelectionOnReplacement = live)
+                        } else {
+                            CopyableText(block.text, style = MaterialTheme.typography.bodyMedium,
+                                keepSelectionOnReplacement = live)
+                        }
                     }
                 }
             }
