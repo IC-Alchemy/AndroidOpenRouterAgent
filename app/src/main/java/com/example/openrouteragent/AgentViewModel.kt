@@ -32,19 +32,22 @@ class AgentViewModel internal constructor(
     application: Application,
     private val textModerator: TextModerator?,
     private val reportClient: ModerationReportClient,
-    private val chatClient: CompatibleChatClient,
+    val client: OpenRouterAgentClient,
+    private val sdk: AgentSdkRuntime = AgentSdkRuntime(application),
+    private val storage: AgentStorage = AgentStorage(application),
 ) : AndroidViewModel(application) {
     @JvmOverloads
     constructor(
         application: Application,
         textModerator: TextModerator? = ContentModerator.fromAssets(application),
         reportClient: ModerationReportClient = ModerationReportClient(),
-    ) : this(application, textModerator, reportClient, CompatibleChatClient())
+    ) : this(application, textModerator, reportClient, OpenRouterAgentClient())
 
-    val client = OpenRouterAgentClient()
     internal val files = OpenRouterFiles(application, client)
-    private val storage = AgentStorage(application)
-    private val sdk = AgentSdkRuntime(application)
+    internal val github = GitHubProjects(File(application.noBackupFilesDir, "github"), storage.githubCredentials())
+    private var githubDecision: CompletableDeferred<Boolean>? = null
+    internal var githubReview by mutableStateOf<GitHubReview?>(null)
+        private set
     private val customizationAssistant = CustomizationAssistant()
     private val miniAppGenerator by lazy {
         MiniAppGenerator(libraries = MiniAppLibraries(File(application.cacheDir, "miniapp-libraries")))
@@ -68,17 +71,15 @@ class AgentViewModel internal constructor(
         val projectId = library.chats.firstOrNull { it.id == workspace.id }?.projectId
         return library.projects.firstOrNull { it.id == projectId }
     }
-    internal val sandboxId: String? get() = if (usesOpenRouter) {
+    internal val sandboxId: String? get() =
         chatProject?.let { projectSandboxId(it.id, config) } ?: workspace.containerId
-    } else null
     private data class AttachmentSelection(val area: ProjectFileArea, val account: String, val files: List<WorkspaceFileRef>)
     private var attachmentSelection by mutableStateOf<AttachmentSelection?>(null)
     internal val attachedFiles: List<WorkspaceFileRef> get() = attachmentSelection
         ?.takeIf { it.area == fileArea() && it.account == workspaceTag(config) }?.files.orEmpty()
-    internal val canAttachWorkspaceFiles: Boolean get() = usesOpenRouter && providerReady && activePrompt == null &&
+    internal val canAttachWorkspaceFiles: Boolean get() = providerReady && activePrompt == null &&
         config.enableShellSandbox && config.sdk.toolChoice != "none" && !chatMode
-    /** Chat mode applies to OpenRouter chats; other providers already send messages without tools. */
-    val chatMode: Boolean get() = usesOpenRouter && workspace.chatMode
+    val chatMode: Boolean get() = workspace.chatMode
     var promptText by mutableStateOf("")
     var isLoading by mutableStateOf(true)
         private set
@@ -104,28 +105,8 @@ class AgentViewModel internal constructor(
         private set
     var catalogError by mutableStateOf<String?>(null)
         private set
-    internal var imageModels by mutableStateOf<List<OpenUncensoredImageModel>>(emptyList())
-        private set
-    internal var imageModelsLoading by mutableStateOf(false)
-        private set
-    internal var imageModelsError by mutableStateOf<String?>(null)
-        private set
-    internal var generatingImages by mutableStateOf(false)
-        private set
-    internal var imageResult by mutableStateOf<ImageGenerationResult?>(null)
-        private set
-    internal var imageError by mutableStateOf<String?>(null)
-        private set
-    val provider: CustomProvider? get() = config.customProviders.firstOrNull { it.id == config.activeProviderId }
-    val usesOpenRouter: Boolean get() = config.activeProviderId == OPENROUTER_ID
-    val providerName: String get() = provider?.name ?: "OpenRouter"
-    val providerReady: Boolean get() = provider?.canChat ?: config.apiKey.isNotBlank()
-    val selectedModel: CatalogModel? get() {
-        val active = provider ?: return selectModel(config, availableModels)
-        if (active.model.isBlank()) return availableModels.firstOrNull()
-        return availableModels.firstOrNull { it.id == active.model }
-            ?: CatalogModel(active.model, active.model, 0, emptySet())
-    }
+    val providerReady: Boolean get() = config.apiKey.isNotBlank()
+    val selectedModel: CatalogModel? get() = selectModel(config, availableModels)
 
     internal var progress by mutableStateOf<AgentProgress?>(null)
         private set
@@ -138,7 +119,6 @@ class AgentViewModel internal constructor(
     val approval: ToolApproval? get() = approvals.firstOrNull()
 
     private var catalogJob: Job? = null
-    private var imageJob: Job? = null
     private var running: Job? = null
 
     init {
@@ -174,89 +154,31 @@ class AgentViewModel internal constructor(
 
     fun refreshModels(clear: Boolean = false) {
         catalogJob?.cancel()
-        val snapshot = config
-        val active = provider
-        val key = active?.apiKey ?: snapshot.apiKey
+        val key = config.apiKey
         if (clear || !providerReady) availableModels = emptyList()
         catalogError = null
         catalogLoading = providerReady
         if (!providerReady) return
         catalogJob = viewModelScope.launch {
             try {
-                val models = if (active == null) client.availableModels(key) else chatClient.models(active)
-                availableModels = models
+                availableModels = client.availableModels(key)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                catalogError = if (active == null) e.userMessage(key) else
-                    providerMessage(active, e) + " You can enter the model ID manually in Providers."
+                catalogError = e.userMessage(key)
             } finally {
                 if (kotlin.coroutines.coroutineContext[Job]?.isCancelled != true) catalogLoading = false
             }
         }
     }
 
-    internal suspend fun discoverModels(profile: CustomProvider): List<CatalogModel> {
-        val clean = profile.normalized()
-        clean.error()?.let { throw IllegalArgumentException(it) }
-        require(clean.canChat) { "Enter the ${clean.name} API key first." }
-        return chatClient.models(clean)
-    }
-
-    internal fun refreshImageModels() {
-        val active = provider?.takeIf { it.id == OPENUNCENSORED_ID } ?: return
-        if (imageModelsLoading) return
-        imageModelsLoading = true
-        imageModelsError = null
-        viewModelScope.launch {
-            try {
-                imageModels = chatClient.imageModels(active)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                imageModelsError = providerMessage(active, failure)
-            } finally {
-                imageModelsLoading = false
-            }
-        }
-    }
-
-    internal fun generateImages(request: ImageGenerationRequest) {
-        val active = provider?.takeIf { it.id == OPENUNCENSORED_ID && it.canChat } ?: return
-        if (generatingImages || request.model !in imageModels) return
-        generatingImages = true
-        imageError = null
-        imageJob = viewModelScope.launch {
-            try {
-                imageResult = chatClient.generateImages(active, request)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                imageError = providerMessage(active, failure)
-            } finally {
-                if (kotlin.coroutines.coroutineContext[Job]?.isCancelled != true) generatingImages = false
-            }
-        }
-    }
-
-    internal fun cancelImageGeneration() {
-        imageJob?.cancel()
-        imageJob = null
-        generatingImages = false
-    }
-
     fun chooseModel(model: CatalogModel) {
         if (isLoading || isSavingSettings || isWorkingChat || isModerating || activePrompt != null ||
-            (usesOpenRouter && (model !in availableModels || (config.agentToolsEnabled() && !model.supportsTools)))) return
+            model !in availableModels || (config.agentToolsEnabled() && !model.supportsTools)) return
         viewModelScope.launch {
             try {
                 if (activePrompt != null) return@launch
-                val current = config
-                val active = provider
-                if (active == null) saveSettings(current.copy(model = model.id))
-                else saveSettings(current.copy(customProviders = current.customProviders.map {
-                    if (it.id == active.id) it.copy(model = model.id) else it
-                }))
+                saveSettings(config.copy(model = model.id))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -272,19 +194,43 @@ class AgentViewModel internal constructor(
         notifyBackground()
     }
 
+    internal fun decideGitHubReview(review: GitHubReview, approve: Boolean) {
+        if (githubReview === review) githubDecision?.complete(approve)
+    }
+
+    private suspend fun reviewGitHub(review: GitHubReview, access: GitHubAgentAccess): String =
+        withContext(Dispatchers.Main.immediate) {
+            check(githubDecision == null) { "Another GitHub change is waiting for review." }
+            val decision = CompletableDeferred<Boolean>()
+            githubDecision = decision
+            githubReview = review
+            notifyBackground()
+            val approved = try {
+                decision.await()
+            } finally {
+                githubDecision = null
+                githubReview = null
+                notifyBackground()
+            }
+            check(approved) { "The user declined the GitHub change." }
+            github.submit(review, access)
+        }
+
     private val app get() = getApplication<Application>()
 
     /** Mirrors the live status, or a pending approval, into the ongoing run notification. */
     private fun notifyBackground() {
         val prompt = activePrompt ?: return
         val pending = approval
-        val notice = if (pending != null) RunNotice(
+        val notice = if (githubReview != null) {
+            RunNotice("GitHub change ready for review", "Open the app to see the details and decide.")
+        } else if (pending != null) RunNotice(
             title = if (pending.asksUser) "The agent has a question" else "Allow ${pending.name}?",
             text = if (pending.asksUser) "${pending.name}. Open the app to answer."
                 else (pending.url.ifBlank { pending.arguments }).take(400),
             approval = pending,
         ) else RunNotice("Working on: ${replyPreview(prompt, 60)}",
-            progress?.status(providerName) ?: "Working")
+            progress?.status() ?: "Working")
         RunNotifications.update(notice)
     }
 
@@ -347,8 +293,7 @@ class AgentViewModel internal constructor(
         val prompt = text.trim()
         if (isLoading || isSavingSettings || isWorkingChat || isModerating || activePrompt != null || prompt.isBlank()) return
         if (!providerReady) {
-            turnError = if (usesOpenRouter) "Add your OpenRouter API key in Settings before sending."
-                else "Enter the $providerName API key in Providers before sending."
+            turnError = "Add your OpenRouter API key in Settings before sending."
             return
         }
         // Reject impossible requests before any network call, keeping the prompt in the composer.
@@ -356,15 +301,14 @@ class AgentViewModel internal constructor(
             turnError = it
             return
         }
-        val active = provider
         val model = selectedModel ?: run {
-            turnError = if (catalogLoading) "Loading models…" else "Open Models or enter a model ID in Providers."
+            turnError = if (catalogLoading) "Loading models…" else "Open Models to choose a model."
             return
         }
         val priorWorkspace = workspace
         val area = fileArea()
         val noTools = toolsOff || chatMode
-        val attachments = if (active == null && !noTools) attachedFiles else emptyList()
+        val attachments = if (!noTools) attachedFiles else emptyList()
         if (attachments.isNotEmpty() && !canAttachWorkspaceFiles) {
             turnError = "Turn on the hosted shell or remove the file attachments before sending."
             return
@@ -405,16 +349,14 @@ class AgentViewModel internal constructor(
             var finishedTitle = "Reply ready"
             var finishedText = "The agent finished."
             try {
-                val sdkResult = if (active == null) {
-                    sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
-                        onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
-                        files = runFiles,
-                        onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
-                            executeAppAction(area, name, args)
-                        })
-                } else {
-                    SdkRunResult(chatClient.run(active, currentConfig, priorWorkspace, prompt, model.id, ::updateProgress), null)
-                }
+                val gitHubAccess = if (noTools || currentConfig.sdk.toolChoice == "none") null
+                    else area.projectId?.let { github.session(it) }
+                val sdkResult = sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
+                    onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
+                    files = runFiles.copy(github = gitHubAccess != null),
+                    onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
+                        executeAppAction(area, gitHubAccess, name, args)
+                    })
                 val result = sdkResult.result
                 val responseSafe = if (activeModerator != null) {
                     try {
@@ -480,7 +422,7 @@ class AgentViewModel internal constructor(
                 if (turnError != null) keepInterrupted(prompt, turnError)
                 throw e
             } catch (e: Exception) {
-                turnError = if (active == null) e.userMessage(currentConfig.apiKey) else providerMessage(active, e)
+                turnError = e.userMessage(currentConfig.apiKey)
                 finishedTitle = "The agent could not finish"
                 finishedText = turnError ?: "The run failed."
                 keepInterrupted(prompt, turnError)
@@ -493,7 +435,15 @@ class AgentViewModel internal constructor(
         }
     }
 
-    private suspend fun executeAppAction(area: ProjectFileArea, name: String, args: JSONObject): JSONObject {
+    private suspend fun executeAppAction(
+        area: ProjectFileArea, gitHubAccess: GitHubAgentAccess?, name: String, args: JSONObject,
+    ): JSONObject {
+        if (name in githubActions) {
+            check(gitHubAccess != null && gitHubAccess.project == area.projectId) {
+                "GitHub tools are unavailable in this chat."
+            }
+            return github.performAction(gitHubAccess, name, args, ::reviewGitHub)
+        }
         if (name in projectFileActions) {
             if (name == "write_project_file" || name == "edit_project_file") prepareFileArea(area)
             return withContext(Dispatchers.IO) { files.store.performAction(area, name, args) }
@@ -551,7 +501,7 @@ class AgentViewModel internal constructor(
 
     fun cancelTurn() {
         if (activePrompt == null) return
-        turnError = "Stopped waiting. $providerName may still finish the submitted request."
+        turnError = "Stopped waiting. OpenRouter may still finish the submitted request."
         running?.cancel()
     }
 
@@ -606,6 +556,7 @@ class AgentViewModel internal constructor(
     }
 
     fun deleteProject(id: String) = chatAction {
+        github.disconnect(id)
         withContext(Dispatchers.IO) { chats.deleteProject(id) }
     }
 
@@ -640,9 +591,7 @@ class AgentViewModel internal constructor(
         check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating) {
             "Wait for the current task to finish before updating settings."
         }
-        require(providerReady) {
-            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
-        }
+        require(providerReady) { "Connect OpenRouter in Settings first." }
         val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
         val update = customizationAssistant.create(config, model, kind, prompt)
         saveSettings(update.config)
@@ -653,9 +602,7 @@ class AgentViewModel internal constructor(
         check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating) {
             "Wait for the current task to finish before updating settings."
         }
-        require(providerReady) {
-            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
-        }
+        require(providerReady) { "Connect OpenRouter in Settings first." }
         val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
         val update = customizationAssistant.improve(config, model, target, prompt)
         saveSettings(update.config)
@@ -663,17 +610,13 @@ class AgentViewModel internal constructor(
     }
 
     internal suspend fun createMiniAppWithModel(prompt: String): MiniApp {
-        require(providerReady) {
-            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
-        }
+        require(providerReady) { "Connect OpenRouter in Settings first." }
         val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
         return miniAppGenerator.createMiniApp(config, model, miniAppRepository(app), prompt)
     }
 
     internal suspend fun editMiniAppWithModel(id: String, changeRequest: String): MiniApp {
-        require(providerReady) {
-            if (usesOpenRouter) "Connect OpenRouter in Settings first." else "Enter your $providerName API key first."
-        }
+        require(providerReady) { "Connect OpenRouter in Settings first." }
         val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
         return miniAppGenerator.editMiniApp(config, model, miniAppRepository(app), id, changeRequest)
     }
@@ -693,15 +636,13 @@ class AgentViewModel internal constructor(
             mcpToken = updated.mcpToken.trim(),
             extraToolsJson = updated.extraToolsJson.trim(),
             allowedDomainsCsv = updated.allowedDomainsCsv.trim(),
-            systemInstructions = updated.systemInstructions.trim(),
-            customProviders = updated.customProviders.map(CustomProvider::normalized))
+            systemInstructions = updated.systemInstructions.trim())
         isSavingSettings = true
         try {
             withContext(NonCancellable) {
                 val previous = config
                 val change = chatScope(previous) != chatScope(clean)
-                val removed = previous.customProviders.map { it.id }.toSet() - clean.customProviders.map { it.id }.toSet()
-                val resetSandbox = !change && clean.activeProviderId == OPENROUTER_ID &&
+                val resetSandbox = !change &&
                     (previous.sandboxDomains() != clean.sandboxDomains() ||
                         previous.enableShellSandbox != clean.enableShellSandbox)
                 val next = withContext(Dispatchers.IO) {
@@ -714,9 +655,6 @@ class AgentViewModel internal constructor(
                     LiteRtInitializer.initialize(app)
                 }
                 next?.let { (saved, index) ->
-                    cancelImageGeneration()
-                    imageResult = null
-                    imageError = null
                     showWorkspace(saved)
                     library = index
                     refreshModels(clear = true)
@@ -728,12 +666,6 @@ class AgentViewModel internal constructor(
                         saveWorkspace(workspace)
                     }
                 }
-                withContext(Dispatchers.IO) {
-                    for (id in removed) {
-                        chats.deleteProvider(id)
-                        storage.removeLegacyWorkspace(id)
-                    }
-                }
                 storageError = null
             }
         } finally {
@@ -743,8 +675,8 @@ class AgentViewModel internal constructor(
 
     private fun loadChats(settings: AgentConfig): Pair<Workspace, ChatLibrary> {
         val scope = chatScope(settings)
-        if (chats.importLegacy(scope) { storage.readLegacyWorkspace(scope.provider) }) {
-            storage.removeLegacyWorkspace(scope.provider)
+        if (chats.importLegacy(scope) { storage.readLegacyWorkspace() }) {
+            storage.removeLegacyWorkspace()
         }
         val saved = chats.active(scope)?.let { restoreWorkspace(settings, it) } ?: Workspace()
         return saved to chats.library(scope)
@@ -865,7 +797,7 @@ class AgentViewModel internal constructor(
     }
 
     private fun scopedWorkspace(next: Workspace) = next.copy(accountTag = workspaceTag(config),
-        sandboxDomains = if (usesOpenRouter) config.sandboxDomains() else emptyList())
+        sandboxDomains = config.sandboxDomains())
 
     private suspend fun saveWorkspace(next: Workspace) {
         val scope = chatScope(config)
@@ -876,17 +808,13 @@ class AgentViewModel internal constructor(
     }
 }
 
-internal fun chatScope(config: AgentConfig) = ChatScope(config.activeProviderId, workspaceTag(config))
+internal fun chatScope(config: AgentConfig) = ChatScope(OPENROUTER_ID, workspaceTag(config))
 
-internal fun workspaceTag(config: AgentConfig): String {
-    val active = config.customProviders.firstOrNull { it.id == config.activeProviderId }
-    return if (active == null) accountTag(config.apiKey)
-    else accountTag("${active.id}|${normalizeChatBase(active.baseUrl)}|${active.apiKey.trim()}")
-}
+internal fun workspaceTag(config: AgentConfig): String = accountTag(config.apiKey)
 
 internal fun restoreWorkspace(config: AgentConfig, saved: Workspace): Workspace = when {
     saved.accountTag != workspaceTag(config) -> Workspace()
-    config.activeProviderId == OPENROUTER_ID && saved.sandboxDomains != config.sandboxDomains() ->
+    saved.sandboxDomains != config.sandboxDomains() ->
         saved.copy(sessionId = UUID.randomUUID().toString(), containerId = null, sdkHistory = null, sdkState = null)
     else -> saved
 }

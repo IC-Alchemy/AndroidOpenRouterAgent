@@ -45,7 +45,7 @@ data class ToolApproval(
 )
 data class SdkRunResult(val result: AgentRunResult, val history: String?, val state: String? = null)
 
-internal class AgentSdkRuntime(private val context: Context) {
+internal open class AgentSdkRuntime(private val context: Context) {
     private data class ActiveRun(
         val id: String,
         val completion: CompletableDeferred<SdkRunResult>,
@@ -70,7 +70,7 @@ internal class AgentSdkRuntime(private val context: Context) {
     // Request interception runs on WebView worker threads.
     @Volatile private var approvedToolOrigins: Set<Triple<String, String, Int>> = emptySet()
 
-    suspend fun run(
+    open suspend fun run(
         settings: AgentConfig,
         workspace: Workspace,
         prompt: String,
@@ -394,7 +394,7 @@ internal fun runtimeOptions(
         .put("domains", JSONArray(config.sandboxDomains())).put("webSearch", config.enableWebSearch)
         .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
         .put("workspaceFiles", config.enableWorkspaceFiles).put("projectFolder", files.projectFolder)
-        .put("appActions", appActions)
+        .put("appActions", appActions).put("github", appActions && files.github)
         .put("fileIds", JSONArray(files.attachments.map { it.id }))
         .put("attachmentNames", JSONArray(files.attachments.map { it.id.takeLast(8) + "-" + it.filename.substringAfterLast('/') }))
         .put("miniApps", config.miniApps)

@@ -100,9 +100,8 @@ class PrecisionStudioUiTest {
     }
 
     @Test
-    fun statusCapabilitiesBarAndEmptyWorkbenchRenderOpenRouterAndCustomProviderStates() {
+    fun statusCapabilitiesBarAndEmptyWorkbenchRenderOpenRouterTools() {
         var selectedPrompt = ""
-        var usesOpenRouter by androidx.compose.runtime.mutableStateOf(true)
         composeRule.setContent {
             OpenRouterAgentTheme(darkTheme = true) {
                 androidx.compose.foundation.layout.Column {
@@ -124,10 +123,8 @@ class PrecisionStudioUiTest {
                         onResetContainer = {},
                     )
                     EmptyAgentState(
-                        hasApiKey = !usesOpenRouter,
+                        hasApiKey = false,
                         onOpenSettings = {},
-                        providerName = if (usesOpenRouter) "OpenRouter" else "CustomAI",
-                        usesOpenRouter = usesOpenRouter,
                         onSelectPrompt = { selectedPrompt = it },
                     )
                 }
@@ -147,14 +144,10 @@ class PrecisionStudioUiTest {
             .performClick()
         assertEquals("Check the Linux OS, Python, and Node.js versions in my sandbox.", selectedPrompt)
 
-        usesOpenRouter = false
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("Start a conversation with CustomAI.").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Explain a topic in plain language.").performScrollTo().assertIsDisplayed()
     }
 
     @Test
-    fun agentInputBarHandlesAgentAndChatModeAndCustomProviderWithoutModeSwitch() {
+    fun agentInputBarHandlesAgentAndChatMode() {
         var currentMode by mutableStateOf(false)
         composeRule.setContent {
             OpenRouterAgentTheme(darkTheme = false) {
@@ -168,7 +161,6 @@ class PrecisionStudioUiTest {
                         onSend = {},
                         onStop = {},
                         onVoice = {},
-                        onImages = {},
                         chatMode = currentMode,
                         onChatMode = { currentMode = it },
                     )
@@ -181,7 +173,6 @@ class PrecisionStudioUiTest {
                         onSend = {},
                         onStop = {},
                         onVoice = {},
-                        onImages = null,
                         chatMode = null,
                     )
                 }
@@ -193,7 +184,7 @@ class PrecisionStudioUiTest {
         composeRule.onNodeWithText("Chat").performClick()
         assertEquals(true, currentMode)
         composeRule.onNodeWithText("No tools · faster, cheaper").assertIsDisplayed()
-        composeRule.onNodeWithText("Generate images").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Generate images").assertCountEquals(0)
         composeRule.onNodeWithText("Turn failed").assertIsDisplayed()
     }
 

@@ -22,7 +22,7 @@ A run still ends if Android stops the app, for example after a force stop or a r
 
 ## Chat and agent mode
 
-With OpenRouter, the switch above the message field picks how each chat works. **Agent** is the default: the model can use the tools you turned on in Settings, such as the hosted shell, web search, files, mini apps, MCP and custom tools, over several steps. **Chat** sends messages without tools. Replies start sooner and cost less, because tool definitions are not sent with every message, and models without tool calling work too. Reasoning and streaming work the same in both modes. The mode is saved with the chat, a new chat starts in the mode of the chat you were in, and you can switch at any time between messages. Other providers always work like chat mode.
+The switch above the message field picks how each chat works. **Agent** is the default: the model can use the tools you turned on in Settings, such as the hosted shell, web search, files, mini apps, MCP and custom tools, over several steps. **Chat** sends messages without tools. Replies start sooner and cost less, because tool definitions are not sent with every message, and models without tool calling work too. Reasoning and streaming work the same in both modes. The mode is saved with the chat, a new chat starts in the mode of the chat you were in, and you can switch at any time between messages.
 
 ## Mini apps
 
@@ -40,7 +40,7 @@ Tap the microphone in the composer to dictate a message. Android's speech recogn
 
 Open **Chats** in the header. Use **New chat** to start another conversation, or **New project** to create a group. Select a project before starting a chat to file it there automatically. Use the menu beside a chat to rename it, move it to a project, or delete it. Removing a project moves its chats to **Unfiled**.
 
-Chats are scoped to the selected provider and credential. Reopening an OpenRouter chat restores its SDK conversation state, tool results, and hosted sandbox reference. The app imports the old saved conversation for each matching provider when you first open that provider. Storage stays on the device.
+Chats are scoped to your OpenRouter credential. Reopening an OpenRouter chat restores its SDK conversation state, tool results, and hosted sandbox reference. The app imports the legacy OpenRouter conversation for the matching credential. Storage stays on the device.
 
 ### Work with files
 
@@ -51,15 +51,13 @@ Chats are scoped to the selected provider and credential. Reopening an OpenRoute
 
 **Workspace files tool** in Settings gives unfiled OpenRouter chats the hosted `openrouter:files` tool. OpenRouter scopes that tool to the entire workspace. Project chats use app file functions scoped to their project folder. [OpenRouter Files server tool](https://openrouter.ai/docs/guides/features/server-tools/files)
 
-## Providers
+### Work with a GitHub repository
 
-Open **Configure → Providers** or tap the provider name in the header. The **OpenUncensored** preset uses `https://api.openuncensored.com/v1`, the model `deepseek-v4.1-flash-1017-uncensored`, and quality routing. Tap **Use**, enter your OpenUncensored API key, and tap **Save and use**.
+1. Open **Chats**, select a project, then open the project’s **Manage project → GitHub** menu. Enter the repository URL and a fine-grained GitHub token scoped to that repository. Grant **Contents: Read and write** for publishing and **Pull requests: Read and write** for opening PRs. Find the repository, then confirm the base branch.
+2. Turn on **Let the agent work with this repo** and start a message in Agent mode. Try “Find the settings screen and draft a change to its Help text.” The app lists paths first and downloads only the small text files requested by you or the agent. Text the agent reads is sent to OpenRouter.
+3. Ask the agent to publish, or use **Review and publish** in the GitHub panel. Review the files, diff, commit message, and destination branch. A confirmed publish creates one commit on the project’s work branch. Use a separate review to open a PR.
 
-With OpenUncensored selected, tap **Generate images** above the message field. Choose a model from the live catalog, enter a prompt, and select a size and 1–4 images. The dialog shows the estimated cost before you generate. Preview the results and tap **Save image** to keep a copy on your device.
-
-Use **Add provider** to connect another HTTPS API that implements OpenAI-compatible Chat Completions. Enter the base URL or the full `/chat/completions` URL. **Load models** discovers models when the server exposes `GET /models`. Enter a model ID directly if discovery is unavailable. Each profile also has a streaming toggle, system instructions, and optional JSON request fields for provider-specific settings.
-
-Custom providers support text chat and pinned skills. Select OpenRouter to use the Agent SDK, hosted sandbox, SDK tools, and on-demand skill discovery.
+Drafts and cached files are available offline. Use **Refresh** to check for upstream changes and resolve overlapping drafts. GitHub availability, token permissions, and repository rules apply to commits and pull requests.
 
 ## Agent controls
 
@@ -71,7 +69,7 @@ Custom providers support text chat and pinned skills. Select OpenRouter to use t
 
 ### Delegate work to subagents
 
-1. Select OpenRouter as the provider. Open **Settings → OpenRouter Server Tools → Subagents → Add subagent**.
+1. Open **Settings → OpenRouter Server Tools → Subagents → Add subagent**.
 2. Enter an optional name, worker model ID, and instructions. You can add several uniquely named workers and one unnamed default worker. If you leave the model blank, OpenRouter uses the main model.
 3. Tap **Apply**, then **Save** in Settings. In chat, try asking the main model to delegate a focused task, such as extracting action items from meeting notes and returning them as a checklist. The model decides when to delegate. **Activity** shows each worker's task, status, result or error, and any inherited function calls.
 

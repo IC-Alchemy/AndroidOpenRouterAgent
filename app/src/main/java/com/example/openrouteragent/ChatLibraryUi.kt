@@ -45,7 +45,9 @@ private const val UNFILED_CHATS = "unfiled"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ChatLibrarySheet(agent: AgentViewModel, onProjectFiles: (String) -> Unit, onClose: () -> Unit) {
+internal fun ChatLibrarySheet(
+    agent: AgentViewModel, onProjectFiles: (String) -> Unit, onGitHub: (String) -> Unit, onClose: () -> Unit,
+) {
     val library = agent.library
     val busy = agent.isWorkingChat
     var filter by rememberSaveable { mutableStateOf(agent.chatProject?.id ?: ALL_CHATS) }
@@ -68,8 +70,6 @@ internal fun ChatLibrarySheet(agent: AgentViewModel, onProjectFiles: (String) ->
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Chats", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-                    Text(agent.providerName, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = onClose, enabled = !busy) { Text("Close") }
             }
@@ -85,13 +85,15 @@ internal fun ChatLibrarySheet(agent: AgentViewModel, onProjectFiles: (String) ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(project.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (agent.usesOpenRouter) {
-                        TextButton(enabled = !busy, onClick = { onProjectFiles(project.id) }) { Text("Project files") }
-                    }
+                    TextButton(enabled = !busy, onClick = { onProjectFiles(project.id) }) { Text("Project files") }
                     IconButton(enabled = !busy, onClick = { projectsMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Manage project")
                     }
                     DropdownMenu(expanded = projectsMenu, onDismissRequest = { projectsMenu = false }) {
+                        DropdownMenuItem(text = { Text("GitHub") }, onClick = {
+                            projectsMenu = false
+                            onGitHub(project.id)
+                        })
                         DropdownMenuItem(text = { Text("Rename project") }, onClick = {
                             projectsMenu = false
                             nameDialog = NameDialog("Rename project", project.name) { agent.renameProject(project.id, it) }

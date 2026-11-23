@@ -422,3 +422,9 @@ private fun JSONArray?.objects(): Sequence<JSONObject> =
     if (this == null) emptySequence() else (0 until length()).asSequence().mapNotNull { optJSONObject(it) }
 private fun JSONArray?.strings(): Sequence<String> =
     if (this == null) emptySequence() else (0 until length()).asSequence().mapNotNull { opt(it) as? String }
+
+internal fun openRouterError(payload: JSONObject): String? = when (val error = payload.opt("error")) {
+    is JSONObject -> error.optString("message").ifBlank { "OpenRouter returned an error." }
+    is String -> error.takeIf(String::isNotBlank)
+    else -> (payload.opt("message") as? String)?.takeIf { payload.optJSONArray("choices") == null }
+}

@@ -1,5 +1,6 @@
 import { tool } from '@openrouter/agent';
 import { z } from 'zod';
+import { githubToolNames } from './github-tools.mjs';
 import { customInputSchema, webhookEndpoint } from './customization.mjs';
 import { hostedToolTypes, subagentConfig, subagentType } from './subagent.mjs';
 
@@ -108,6 +109,7 @@ const actionDefinitions = {
 
 export const resourceActionNames = Object.keys(actionDefinitions);
 const reservedCustomNames = new Set([
+  ...githubToolNames,
   'device_time_zone', 'load_skill', 'shared', 'task',
   'list_project_files', 'read_project_file', 'write_project_file', 'edit_project_file',
   ...resourceActionNames,

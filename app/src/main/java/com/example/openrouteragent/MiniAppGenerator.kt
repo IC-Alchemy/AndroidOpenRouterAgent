@@ -82,9 +82,6 @@ internal class MiniAppGenerator(
         .retryOnConnectionFailure(false)
         .build(),
     private val openRouterBaseUrl: HttpUrl = "https://openrouter.ai/api/v1/".toHttpUrl(),
-    private val providerBase: (CustomProvider) -> HttpUrl = {
-        requireNotNull(normalizeChatBase(it.baseUrl)) { "Enter a valid provider API URL." }
-    },
     private val libraries: MiniAppLibraries = MiniAppLibraries(null),
     private val renderIcon: (svg: String?, themeColor: String, name: String) -> ByteArray = { svg, color, name ->
         MiniAppIconRenderer.renderSvgToPng(svg, color, name)
@@ -218,11 +215,10 @@ internal class MiniAppGenerator(
         systemPrompt: String,
         userPrompt: String,
     ): String {
-        val activeProvider = config.customProviders.firstOrNull { it.id == config.activeProviderId }
         val modes = when {
-            activeProvider == null && (model.parameters.isEmpty() || "structured_outputs" in model.parameters) ->
+            model.parameters.isEmpty() || "structured_outputs" in model.parameters ->
                 listOf(ResponseFormatMode.JSON_SCHEMA, ResponseFormatMode.JSON_OBJECT, ResponseFormatMode.PLAIN)
-            activeProvider == null && "response_format" in model.parameters ->
+            "response_format" in model.parameters ->
                 listOf(ResponseFormatMode.JSON_OBJECT, ResponseFormatMode.PLAIN)
             else -> listOf(ResponseFormatMode.PLAIN)
         }
@@ -230,7 +226,7 @@ internal class MiniAppGenerator(
         var lastError: Exception? = null
         for ((idx, mode) in modes.withIndex()) {
             try {
-                return sendCompletionRequest(config, activeProvider, model, systemPrompt, userPrompt, mode)
+                return sendCompletionRequest(config, model, systemPrompt, userPrompt, mode)
             } catch (e: HttpStatusException) {
                 lastError = e
                 // If an endpoint rejects response_format (HTTP 400/422 or OpenRouter 404 parameter mismatch), retry softer.
@@ -255,79 +251,55 @@ internal class MiniAppGenerator(
 
     private suspend fun sendCompletionRequest(
         config: AgentConfig,
-        activeProvider: CustomProvider?,
         model: CatalogModel,
         systemPrompt: String,
         userPrompt: String,
         mode: ResponseFormatMode,
     ): String {
-        val apiKey = if (activeProvider == null) config.apiKey.trim() else activeProvider.apiKey.trim()
-        val providerLabel = activeProvider?.name ?: "OpenRouter"
+        val apiKey = config.apiKey.trim()
+        val providerLabel = "OpenRouter"
 
         val messages = JSONArray()
             .put(JSONObject().put("role", "system").put("content", systemPrompt))
             .put(JSONObject().put("role", "user").put("content", userPrompt))
 
-        val url: HttpUrl
-        val body: JSONObject
-        val requestBuilder: Request.Builder
-
-        if (activeProvider == null) {
-            require(apiKey.isNotBlank()) { "Add your OpenRouter API key in Settings first." }
-            url = openRouterBaseUrl.newBuilder().addPathSegments("chat/completions").build()
-            body = JSONObject()
-                .put("model", model.id)
-                .put("stream", false)
-                .put("messages", messages)
-            when (mode) {
-                ResponseFormatMode.JSON_SCHEMA -> {
-                    body.put(
-                        "response_format",
-                        JSONObject()
-                            .put("type", "json_schema")
-                            .put(
-                                "json_schema",
-                                JSONObject()
-                                    .put("name", "mini_app_bundle")
-                                    .put("strict", true)
-                                    .put("schema", miniAppOutputSchema()),
-                            ),
-                    )
-                }
-                ResponseFormatMode.JSON_OBJECT -> {
-                    body.put("response_format", JSONObject().put("type", "json_object"))
-                }
-                ResponseFormatMode.PLAIN -> Unit
+        require(apiKey.isNotBlank()) { "Add your OpenRouter API key in Settings first." }
+        val url = openRouterBaseUrl.newBuilder().addPathSegments("chat/completions").build()
+        val body = JSONObject()
+            .put("model", model.id)
+            .put("stream", false)
+            .put("messages", messages)
+        when (mode) {
+            ResponseFormatMode.JSON_SCHEMA -> {
+                body.put(
+                    "response_format",
+                    JSONObject()
+                        .put("type", "json_schema")
+                        .put(
+                            "json_schema",
+                            JSONObject()
+                                .put("name", "mini_app_bundle")
+                                .put("strict", true)
+                                .put("schema", miniAppOutputSchema()),
+                        ),
+                )
             }
-            requestBuilder = Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer $apiKey")
-                .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
-                .header("Accept", "application/json")
-        } else {
-            require(activeProvider.canChat) { "Enter the ${activeProvider.name} API key in Providers first." }
-            url = providerBase(activeProvider).newBuilder().addPathSegments("chat/completions").build()
-            body = JSONObject(activeProvider.requestJson.ifBlank { "{}" })
-            if (activeProvider.id == OPENUNCENSORED_ID && activeProvider.strategy.isNotBlank()) {
-                val routing = body.optJSONObject("routing") ?: JSONObject()
-                body.put("routing", routing.put("strategy", activeProvider.strategy))
+            ResponseFormatMode.JSON_OBJECT -> {
+                body.put("response_format", JSONObject().put("type", "json_object"))
             }
-            body.put("model", model.id)
-                .put("stream", false)
-                .put("messages", messages)
-            requestBuilder = Request.Builder()
-                .url(url)
-                .header("Accept", "application/json")
-                .apply {
-                    if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey")
-                }
+            ResponseFormatMode.PLAIN -> Unit
         }
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $apiKey")
+            .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
+            .header("Accept", "application/json")
 
         val request = requestBuilder.post(body.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
         val rawResponse = executeRequest(request, providerLabel, apiKey)
         val payload = runCatching { JSONObject(rawResponse) }
             .getOrElse { throw IOException("$providerLabel returned an invalid JSON response.", it) }
-        providerError(payload)?.let { throw IOException(redactSecret(it, apiKey)) }
+        openRouterError(payload)?.let { throw IOException(redactSecret(it, apiKey)) }
 
         val choice = payload.optJSONArray("choices")?.optJSONObject(0)
             ?: throw IOException("$providerLabel returned no completion choices.")
@@ -363,7 +335,7 @@ internal class MiniAppGenerator(
                         val result = runCatching {
                             if (!res.isSuccessful) {
                                 val peek = res.peekBody(8192).string()
-                                val detail = runCatching { providerError(JSONObject(peek)) }.getOrNull()
+                                val detail = runCatching { openRouterError(JSONObject(peek)) }.getOrNull()
                                 val cleanDetail = redactSecret(detail ?: res.message, apiKey)
                                 throw HttpStatusException(res.code, "$providerLabel HTTP ${res.code}. $cleanDetail")
                             }

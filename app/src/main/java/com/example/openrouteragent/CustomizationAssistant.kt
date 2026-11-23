@@ -45,9 +45,6 @@ internal class CustomizationAssistant(
         .retryOnConnectionFailure(false)
         .build(),
     private val openRouterBaseUrl: HttpUrl = "https://openrouter.ai/api/v1/".toHttpUrl(),
-    private val providerBase: (CustomProvider) -> HttpUrl = {
-        requireNotNull(normalizeChatBase(it.baseUrl)) { "Enter a valid provider API URL." }
-    },
 ) {
     suspend fun create(
         config: AgentConfig,
@@ -126,56 +123,33 @@ internal class CustomizationAssistant(
         systemPrompt: String,
         userPrompt: String,
     ): JSONObject {
-        val activeProvider = config.customProviders.firstOrNull { it.id == config.activeProviderId }
-        val apiKey = if (activeProvider == null) config.apiKey.trim() else activeProvider.apiKey.trim()
-        val providerLabel = activeProvider?.name ?: "OpenRouter"
-        val url: HttpUrl
-        val body: JSONObject
-        val requestBuilder: Request.Builder
+        val apiKey = config.apiKey.trim()
+        val providerLabel = "OpenRouter"
 
         val messages = JSONArray()
             .put(JSONObject().put("role", "system").put("content", systemPrompt))
             .put(JSONObject().put("role", "user").put("content", userPrompt))
 
-        if (activeProvider == null) {
-            require(apiKey.isNotBlank()) { "Add your OpenRouter API key in Settings first." }
-            url = openRouterBaseUrl.newBuilder().addPathSegments("chat/completions").build()
-            body = JSONObject()
-                .put("model", model.id)
-                .put("stream", false)
-                .put("messages", messages)
-            if ("response_format" in model.parameters) {
-                body.put("response_format", JSONObject().put("type", "json_object"))
-            }
-            requestBuilder = Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer $apiKey")
-                .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
-                .header("Accept", "application/json")
-        } else {
-            require(activeProvider.canChat) { "Enter the ${activeProvider.name} API key in Providers first." }
-            url = providerBase(activeProvider).newBuilder().addPathSegments("chat/completions").build()
-            body = JSONObject(activeProvider.requestJson.ifBlank { "{}" })
-            if (activeProvider.id == OPENUNCENSORED_ID && activeProvider.strategy.isNotBlank()) {
-                val routing = body.optJSONObject("routing") ?: JSONObject()
-                body.put("routing", routing.put("strategy", activeProvider.strategy))
-            }
-            body.put("model", model.id)
-                .put("stream", false)
-                .put("messages", messages)
-            requestBuilder = Request.Builder()
-                .url(url)
-                .header("Accept", "application/json")
-                .apply {
-                    if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey")
-                }
+        require(apiKey.isNotBlank()) { "Add your OpenRouter API key in Settings first." }
+        val url = openRouterBaseUrl.newBuilder().addPathSegments("chat/completions").build()
+        val body = JSONObject()
+            .put("model", model.id)
+            .put("stream", false)
+            .put("messages", messages)
+        if ("response_format" in model.parameters) {
+            body.put("response_format", JSONObject().put("type", "json_object"))
         }
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $apiKey")
+            .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
+            .header("Accept", "application/json")
 
         val request = requestBuilder.post(body.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
         val rawResponse = executeRequest(request, providerLabel, apiKey)
         val payload = runCatching { JSONObject(rawResponse) }
             .getOrElse { throw IOException("$providerLabel returned an invalid JSON response.", it) }
-        providerError(payload)?.let { throw IOException(redactSecret(it, apiKey)) }
+        openRouterError(payload)?.let { throw IOException(redactSecret(it, apiKey)) }
 
         val choice = payload.optJSONArray("choices")?.optJSONObject(0)
             ?: throw IOException("$providerLabel returned no completion choices.")
@@ -211,7 +185,7 @@ internal class CustomizationAssistant(
                         val result = runCatching {
                             if (!res.isSuccessful) {
                                 val peek = res.peekBody(8192).string()
-                                val detail = runCatching { providerError(JSONObject(peek)) }.getOrNull()
+                                val detail = runCatching { openRouterError(JSONObject(peek)) }.getOrNull()
                                 val cleanDetail = redactSecret(detail ?: res.message, apiKey)
                                 throw IOException("$providerLabel HTTP ${res.code}. $cleanDetail")
                             }
