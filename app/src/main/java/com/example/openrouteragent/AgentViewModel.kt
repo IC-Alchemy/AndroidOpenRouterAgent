@@ -476,6 +476,24 @@ class AgentViewModel internal constructor(
         }
     }
 
+    /** Renders replies as Markdown or as raw text. Works during a run, because it changes only what the app displays. */
+    fun setRenderMarkdown(render: Boolean) {
+        if (config.sdk.renderMarkdown == render) return
+        viewModelScope.launch {
+            settingsMutex.withLock {
+                val next = config.copy(sdk = config.sdk.copy(renderMarkdown = render))
+                config = next
+                try {
+                    withContext(Dispatchers.IO) { storage.saveConfig(next) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    storageError = "Android could not save the Markdown setting."
+                }
+            }
+        }
+    }
+
     private fun updateProgress(updates: List<RunUpdate>) {
         progress = progress?.apply(updates, SystemClock.elapsedRealtime())
         notifyBackground()

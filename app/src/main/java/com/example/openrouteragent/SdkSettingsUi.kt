@@ -73,6 +73,7 @@ internal fun SdkSettingsSheet(
     var strictFinal by remember { mutableStateOf(sdk.strictFinalResponse) }
     var detectRepetition by remember { mutableStateOf(sdk.detectRepetition) }
     var showReasoning by remember { mutableStateOf(sdk.showReasoning) }
+    var renderMarkdown by remember { mutableStateOf(sdk.renderMarkdown) }
     var discoverSkills by remember { mutableStateOf(sdk.discoverSkills) }
     var zdr by remember { mutableStateOf(sdk.zdr) }
     var distillable by remember { mutableStateOf(sdk.distillableText) }
@@ -136,6 +137,7 @@ internal fun SdkSettingsSheet(
                 followUpTemperature = decimal("followTemp", "Follow-up temperature"),
                 followUpOutputTokens = number("followOutput", "Follow-up output limit"),
                 followUpInstructions = value("followInstructions").trim(), showReasoning = showReasoning,
+                renderMarkdown = renderMarkdown,
                 discoverSkills = discoverSkills, theme = value("theme"), detectRepetition = detectRepetition,
                 strictFinalResponse = strictFinal, stopOnTool = value("stopTool").trim(), finalResponse = value("finalResponse"),
                 finalDirective = value("finalDirective").trim(), toolTimeoutSeconds = number("timeout", "Tool timeout"),
@@ -288,6 +290,7 @@ internal fun SdkSettingsSheet(
                     "display" -> {
                         Options("theme", "App theme", listOf("oled" to "OLED black", "system" to "System", "light" to "Light"))
                         ToggleLine("Show streamed reasoning", showReasoning) { showReasoning = it }
+                        ToggleLine("Render Markdown in replies", renderMarkdown) { renderMarkdown = it }
                         ToggleLine("Let the agent discover saved skills", discoverSkills) { discoverSkills = it }
                     }
                 }
