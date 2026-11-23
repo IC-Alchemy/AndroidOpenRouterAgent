@@ -14,7 +14,7 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.aab
-
+.superpowers/
 output-metadata.json
 
 # IntelliJ
