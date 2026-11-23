@@ -94,7 +94,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
@@ -226,10 +225,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             }
         }
     }
-    var showProviders by rememberSaveable { mutableStateOf(false) }
-    var editActiveProvider by rememberSaveable { mutableStateOf(false) }
-    val usesOpenRouter = agent.usesOpenRouter
-    val providerName = agent.providerName
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showMiniApps by rememberSaveable { mutableStateOf(false) }
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -258,9 +253,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var showSdkSettings by rememberSaveable { mutableStateOf(false) }
     var customizeTab by rememberSaveable { mutableStateOf<String?>(null) }
     var showModels by rememberSaveable { mutableStateOf(false) }
-    var showImageGeneration by rememberSaveable { mutableStateOf(false) }
-    val imageDialogState = rememberSaveableStateHolder()
-    val usesOpenUncensored = config.activeProviderId == OPENUNCENSORED_ID
     val model = agent.selectedModel
     var showChatLibrary by rememberSaveable { mutableStateOf(false) }
     var deviceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
@@ -306,10 +298,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
 
     fun send(text: String) {
         when {
-            !agent.providerReady -> if (usesOpenRouter) { showSettings = true } else {
-                editActiveProvider = true
-                showProviders = true
-            }
+            !agent.providerReady -> showSettings = true
             model == null -> showModels = true
             else -> {
                 following = true
@@ -336,13 +325,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                     TopAppBar(
                         title = {
                             Column(
-                                Modifier.heightIn(min = 48.dp).clickable(
-                                    enabled = !agent.isLoading && !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating,
-                                    onClickLabel = "Choose provider", role = Role.Button,
-                                ) {
-                                    editActiveProvider = false
-                                    showProviders = true
-                                },
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -353,18 +335,15 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     }
                                     StudioStatusDot(color = statusColor, size = 6.dp)
                                     Spacer(Modifier.width(7.dp))
-                                    Text(if (usesOpenRouter) "OpenRouter Agent" else providerName,
+                                    Text("OpenRouter Agent",
                                         Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Spacer(Modifier.width(2.dp))
-                                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 val detail = when {
                                     model != null -> model.name
                                     agent.catalogLoading -> "Loading models…"
                                     agent.providerReady -> "Choose a model"
-                                    else -> "Connect $providerName"
+                                    else -> "Connect OpenRouter"
                                 }
                                 Text(
                                     listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "),
@@ -405,39 +384,32 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     Icon(Icons.Default.Settings, contentDescription = "Configure")
                                 }
                                 DropdownMenu(expanded = showConfigure, onDismissRequest = { showConfigure = false }) {
-                                    DropdownMenuItem(text = { Text("Providers") }, onClick = {
-                                        showConfigure = false
-                                        editActiveProvider = false
-                                        showProviders = true
-                                    })
                                     DropdownMenuItem(text = { Text("Settings") }, onClick = {
                                         showConfigure = false
                                         showSettings = true
                                     })
-                                    if (usesOpenRouter) {
-                                        DropdownMenuItem(text = { Text("Device files") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Device files") }, onClick = {
+                                        showConfigure = false
+                                        deviceFilesTarget = "all"
+                                    })
+                                    if (agent.chatProject != null && agent.providerReady) {
+                                        DropdownMenuItem(text = { Text("All workspace files") }, onClick = {
                                             showConfigure = false
-                                            deviceFilesTarget = "all"
-                                        })
-                                        if (agent.chatProject != null && agent.providerReady) {
-                                            DropdownMenuItem(text = { Text("All workspace files") }, onClick = {
-                                                showConfigure = false
-                                                workspaceFilesTarget = "all"
-                                            })
-                                        }
-                                        DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
-                                            showConfigure = false
-                                            showSdkSettings = true
-                                        })
-                                        DropdownMenuItem(text = { Text("Custom tools") }, onClick = {
-                                            showConfigure = false
-                                            customizeTab = "tools"
-                                        })
-                                        DropdownMenuItem(text = { Text("Subagents") }, onClick = {
-                                            showConfigure = false
-                                            customizeTab = "subagents"
+                                            workspaceFilesTarget = "all"
                                         })
                                     }
+                                    DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
+                                        showConfigure = false
+                                        showSdkSettings = true
+                                    })
+                                    DropdownMenuItem(text = { Text("Custom tools") }, onClick = {
+                                        showConfigure = false
+                                        customizeTab = "tools"
+                                    })
+                                    DropdownMenuItem(text = { Text("Subagents") }, onClick = {
+                                        showConfigure = false
+                                        customizeTab = "subagents"
+                                    })
                                     DropdownMenuItem(text = { Text("Show reasoning") }, onClick = {
                                         agent.setShowReasoning(!config.sdk.showReasoning)
                                     }, trailingIcon = {
@@ -466,7 +438,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             bottomBar = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     runProgress?.let {
-                        AgentRunStatus(it, agent.approval != null, following, providerName,
+                        AgentRunStatus(it, agent.approval != null, following,
                             onActivity = { showRunActivity = true }, onFollow = { following = true })
                     }
                     AgentInputBar(
@@ -475,8 +447,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat || agent.isModerating,
                         error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
                         onVoice = listen,
-                        onImages = if (usesOpenUncensored) ({ showImageGeneration = true }) else null,
-                        chatMode = if (usesOpenRouter && !agent.isLoading) agent.chatMode else null,
+                        chatMode = if (!agent.isLoading) agent.chatMode else null,
                         onChatMode = agent::setChatMode,
                     )
                 }
@@ -484,7 +455,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
                 .background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (!agent.isLoading && usesOpenRouter) {
+                if (!agent.isLoading) {
                     StatusCapabilitiesBar(
                         config = if (agent.chatMode) config.withoutTools() else config, activeContainerId = activeContainerId, canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
                         inProject = agent.chatProject != null, attachmentCount = agent.attachedFiles.size,
@@ -502,12 +473,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 if (agent.isLoading) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 } else if (messages.isEmpty() && activePrompt == null && interrupted == null) {
-                    EmptyAgentState(agent.providerReady, {
-                        if (usesOpenRouter) showSettings = true else {
-                            editActiveProvider = true
-                            showProviders = true
-                        }
-                    }, providerName = providerName, usesOpenRouter = usesOpenRouter) { agent.promptText = it }
+                    EmptyAgentState(agent.providerReady, { showSettings = true }) { agent.promptText = it }
                 } else {
                     CompositionLocalProvider(LocalTranscriptSelection provides { if (isRunning) following = false }) {
                         LazyColumn(
@@ -541,7 +507,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     LiveAgentReply(interrupted, interrupted = true,
                                         showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
                                         onRetry = { following = true; agent.retryTurn() },
-                                        onRetryWithoutTools = if (usesOpenRouter && !agent.chatMode && config.agentToolsEnabled()) {
+                                        onRetryWithoutTools = if (!agent.chatMode && config.agentToolsEnabled()) {
                                             { following = true; agent.retryTurn(toolsOff = true) }
                                         } else null,
                                         onActivity = { showRunActivity = true })
@@ -557,7 +523,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
 
     if (showRunActivity) {
         val selected = runProgress ?: interrupted
-        if (selected != null) RunActivityDialog(selected, providerName, { showRunActivity = false },
+        if (selected != null) RunActivityDialog(selected, "OpenRouter", { showRunActivity = false },
             config.sdk.showReasoning) { file ->
             showRunActivity = false
             openFile(file.containerId, file.file)
@@ -567,9 +533,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         if (runProgress == null && interrupted == null) showRunActivity = false
     }
 
-    if (showProviders) {
-        ProvidersSheet(config, editActiveProvider, { showProviders = false }, agent::saveSettings, agent::discoverModels)
-    }
     if (showMiniApps) {
         MiniAppsSheet(
             onDismiss = { showMiniApps = false },
@@ -609,19 +572,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         )
     }
     if (showModels) {
-        ModelPicker(agent.availableModels, model, usesOpenRouter && config.agentToolsEnabled(), agent.catalogLoading,
-            agent.catalogError, { agent.refreshModels() }, { showModels = false }, providerName, !usesOpenRouter) { chosen ->
+        ModelPicker(agent.availableModels, model, config.agentToolsEnabled(), agent.catalogLoading,
+            agent.catalogError, { agent.refreshModels() }, { showModels = false }) { chosen ->
             agent.chooseModel(chosen)
             showModels = false
-        }
-    }
-    if (usesOpenUncensored && showImageGeneration && !agent.isLoading) {
-        imageDialogState.SaveableStateProvider(workspaceTag(config)) {
-            OpenUncensoredImagesDialog(agent, onDismiss = { showImageGeneration = false }, onConnect = {
-                showImageGeneration = false
-                editActiveProvider = true
-                showProviders = true
-            })
         }
     }
     agent.approval?.takeIf { agent.githubReview == null }?.let { approval ->
@@ -675,7 +629,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     }
     val currentArea = agent.fileArea()
     val localTarget = deviceFilesTarget
-    if (!agent.isLoading && usesOpenRouter && localTarget != null) {
+    if (!agent.isLoading && localTarget != null) {
         val area = when (localTarget) {
             "all" -> null
             "current" -> currentArea
@@ -689,7 +643,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         }) { deviceFilesTarget = null }
     }
     val cloudTarget = workspaceFilesTarget
-    if (!agent.isLoading && usesOpenRouter && agent.providerReady && cloudTarget != null) {
+    if (!agent.isLoading && agent.providerReady && cloudTarget != null) {
         val apiKey = config.apiKey
         val prefix = if (cloudTarget == "all") "" else currentArea.remotePrefix
         WorkspaceFilesDialog(
@@ -935,8 +889,6 @@ internal fun StatusPill(
 internal fun EmptyAgentState(
     hasApiKey: Boolean,
     onOpenSettings: () -> Unit,
-    providerName: String,
-    usesOpenRouter: Boolean,
     onSelectPrompt: (String) -> Unit
 ) {
     Column(
@@ -974,8 +926,7 @@ internal fun EmptyAgentState(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = if (usesOpenRouter) "Run code, work with files, and search the web using OpenRouter’s hosted tools."
-                else "Start a conversation with $providerName.",
+            text = "Run code, work with files, and search the web using OpenRouter’s hosted tools.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -986,7 +937,7 @@ internal fun EmptyAgentState(
             Button(onClick = onOpenSettings) {
                 Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Connect $providerName")
+                Text("Connect OpenRouter")
             }
             Spacer(Modifier.height(20.dp))
         }
@@ -1000,9 +951,7 @@ internal fun EmptyAgentState(
         )
         Spacer(Modifier.height(8.dp))
 
-        val suggestions = if (usesOpenRouter) QUICK_PROMPTS else listOf(
-            "Explain a topic in plain language.", "Help me outline a project.")
-        suggestions.forEachIndexed { index, sample ->
+        QUICK_PROMPTS.forEachIndexed { index, sample ->
             Card(
                 onClick = { onSelectPrompt(sample) },
                 modifier = Modifier
@@ -1448,30 +1397,24 @@ internal fun AgentInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onVoice: () -> Unit,
-    onImages: (() -> Unit)?,
     chatMode: Boolean? = null,
     onChatMode: (Boolean) -> Unit = {},
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             HorizontalDivider(thickness = StudioHairlineWidth, color = MaterialTheme.colorScheme.outlineVariant)
-            if (onImages != null || chatMode != null) {
+            if (chatMode != null) {
                 Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (chatMode != null) {
-                        // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
-                        listOf(false to "Agent", true to "Chat").forEach { (chat, label) ->
-                            FilterChip(selected = chatMode == chat, onClick = { onChatMode(chat) },
-                                enabled = !isLoading && !isRunning, label = { Text(label) })
-                        }
-                        Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
+                    listOf(false to "Agent", true to "Chat").forEach { (chat, label) ->
+                        FilterChip(selected = chatMode == chat, onClick = { onChatMode(chat) },
+                            enabled = !isLoading && !isRunning, label = { Text(label) })
                     }
-                    if (onImages != null) {
-                        TextButton(onClick = onImages, enabled = !isLoading && !isRunning) { Text("Generate images") }
-                    }
+                    Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 }
             }
             if (error != null) {

@@ -38,11 +38,7 @@ Tap the microphone in the composer to dictate. The Ask agent Quick Settings tile
 
 ## Organize chats and projects
 
-Tap Chats to open saved conversations for the active provider. Use New project to make a group, then select it and tap New chat. Use a chat's menu to rename it, move it, or delete it. Removing a project moves its chats to Unfiled. An OpenRouter chat restores its tool history and sandbox reference when reopened. A stopped turn keeps its partial reply and can be retried.
-
-## Switch providers
-
-In version 2.3 and later, open Configure → Providers or tap the provider name in the header. Use the OpenUncensored preset with its own API key, or add an HTTPS provider that supports OpenAI-compatible Chat Completions. Load models from the provider or enter an exact model ID. Profiles have separate conversations and can enable streaming or add provider-specific JSON request fields. Select OpenRouter for hosted tools, custom SDK tools, and on-demand skill discovery.
+Tap Chats to open saved conversations for your OpenRouter credential. Use New project to make a group, then select it and tap New chat. Use a chat's menu to rename it, move it, or delete it. Removing a project moves its chats to Unfiled. An OpenRouter chat restores its tool history and sandbox reference when reopened. A stopped turn keeps its partial reply and can be retried.
 
 ## Create and improve tools, skills, and subagents
 

@@ -10,8 +10,6 @@ import java.util.UUID
 @Serializable
 data class AgentConfig(
     val apiKey: String = "",
-    val activeProviderId: String = OPENROUTER_ID,
-    val customProviders: List<CustomProvider> = listOf(openUncensoredProvider()),
     val sdk: SdkSettings = SdkSettings(),
     val customTools: List<CustomAgentTool> = emptyList(),
     val savedSkills: List<SavedAgentSkill> = emptyList(),
@@ -138,9 +136,6 @@ fun AgentConfig.sandboxDomains(): List<String> {
 private val hostname = Regex("""(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?""")
 
 fun AgentConfig.settingsError(): String? = when {
-    customProviders.any { it.error() != null } || customProviders.map { it.id }.distinct().size != customProviders.size ||
-        (activeProviderId != OPENROUTER_ID && customProviders.none { it.id == activeProviderId }) ->
-        "Check your saved provider profiles."
     apiKey.trim().any { it.code !in 33..126 } ->
         "Enter an API key without spaces."
     model.trim().any { it.isWhitespace() } ->

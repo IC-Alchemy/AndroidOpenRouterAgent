@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -92,12 +93,12 @@ class ModerationReportUiTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"data":[{"id":"mock/model","name":"Mock","modality":"text"}]}""")
+                    .setBody("""{"data":[{"id":"mock/model","name":"Mock","supported_parameters":["tools"]}]}""")
             )
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"choices":[{"message":{"content":"Questionable AI reply"},"finish_reason":"stop"}]}""")
+                    .setBody("Questionable AI reply")
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
@@ -108,26 +109,20 @@ class ModerationReportUiTest {
                     override suspend fun isSafe(text: String) = true
                 },
                 reportClient = ModerationReportClient(endpointUrl = server.url("/report").toString()),
-                chatClient = CompatibleChatClient(base = { server.url("/v1/") }),
+                client = OpenRouterAgentClient(baseUrl = server.url("/v1/")),
+                sdk = TestAgentSdkRuntime(app, server),
+                storage = testAgentStorage(app),
             )
             val deadline = System.currentTimeMillis() + 5_000L
             while (vm.isLoading && System.currentTimeMillis() < deadline) {
                 shadowOf(Looper.getMainLooper()).idle()
                 Thread.sleep(10)
             }
-            val mockProvider = CustomProvider(
-                id = "mock-provider",
-                name = "Mock",
-                baseUrl = "https://mock.example.com/v1/",
-                apiKey = "",
-                model = "mock/model",
-                stream = false,
-            )
             runBlocking {
                 vm.saveSettings(
                     AgentConfig(
-                        activeProviderId = mockProvider.id,
-                        customProviders = listOf(mockProvider),
+                        apiKey = "test-openrouter-key",
+                        model = "mock/model",
                     )
                 )
             }
@@ -135,8 +130,7 @@ class ModerationReportUiTest {
                 shadowOf(Looper.getMainLooper()).idle()
                 Thread.sleep(10)
             }
-            // Drain initial /v1/models request
-            server.takeRequest()
+            assertEquals("/v1/models/user", server.takeRequest().path)
             vm.send("Tell me a story")
             val chatDeadline = System.currentTimeMillis() + 5_000L
             while (vm.workspace.messages.size < 2 && System.currentTimeMillis() < chatDeadline) {
@@ -144,8 +138,7 @@ class ModerationReportUiTest {
                 Thread.sleep(10)
             }
             assertEquals(2, vm.workspace.messages.size)
-            // Drain the chat completion request from MockWebServer
-            server.takeRequest()
+            assertEquals("/v1/responses", server.takeRequest().path)
 
             composeRule.setContent {
                 OpenRouterAgentTheme {
@@ -172,6 +165,10 @@ class ModerationReportUiTest {
             assertEquals("Questionable AI reply", json.getString("response"))
             assertEquals("Harassment", json.getString("reason"))
             assertTrue(vm.reportMessage == null || vm.reportMessage == "Report submitted. Thank you.")
+
+            composeRule.onNodeWithContentDescription("Configure").performClick()
+            composeRule.onNodeWithText("Settings").assertIsDisplayed()
+            composeRule.onAllNodesWithText("Providers").assertCountEquals(0)
         }
     }
 
@@ -182,7 +179,6 @@ class ModerationReportUiTest {
             application = app,
             textModerator = null,
             reportClient = ModerationReportClient(endpointUrl = ""),
-            chatClient = CompatibleChatClient(),
         )
         val deadline = System.currentTimeMillis() + 5_000L
         while (vm.isLoading && System.currentTimeMillis() < deadline) {

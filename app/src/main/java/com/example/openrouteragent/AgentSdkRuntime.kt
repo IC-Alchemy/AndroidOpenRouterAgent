@@ -45,7 +45,7 @@ data class ToolApproval(
 )
 data class SdkRunResult(val result: AgentRunResult, val history: String?, val state: String? = null)
 
-internal class AgentSdkRuntime(private val context: Context) {
+internal open class AgentSdkRuntime(private val context: Context) {
     private data class ActiveRun(
         val id: String,
         val completion: CompletableDeferred<SdkRunResult>,
@@ -70,7 +70,7 @@ internal class AgentSdkRuntime(private val context: Context) {
     // Request interception runs on WebView worker threads.
     @Volatile private var approvedToolOrigins: Set<Triple<String, String, Int>> = emptySet()
 
-    suspend fun run(
+    open suspend fun run(
         settings: AgentConfig,
         workspace: Workspace,
         prompt: String,

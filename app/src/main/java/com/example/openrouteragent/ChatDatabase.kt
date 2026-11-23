@@ -9,6 +9,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
+internal const val OPENROUTER_ID = "openrouter"
+
 internal data class ChatScope(val provider: String, val account: String) {
     val args get() = arrayOf(provider, account)
 }
@@ -134,10 +136,6 @@ internal class ChatDatabase(context: Context) : SQLiteOpenHelper(
 
     fun deleteChat(scope: ChatScope, id: String) {
         writableDatabase.delete("chats", "provider=? AND account=? AND id=?", scope.args + id)
-    }
-
-    fun deleteProvider(provider: String) {
-        writableDatabase.delete("chats", "provider=?", arrayOf(provider))
     }
 
     fun addProject(name: String, id: String = UUID.randomUUID().toString()) {
