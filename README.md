@@ -48,6 +48,8 @@ Turn on **Image generation** in settings to let the agent draw pictures with Ope
 
 Tap the microphone in the composer to dictate a message. Android's speech recognizer is used, preferring on-device recognition. Add the **Ask agent** tile from Quick Settings to open the app straight into voice input.
 
+When you dictate a prompt, the reply is read aloud with the phone's text-to-speech voice. Code blocks are skipped and links are read by their names. Turn this off with **Read voice replies aloud** in the top menu. Any reply can be read on demand with its **Read aloud** button, which turns into **Stop reading** while it plays. Starting the microphone stops the reading.
+
 ## Chats and projects
 
 Open **Chats** in the header. Use **New chat** to start another conversation, or **New project** to create a group. Select a project before starting a chat to file it there automatically. Use the menu beside a chat to rename it, move it to a project, or delete it. Removing a project moves its chats to **Unfiled**.

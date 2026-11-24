@@ -100,9 +100,18 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var showMiniApps by rememberSaveable { mutableStateOf(false) }
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val heard = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
-        if (!heard.isNullOrEmpty()) agent.promptText = listOf(agent.promptText.trim(), heard)
-            .filter { it.isNotEmpty() }.joinToString(" ")
+        if (!heard.isNullOrEmpty()) {
+            agent.promptText = listOf(agent.promptText.trim(), heard).filter { it.isNotEmpty() }.joinToString(" ")
+            agent.promptFromVoice = true
+        }
     }
+    val speaker = rememberReplySpeaker()
+    LaunchedEffect(agent.replyToSpeak) {
+        agent.replyToSpeak?.let { speaker.speak(it.id, it.text) }
+        agent.replyToSpeak = null
+    }
+    // Clearing the composer means the next prompt is typed, so its reply isn't read aloud.
+    LaunchedEffect(agent.promptText.isBlank()) { if (agent.promptText.isBlank()) agent.promptFromVoice = false }
     val voiceContext = LocalContext.current
     var viewingMedia by remember { mutableStateOf<ChatMedia?>(null) }
     val pickPhotos = rememberLauncherForActivityResult(
@@ -137,6 +146,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         }
     }
     val listen: () -> Unit = {
+        speaker.stop() // so the recognizer doesn't hear the last reply
         runCatching { speech.launch(speechIntent()) }.onFailure {
             android.widget.Toast.makeText(voiceContext, "This phone has no speech recognizer. Install or enable " +
                 "Speech Recognition and Synthesis from Google, or another voice input app.",
@@ -329,6 +339,11 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     }, trailingIcon = {
                                         Switch(checked = config.sdk.renderMarkdown, onCheckedChange = null)
                                     })
+                                    DropdownMenuItem(text = { Text("Read voice replies aloud") }, onClick = {
+                                        agent.setReadVoiceReplies(!config.sdk.readVoiceReplies)
+                                    }, trailingIcon = {
+                                        Switch(checked = config.sdk.readVoiceReplies, onCheckedChange = null)
+                                    })
                                     DropdownMenuItem(text = { Text("Mini apps") },
                                         leadingIcon = { Icon(StudioSymbols.MiniApps, null) }, onClick = {
                                         showConfigure = false
@@ -419,6 +434,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         onReport = { reportTarget = ReportTarget(prompt = prompt, response = entry.text) },
                                         mediaFile = agent::mediaFile,
                                         onOpenMedia = { viewingMedia = it },
+                                        speaking = speaker.speakingId == entry.id,
+                                        onSpeak = { speaker.toggle(entry.id, entry.text) },
                                     )
                                 }
                             }

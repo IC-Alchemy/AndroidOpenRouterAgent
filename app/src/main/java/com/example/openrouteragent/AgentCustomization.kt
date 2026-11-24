@@ -187,7 +187,8 @@ data class SdkSettings(
     val showReasoning: Boolean = false,
     /** Renders agent replies as Markdown; off shows the raw text the model sent. */
     val renderMarkdown: Boolean = true,
-    val saveReasoning: Boolean = true,
+    /** Reads a reply aloud when its prompt was dictated with the microphone or the Ask tile. */
+    val readVoiceReplies: Boolean = true,
     val discoverSkills: Boolean = true,
     val theme: String = "oled",
 ) {

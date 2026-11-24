@@ -92,6 +92,10 @@ class AgentViewModel internal constructor(
         config.enableShellSandbox && config.sdk.toolChoice != "none" && !chatMode
     val chatMode: Boolean get() = workspace.chatMode
     var promptText by mutableStateOf("")
+    /** True while the composer holds dictated text; that turn's reply is then read aloud. */
+    var promptFromVoice by mutableStateOf(false)
+    /** A finished reply to read aloud. The screen speaks it and clears it. */
+    var replyToSpeak by mutableStateOf<ChatEntry?>(null)
     var isLoading by mutableStateOf(true)
         private set
     var activePrompt by mutableStateOf<String?>(null)
@@ -325,6 +329,8 @@ class AgentViewModel internal constructor(
             turnError = it
             return
         }
+        val spoken = promptFromVoice && config.sdk.readVoiceReplies
+        promptFromVoice = false
         val priorWorkspace = workspace
         val area = fileArea()
         val noTools = toolsOff || chatMode
@@ -448,6 +454,7 @@ class AgentViewModel internal constructor(
                     interruptedTurn = null,
                 ))
                 workspace = finished
+                if (spoken && responseSafe) replyToSpeak = assistantEntry
                 try {
                     saveWorkspace(finished)
                     storageError = null
@@ -530,6 +537,24 @@ class AgentViewModel internal constructor(
                     throw e
                 } catch (_: Exception) {
                     storageError = "Android could not save the Markdown setting."
+                }
+            }
+        }
+    }
+
+    /** Reads replies to dictated prompts aloud, or stops doing so. Changes only what the app does with replies. */
+    fun setReadVoiceReplies(read: Boolean) {
+        if (config.sdk.readVoiceReplies == read) return
+        viewModelScope.launch {
+            settingsMutex.withLock {
+                val next = config.copy(sdk = config.sdk.copy(readVoiceReplies = read))
+                config = next
+                try {
+                    withContext(Dispatchers.IO) { storage.saveConfig(next) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    storageError = "Android could not save the read-aloud setting."
                 }
             }
         }
