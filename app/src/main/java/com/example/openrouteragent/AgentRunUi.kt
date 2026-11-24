@@ -6,9 +6,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -114,7 +116,7 @@ internal fun AgentRunStatus(
 }
 
 @Composable
-internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, showReasoning: Boolean = true,
+internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, showReasoning: Boolean = false,
     onShowReasoning: ((Boolean) -> Unit)? = null, renderMarkdown: Boolean = true, onRetry: (() -> Unit)? = null,
     onRetryWithoutTools: (() -> Unit)? = null, onActivity: (() -> Unit)? = null) {
     // Interrupted turns restored from storage have no timeline, only the joined text.
@@ -134,12 +136,8 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
                     when (block) {
                         is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning, onShowReasoning)
                         is LiveBlock.ToolCall -> progress.tool(block.id)?.let { LiveToolRow(it) }
-                        is LiveBlock.Answer -> if (renderMarkdown) {
-                            MarkdownText(block.text, keepSelectionOnReplacement = live)
-                        } else {
-                            CopyableText(block.text, style = MaterialTheme.typography.bodyMedium,
-                                keepSelectionOnReplacement = live)
-                        }
+                        is LiveBlock.Answer -> ReplyText(block.text, renderMarkdown = renderMarkdown,
+                            keepSelectionOnReplacement = live)
                     }
                 }
             }
@@ -163,12 +161,10 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
 
 private const val LIVE_THINKING_TAIL = 520
 
-/** Streams the model's reasoning as it arrives. Collapses to a header once the model moves on. */
 @Composable
 private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((Boolean) -> Unit)?) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     if (!show) {
-        // Hidden reasoning still shows that the model is thinking, without the text.
         if (live) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
             Text("Thinking…", style = MaterialTheme.typography.labelMedium,
@@ -255,7 +251,6 @@ internal fun RunActivityDialog(
     progress: AgentProgress,
     providerName: String,
     onDismiss: () -> Unit,
-    showReasoning: Boolean = true,
     onFile: (LiveFile) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -265,11 +260,7 @@ internal fun RunActivityDialog(
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (progress.summary.isNotBlank() && showReasoning) {
-                    OutlinedSection(title = "Reasoning") {
-                        CopyableText(progress.summary, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+                if (progress.summary.isNotBlank()) CollapsibleReasoningBox(progress.summary)
                 progress.tools.forEach {
                     ToolActivityRow(ToolActivity(it.name, it.status, it.detail))
                 }

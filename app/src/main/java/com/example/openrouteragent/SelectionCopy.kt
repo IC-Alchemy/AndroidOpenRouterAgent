@@ -5,6 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.widget.Toast
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.text.BasicTextField
@@ -22,16 +25,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.getTextLayoutResult
 import androidx.compose.ui.semantics.setSelection
 import androidx.compose.ui.semantics.text
@@ -98,9 +101,12 @@ private fun SelectionCopyField(
     var fieldState by remember { mutableStateOf(TextFieldValue(text)) }
     val keepDisplayedText = keepSelectionOnReplacement && !fieldState.selection.collapsed &&
         !text.text.startsWith(fieldState.text)
-    // Rebuilds from [text] when its styles change too, since a text field may drop styles from values it reports.
-    val value = if (fieldState.annotatedString == text || keepDisplayedText) fieldState else
-        TextFieldValue(text, fieldState.selection, fieldState.composition.takeIf { fieldState.text == text.text })
+    val value = if (fieldState.annotatedString == text || keepDisplayedText) fieldState
+        else TextFieldValue(
+            text,
+            fieldState.selection,
+            fieldState.composition.takeIf { fieldState.text == text.text },
+        )
     SideEffect { fieldState = value }
 
     content(value) { next ->
@@ -137,17 +143,50 @@ internal fun CopyableText(
     onLinkClick: ((String) -> Unit)? = null,
 ) {
     val contentColor = LocalContentColor.current
+    val uriHandler = LocalUriHandler.current
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val linkText by rememberUpdatedState(text)
-    val openLink by rememberUpdatedState(onLinkClick)
-    val hasLinks = onLinkClick != null && text.hasStringAnnotations(MARKDOWN_URL_TAG, 0, text.length)
-    val linkTaps = if (hasLinks) Modifier.linkTaps({ layout?.let { it to linkText } }) { openLink?.invoke(it) } else Modifier
+    val linkClick by rememberUpdatedState(onLinkClick)
+    fun openLink(url: String) = runCatching {
+        if (linkClick != null) linkClick?.invoke(url) else uriHandler.openUri(url)
+    }.isSuccess
+    val hasMarkdownLinks = onLinkClick != null && text.hasStringAnnotations(MARKDOWN_URL_TAG, 0, text.length)
+    val markdownLinkTaps = if (hasMarkdownLinks) {
+        Modifier.linkTaps({ layout?.let { it to linkText } }) { openLink(it) }
+    } else Modifier
     SelectionCopyField(text, keepSelectionOnReplacement = keepSelectionOnReplacement) { value, onChange ->
+        val displayed = value.annotatedString
+        val links = displayed.getStringAnnotations(REPLY_LINK, 0, displayed.length) +
+            displayed.getStringAnnotations(MARKDOWN_URL_TAG, 0, displayed.length)
+        val displayedText by rememberUpdatedState(displayed)
+        val replyLinkTaps = if (displayed.getStringAnnotations(REPLY_LINK, 0, displayed.length).isEmpty()) Modifier
+        else Modifier.pointerInput(uriHandler, onLinkClick) {
+            // Observe taps without consuming the gestures used for text selection and scrolling.
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val url = layout?.replyLinkAt(displayedText, down.position)
+                if (url != null) {
+                    val up = waitForUpOrCancellation(PointerEventPass.Initial)
+                    if (up != null && up.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis &&
+                        (up.position - down.position).getDistance() < viewConfiguration.touchSlop &&
+                        layout?.replyLinkAt(displayedText, up.position) == url) {
+                        openLink(url)
+                    }
+                }
+            }
+        }
         // Expose selectable static text to accessibility services while keeping the native handle and toolbar UI.
-        Box(modifier.then(linkTaps).clearAndSetSemantics {
+        Box(modifier.then(markdownLinkTaps).then(replyLinkTaps).clearAndSetSemantics {
             this.text = value.annotatedString
             textSelectionRange = value.selection
             getTextLayoutResult { results -> layout?.let { results.add(it) } ?: false }
+            if (links.isNotEmpty()) {
+                customActions = links.map { link ->
+                    CustomAccessibilityAction("Open link: ${displayed.text.substring(link.start, link.end)}") {
+                        openLink(link.item)
+                    }
+                }
+            }
             setSelection { start, end, _ ->
                 if (start !in 0..value.text.length || end !in 0..value.text.length) false else {
                     onChange(value.copy(selection = TextRange(start, end)))
@@ -164,6 +203,14 @@ internal fun CopyableText(
             )
         }
     }
+}
+
+private fun TextLayoutResult.replyLinkAt(text: AnnotatedString, position: Offset): String? {
+    if (layoutInput.text.text != text.text) return null
+    val index = getOffsetForPosition(position)
+    val hit = listOf(index, index - 1).firstOrNull { it in text.indices && getBoundingBox(it).contains(position) }
+        ?: return null
+    return text.getStringAnnotations(REPLY_LINK, hit, hit + 1).firstOrNull()?.item
 }
 
 @Composable

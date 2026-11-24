@@ -438,7 +438,9 @@ internal fun runtimeOptions(
         .put("maxSteps", config.maxSteps).put("maxCost", config.maxCost)
         .put("temperature", config.temperature.takeIf { "temperature" in model.parameters })
         .put("baseTemperature", config.temperature)
-        .put("sdk", JSONObject(Json.encodeToString(SdkSettings.serializer(), config.sdk)))
+        .put("sdk", JSONObject(Json.encodeToString(SdkSettings.serializer(), config.sdk))
+            // The runtime uses this flag to request automatic reasoning summaries.
+            .put("showReasoning", config.sdk.showReasoning || config.sdk.saveReasoning))
         .put("modelDetails", modelDetails)
         .put("customTools", JSONArray(effectiveTools.map {
             JSONObject(Json.encodeToString(CustomAgentTool.serializer(), it))

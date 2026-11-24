@@ -35,6 +35,9 @@ internal class TestAgentSdkRuntime(app: Application, private val server: MockWeb
             .post(prompt.toRequestBody())
             .build()
         http.newCall(request).execute().use {
+            it.header("X-Test-Reasoning")?.let { reasoning ->
+                withContext(Dispatchers.Main.immediate) { onUpdate(listOf(RunUpdate.Text(reasoning, summary = true))) }
+            }
             check(it.isSuccessful)
             val result = AgentRunResult(
                 assistantText = checkNotNull(it.body).string(),
