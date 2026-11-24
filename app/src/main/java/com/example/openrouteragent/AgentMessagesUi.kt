@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -56,6 +57,8 @@ internal fun UserMessageBubble(
     media: List<ChatMedia> = emptyList(),
     mediaFile: (ChatMedia) -> java.io.File? = { null },
     onOpenMedia: (ChatMedia) -> Unit = {},
+    speaking: Boolean = false,
+    onSpeak: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
@@ -245,6 +248,10 @@ internal fun AgentResponseCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!isWarningCard) {
                         SymbolAction("Copy reply", StudioSymbols.Copy, onClick = { onCopyText(entry.text) })
+                        if (onSpeak != null) {
+                            SymbolAction(if (speaking) "Stop reading" else "Read aloud",
+                                if (speaking) Icons.Default.Close else StudioSymbols.Speaker, onClick = onSpeak)
+                        }
                     }
                     SymbolAction(
                         label = "Report", icon = Icons.Default.Warning,
