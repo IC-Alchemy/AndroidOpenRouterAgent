@@ -475,8 +475,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
 
     if (showRunActivity) {
         val selected = runProgress ?: interrupted
-        if (selected != null) RunActivityDialog(selected, "OpenRouter", { showRunActivity = false },
-            config.sdk.showReasoning) { file ->
+        if (selected != null) RunActivityDialog(selected, "OpenRouter", { showRunActivity = false }) { file ->
             showRunActivity = false
             openFile(file.containerId, file.file)
         }
