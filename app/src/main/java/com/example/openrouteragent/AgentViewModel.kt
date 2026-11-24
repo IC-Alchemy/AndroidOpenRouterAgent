@@ -114,8 +114,37 @@ class AgentViewModel internal constructor(
     var reportMessage by mutableStateOf<String?>(null)
         private set
 
-    var availableModels by mutableStateOf<List<CatalogModel>>(emptyList())
+    /** The catalog for the API key, before the selected workspace's provider and model rules. */
+    private var catalogModels by mutableStateOf<List<CatalogModel>>(emptyList())
+    /** Models hosted by the providers the selected workspace shows, or null when providers aren't restricted. */
+    private var hostedModelIds by mutableStateOf<Set<String>?>(null)
+    /** The models the selected workspace shows. */
+    val availableModels: List<CatalogModel>
+        get() = filterModelsForWorkspace(catalogModels, workspaceRules, hostedModelIds)
+
+    var workspaces by mutableStateOf<List<OpenRouterWorkspace>>(emptyList())
         private set
+    /** The selected workspace's provider and model rules, from its default guardrail on OpenRouter. */
+    var workspaceRules by mutableStateOf<GuardrailRules?>(null)
+        private set
+    /** The workspace the chat API key spends in, from OpenRouter. */
+    var keyWorkspaceId by mutableStateOf<String?>(null)
+        private set
+    var providerList by mutableStateOf<List<ProviderInfo>>(emptyList())
+        private set
+    /** Every model in OpenRouter's catalog, so the workspace panel can show hidden models again. */
+    var fullCatalog by mutableStateOf<List<CatalogModel>>(emptyList())
+        private set
+    var workspaceLoading by mutableStateOf(false)
+        private set
+    var workspaceError by mutableStateOf<String?>(null)
+        private set
+    var rulesSaving by mutableStateOf(false)
+        private set
+    val activeWorkspaceId: String? get() = config.workspaceId.ifBlank { keyWorkspaceId.orEmpty() }.ifBlank { null }
+    val selectedWorkspace: OpenRouterWorkspace? get() = workspaces.firstOrNull { it.id == activeWorkspaceId }
+    private var workspaceJob: Job? = null
+    private val endpointCache = mutableMapOf<String, List<ModelEndpoint>>()
     var catalogLoading by mutableStateOf(false)
         private set
     var catalogError by mutableStateOf<String?>(null)
@@ -165,19 +194,204 @@ class AgentViewModel internal constructor(
             isLoading = false
             ready.complete(Unit)
             refreshModels()
+            refreshWorkspaces()
         }
+    }
+
+    /**
+     * Reads the workspaces the management key can see, the API key's own workspace, the provider list and the
+     * selected workspace's rules. Without a management key the app shows the API key's catalog unchanged.
+     */
+    fun refreshWorkspaces() {
+        workspaceJob?.cancel()
+        val managementKey = config.managementKey
+        val apiKey = config.apiKey
+        workspaceError = null
+        if (managementKey.isBlank()) {
+            workspaces = emptyList()
+            workspaceRules = null
+            hostedModelIds = null
+            workspaceLoading = false
+            return
+        }
+        workspaceLoading = true
+        workspaceJob = viewModelScope.launch {
+            try {
+                keyWorkspaceId = if (apiKey.isBlank()) null else runCatching { client.keyInfo(apiKey).workspaceId }
+                    .onFailure { if (it is CancellationException) throw it }.getOrNull()
+                workspaces = client.listWorkspaces(managementKey)
+                if (providerList.isEmpty()) {
+                    providerList = runCatching { client.providers(apiKey.ifBlank { managementKey }) }
+                        .onFailure { if (it is CancellationException) throw it }.getOrDefault(emptyList())
+                }
+                loadWorkspaceRules()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                workspaceError = managementError(e)
+            } finally {
+                if (kotlin.coroutines.coroutineContext[Job]?.isCancelled != true) workspaceLoading = false
+            }
+        }
+    }
+
+    private fun managementError(e: Throwable): String = when ((e as? ApiStatusException)?.code) {
+        401 -> "OpenRouter didn't accept the management key. Check it, or create a new one in OpenRouter's settings."
+        403 -> "This management key can't see that workspace. Organization workspaces need an admin's management key."
+        else -> e.userMessage(config.managementKey)
+    }
+
+    private suspend fun loadWorkspaceRules() {
+        val workspace = selectedWorkspace
+        val guardrailId = workspace?.defaultGuardrailId
+        if (guardrailId == null) {
+            workspaceRules = null
+            hostedModelIds = null
+            if (workspace != null) workspaceError = "OpenRouter didn't return a default guardrail for ${workspace.name}."
+            return
+        }
+        workspaceRules = client.guardrailRules(config.managementKey, guardrailId)
+        updateHostedModels()
+    }
+
+    /** Finds which models the shown providers host, for the provider half of the workspace filter. */
+    private suspend fun updateHostedModels() {
+        val rules = workspaceRules
+        val apiKey = config.apiKey.ifBlank { config.managementKey }
+        hostedModelIds = if (rules?.hasProviderRules != true || providerList.isEmpty()) null else try {
+            client.modelIdsHostedBy(apiKey, shownProviderNames(rules, providerList))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            workspaceError = "Models couldn't be filtered by provider. ${e.userMessage(apiKey)}"
+            null
+        }
+    }
+
+    /** Loads the whole catalog for the model list in the workspace panel. */
+    suspend fun loadFullCatalog() {
+        if (fullCatalog.isNotEmpty()) return
+        val key = config.apiKey.ifBlank { config.managementKey }
+        if (key.isBlank()) return
+        fullCatalog = client.fullCatalog(key)
+    }
+
+    /** Saves a management key after checking that OpenRouter lists workspaces with it. */
+    suspend fun saveManagementKey(key: String) {
+        val trimmed = key.trim()
+        if (trimmed.isNotEmpty()) {
+            try {
+                client.listWorkspaces(trimmed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw IOException(if ((e as? ApiStatusException)?.code == 401 || (e as? ApiStatusException)?.code == 403)
+                    "OpenRouter didn't accept that management key." else e.userMessage(trimmed))
+            }
+        }
+        saveSettings(config.copy(managementKey = trimmed, workspaceId = if (trimmed.isEmpty()) "" else config.workspaceId))
+        refreshWorkspaces()
+    }
+
+    /**
+     * Switches workspace. The app keeps the API key it was using under that key's workspace, and switches to the
+     * API key saved for the new workspace, if any, so chats are billed and filtered there.
+     */
+    suspend fun selectWorkspace(id: String) {
+        val previous = config
+        var keys = previous.workspaceKeys
+        val current = keyWorkspaceId
+        if (current != null && previous.apiKey.isNotBlank() && keys[current] != previous.apiKey) {
+            keys = keys + (current to previous.apiKey)
+        }
+        val apiKey = keys[id] ?: previous.apiKey
+        saveSettings(previous.copy(workspaceId = id, workspaceKeys = keys, apiKey = apiKey))
+        if (apiKey != previous.apiKey) keyWorkspaceId = id
+        workspaceError = null
+        workspaceLoading = true
+        try {
+            loadWorkspaceRules()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            workspaceError = managementError(e)
+        } finally {
+            workspaceLoading = false
+        }
+    }
+
+    /** Saves an API key for a workspace after OpenRouter confirms it belongs there, and uses it if selected. */
+    suspend fun saveWorkspaceKey(workspaceId: String, key: String) {
+        val trimmed = key.trim()
+        require(trimmed.isNotEmpty()) { "Paste an API key from this workspace." }
+        val info = try {
+            client.keyInfo(trimmed)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException(e.userMessage(trimmed))
+        }
+        if (info.isManagementKey) throw IllegalArgumentException("That's a management key. Paste a regular API key.")
+        if (info.workspaceId != null && info.workspaceId != workspaceId) {
+            val owner = workspaces.firstOrNull { it.id == info.workspaceId }?.name ?: "another workspace"
+            throw IllegalArgumentException("That key belongs to $owner.")
+        }
+        val selected = workspaceId == activeWorkspaceId
+        saveSettings(config.copy(workspaceKeys = config.workspaceKeys + (workspaceId to trimmed),
+            apiKey = if (selected) trimmed else config.apiKey))
+        if (selected) keyWorkspaceId = workspaceId
+    }
+
+    /** Stores new provider and model rules on the selected workspace's default guardrail. */
+    suspend fun saveWorkspaceRules(next: GuardrailRules) {
+        val guardrailId = selectedWorkspace?.defaultGuardrailId ?: throw IllegalStateException("Choose a workspace first.")
+        next.problem()?.let { throw IllegalArgumentException(it) }
+        rulesSaving = true
+        try {
+            workspaceRules = try {
+                client.updateGuardrailRules(config.managementKey, guardrailId, next)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw IOException(managementError(e))
+            }
+            updateHostedModels()
+            refreshModels()
+        } finally {
+            rulesSaving = false
+        }
+    }
+
+    /**
+     * The price OpenRouter would charge for [modelId] with these routing settings, as one line. The workspace's
+     * provider rules count only when chats run in that workspace.
+     */
+    suspend fun routedPriceFor(modelId: String, sdk: SdkSettings): String {
+        val endpoints = modelEndpoints(modelId)
+        val rules = workspaceRules?.takeIf { keyWorkspaceId == null || keyWorkspaceId == activeWorkspaceId }
+        val price = routedPrice(endpoints, sdk, rules)
+            ?: return "No allowed provider serves this model with these routing settings."
+        return "${price.mode}: ${routedPriceLabel(price)}"
+    }
+
+    /** The endpoints that serve a model, cached for the session. */
+    suspend fun modelEndpoints(modelId: String): List<ModelEndpoint> {
+        val key = withoutRoutingVariant(modelId)
+        endpointCache[key]?.let { return it }
+        val apiKey = config.apiKey
+        return client.modelEndpoints(apiKey, key).also { endpointCache[key] = it }
     }
 
     fun refreshModels(clear: Boolean = false) {
         catalogJob?.cancel()
         val key = config.apiKey
-        if (clear || !providerReady) availableModels = emptyList()
+        if (clear || !providerReady) catalogModels = emptyList()
         catalogError = null
         catalogLoading = providerReady
         if (!providerReady) return
         catalogJob = viewModelScope.launch {
             try {
-                availableModels = client.availableModels(key)
+                catalogModels = client.availableModels(key)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -841,6 +1055,10 @@ class AgentViewModel internal constructor(
         try {
             withContext(NonCancellable) {
                 val previous = config
+                if (previous.apiKey != clean.apiKey) {
+                    keyWorkspaceId = null
+                    endpointCache.clear()
+                }
                 val change = chatScope(previous) != chatScope(clean)
                 val resetSandbox = !change &&
                     (previous.sandboxDomains() != clean.sandboxDomains() ||
@@ -851,6 +1069,13 @@ class AgentViewModel internal constructor(
                     loaded
                 }
                 config = clean
+                if (previous.apiKey != clean.apiKey && clean.apiKey.isNotBlank() && clean.managementKey.isNotBlank()) {
+                    // A new API key may belong to another workspace, which decides whose rules filter chats.
+                    viewModelScope.launch {
+                        runCatching { client.keyInfo(clean.apiKey).workspaceId }
+                            .onSuccess { if (config.apiKey == clean.apiKey) keyWorkspaceId = it }
+                    }
+                }
                 if (clean.enableModeration && !previous.enableModeration && textModerator is ContentModerator) {
                     LiteRtInitializer.initialize(app)
                 }

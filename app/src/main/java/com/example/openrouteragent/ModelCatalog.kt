@@ -19,6 +19,8 @@ data class CatalogModel(
     val pricing: ModelPricing? = null,
     /** The day OpenRouter retires this model, when the catalog lists one. */
     val expirationDate: String? = null,
+    /** OpenRouter's permanent ID for the model, which guardrails may list instead of [id]. */
+    val canonicalSlug: String? = null,
 ) {
     val supportsTools: Boolean get() = "tools" in parameters
     val modalitiesKnown: Boolean get() = inputModalities.isNotEmpty()
@@ -52,7 +54,8 @@ internal fun parseModelCatalog(raw: String): List<CatalogModel> {
                 ModelPricing(prices.price("prompt"), prices.price("completion"), prices.price("image"))
                     .takeIf { it.prompt != null || it.completion != null || it.image != null }
             },
-            expirationDate = (item.opt("expiration_date") as? String)?.trim()?.takeIf { it.isNotEmpty() })
+            expirationDate = (item.opt("expiration_date") as? String)?.trim()?.takeIf { it.isNotEmpty() },
+            canonicalSlug = (item.opt("canonical_slug") as? String)?.trim()?.takeIf { it.isNotEmpty() && it != id })
     }.distinctBy { it.id }
 }
 
