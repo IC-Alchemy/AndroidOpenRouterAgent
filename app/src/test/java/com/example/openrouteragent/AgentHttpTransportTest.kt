@@ -18,6 +18,19 @@ private const val FAKE_KEY = "sk-or-v1-test-secret"
 
 class AgentHttpTransportTest {
     @Test
+    fun chatCompletionsUsesTheFixedJsonRouteWithoutRetrying() = withTransport { server, run ->
+        server.enqueue(MockResponse().setResponseCode(503))
+        val outcome = run.start(AgentEndpoint.ChatCompletions)
+        assertEquals("error", outcome.kind)
+        assertEquals(1, server.requestCount)
+        val request = server.takeRequest()
+        assertEquals("/api/v1/chat/completions", request.path)
+        assertEquals("application/json", request.getHeader("Accept"))
+        assertEquals("Bearer $FAKE_KEY", request.getHeader("Authorization"))
+        assertTrue(run.retries.isEmpty())
+    }
+
+    @Test
     fun keepaliveCommentsCountAsActivityAndTheStreamFinishes() = withTransport(idleSeconds = 1) { server, run ->
         val comments = ": OPENROUTER PROCESSING\n\n".repeat(6)
         val payload = "event: response.completed\ndata: {\"type\":\"response.completed\"}\n\ndata: [DONE]\n\n"
@@ -181,9 +194,9 @@ class AgentHttpTransportTest {
         val body = StringBuilder()
         private val outcomes = LinkedBlockingQueue<Outcome>()
 
-        fun start(): Outcome {
+        fun start(route: AgentEndpoint = AgentEndpoint.Responses): Outcome {
             transport.start("run", "1", FAKE_KEY, """{"model":"mock/model","input":[]}""", model = "mock/model",
-                idleSeconds = idleSeconds) { kind, value ->
+                idleSeconds = idleSeconds, route = route) { kind, value ->
                 when (kind) {
                     // The WebView pulls the next chunk after each delivery, exactly like this.
                     "headers" -> transport.read("run", "1")

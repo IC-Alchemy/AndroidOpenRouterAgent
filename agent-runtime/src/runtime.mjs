@@ -8,6 +8,7 @@ import { discardUnfinishedSubagents, subagentConfig, subagentType } from './suba
 import { fileInstructions, projectFileTools } from './project-files.mjs';
 import { resourceActionNames, resourceActionTools } from './resource-actions.mjs';
 import { githubToolNames, githubTools } from './github-tools.mjs';
+import { bodyBuilderName, bodyBuilderTool } from './body-builder.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { z } from 'zod';
 
@@ -19,7 +20,7 @@ const allowedServerTools = new Set([
   'openrouter:fusion',
 ]);
 
-export function buildTools(options, events, signal) {
+export function buildTools(options, events, signal, onWorkerUsage) {
   const tools = [];
   if (options.sdk?.toolChoice === 'none') return tools;
   if (options.shell) {
@@ -67,8 +68,13 @@ export function buildTools(options, events, signal) {
   }
   const skill = skillLoader(options);
   if (skill) tools.push(skill);
+  const hasBodyBuilder = options.appActions && events.fetcher && options.bodyBuilderModels?.length &&
+    options.modelDetails?.[options.model]?.tools !== false;
   for (const spec of options.customTools ?? []) {
     if (!githubToolNames.includes(spec.name)) tools.push(customTool(spec, events, signal));
+  }
+  if (hasBodyBuilder && !tools.some(item => item.function?.name === bodyBuilderName)) {
+    tools.push(bodyBuilderTool(options, events.fetcher, signal, onWorkerUsage));
   }
   if (options.appActions && events.appAction && options.modelDetails?.[options.model]?.tools !== false) {
     const names = new Set(tools.map(item => item.function?.name));
@@ -82,15 +88,15 @@ export function buildTools(options, events, signal) {
   return tools;
 }
 
-export function buildCall(options, tools, approval, signal, observe) {
+export function buildCall(options, tools, approval, signal, observe, workerUsage = {}) {
   const stopWhen = [stepCountIs(options.maxSteps)];
   const stopServerToolsWhen = [{ type: 'step_count_is', stepCount: options.maxSteps }];
   if (options.maxCost != null) {
-    stopWhen.push(maxCost(options.maxCost));
+    stopWhen.push(context => maxCost(options.maxCost - (workerUsage.cost ?? 0))(context));
     stopServerToolsWhen.push({ type: 'max_cost', maxCostInDollars: options.maxCost });
   }
   if (options.sdk?.maxRunTokens) {
-    stopWhen.push(maxTokensUsed(options.sdk.maxRunTokens));
+    stopWhen.push(context => maxTokensUsed(options.sdk.maxRunTokens - (workerUsage.totalTokens ?? 0))(context));
     stopServerToolsWhen.push({ type: 'max_tokens_used', maxTokens: options.sdk.maxRunTokens });
   }
   if (options.sdk?.stopOnTool) stopWhen.push(hasToolCall(options.sdk.stopOnTool));
@@ -164,7 +170,21 @@ function eventLabel(item) {
 }
 
 export async function runAgent(options, events, signal, createClient = opts => new OpenRouter(opts)) {
-  const tools = buildTools(options, events, signal);
+  const workerUsage = {};
+  const tools = buildTools(options, events, signal, usage => {
+    const inputTokens = usage?.prompt_tokens;
+    const outputTokens = usage?.completion_tokens;
+    for (const [key, value] of Object.entries({
+      inputTokens,
+      outputTokens,
+      totalTokens: usage?.total_tokens ?? ((inputTokens ?? 0) + (outputTokens ?? 0)),
+      cost: usage?.cost,
+      cachedTokens: usage?.prompt_tokens_details?.cached_tokens,
+      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens,
+    })) {
+      if (Number.isFinite(value) && value >= 0) workerUsage[key] = (workerUsage[key] ?? 0) + value;
+    }
+  });
   const observe = streamObserver(events);
   let mcp;
   let result;
@@ -196,7 +216,7 @@ export async function runAgent(options, events, signal, createClient = opts => n
     };
     observe.phase('requesting');
     result = client.callModel({
-      ...buildCall({ ...options, history: previousMessages }, tools, events.approval, signal, observe),
+      ...buildCall({ ...options, history: previousMessages }, tools, events.approval, signal, observe, workerUsage),
       state,
     }, { signal, retries: { strategy: 'none' } });
     events.register?.(result);
@@ -231,6 +251,8 @@ export async function runAgent(options, events, signal, createClient = opts => n
           { type: 'message', role: 'user', content: options.prompt },
           ...Array.from(items.values()).filter(item => item.type === 'message')];
     const conversation = discardUnfinishedSubagents({ ...finalState, messages: history });
+    const totals = { ...usage, totalTokens: usage.totalTokens ?? usage.inputTokens + usage.outputTokens };
+    for (const [key, value] of Object.entries(workerUsage)) totals[key] = (totals[key] ?? 0) + value;
     return {
       response: normalize({
         status: response.status,
@@ -241,12 +263,12 @@ export async function runAgent(options, events, signal, createClient = opts => n
         outputText: response.outputText,
         output: Array.from(items.values()),
         usage: {
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          totalTokens: usage.totalTokens ?? usage.inputTokens + usage.outputTokens,
-          cost: usage.cost,
-          cachedTokens: usage.cachedTokens,
-          reasoningTokens: usage.reasoningTokens,
+          inputTokens: totals.inputTokens,
+          outputTokens: totals.outputTokens,
+          totalTokens: totals.totalTokens,
+          cost: totals.cost,
+          cachedTokens: totals.cachedTokens,
+          reasoningTokens: totals.reasoningTokens,
         },
       }),
       history: conversation.messages,

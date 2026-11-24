@@ -1,5 +1,8 @@
 package com.example.openrouteragent
 
+import android.content.Context
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -8,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -17,6 +21,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -24,12 +29,16 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -137,8 +146,8 @@ class PrecisionStudioUiTest {
         composeRule.onNodeWithText("Web Search").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Egress Allowlist").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Connect OpenRouter").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("01").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("03").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Search the web for the latest OpenRouter server tools updates and summarize them.")
+            .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Check the Linux OS, Python, and Node.js versions in my sandbox.")
             .performScrollTo()
             .performClick()
@@ -186,6 +195,47 @@ class PrecisionStudioUiTest {
         composeRule.onNodeWithText("No tools · faster, cheaper").assertIsDisplayed()
         composeRule.onAllNodesWithText("Generate images").assertCountEquals(0)
         composeRule.onNodeWithText("Turn failed").assertIsDisplayed()
+    }
+
+    @Test
+    fun controlLabelsCanBeHiddenAndRestoredWithoutLosingAccessibleActions() {
+        var chatMode by mutableStateOf(false)
+        var selectedPrompt = ""
+        composeRule.setContent {
+            OpenRouterAgentTheme(darkTheme = false) {
+                Column {
+                    Box(Modifier.weight(1f)) {
+                        EmptyAgentState(hasApiKey = true, onOpenSettings = {}, onSelectPrompt = { selectedPrompt = it })
+                    }
+                    AgentInputBar("", {}, false, false, null, {}, {}, {}, chatMode, { chatMode = it })
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Agent").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Hide control labels").performClick()
+        composeRule.onNodeWithText("Agent").assertDoesNotExist()
+        composeRule.onNodeWithText("Compare models").performScrollTo().performClick()
+        assertEquals("Use Body Builder to compare Claude and Gemini on why stars shine.", selectedPrompt)
+        composeRule.onNodeWithContentDescription("Chat").assertHeightIsAtLeast(48.dp).performClick()
+        assertEquals(true, chatMode)
+        composeRule.onNodeWithContentDescription("Show control labels").performClick()
+        composeRule.onNodeWithText("Chat").assertIsDisplayed()
+    }
+
+    @Test
+    fun controlLabelsDefaultToSymbolsAfterTheFirstDayUnlessExplicitlyChosen() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val firstLaunch = 100L
+        val nextDay = firstLaunch + TimeUnit.DAYS.toMillis(1)
+        val preferences = ControlLabelPreferences(context)
+
+        preferences.startOnboarding(firstLaunch)
+        preferences.startOnboarding(firstLaunch + 100L)
+        assertTrue(preferences.showLabels(nextDay - 1))
+        assertFalse(preferences.showLabels(nextDay))
+        preferences.setShowLabels(true)
+        assertTrue(ControlLabelPreferences(context).showLabels(nextDay))
     }
 
     @Test

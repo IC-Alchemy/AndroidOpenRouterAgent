@@ -36,3 +36,4 @@ google-services.json
 
 # Bundled SDK development dependencies
 agent-runtime/node_modules/
+.scratch/

@@ -103,8 +103,8 @@ internal fun AgentRunStatus(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (!following) TextButton(onClick = onFollow) { Text("Latest") }
-            TextButton(onClick = onActivity) { Text("Activity") }
+            if (!following) SymbolAction("Latest", Icons.Default.KeyboardArrowDown, onFollow)
+            SymbolAction("Activity", StudioSymbols.Activity, onActivity)
         }
         if (!waitingForApproval && idle >= 12) {
             Text("No new events for ${idle}s", style = MaterialTheme.typography.bodySmall,
@@ -156,7 +156,7 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
                 onRetry?.let { TextButton(onClick = it) { Text("Retry") } }
                 onRetryWithoutTools?.let { TextButton(onClick = it) { Text("Retry without tools") } }
             }
-            onActivity?.let { TextButton(onClick = it) { Text("Run activity") } }
+            onActivity?.let { SymbolAction("Run activity", StudioSymbols.Activity, it) }
         }
     }
 }
@@ -231,7 +231,7 @@ private fun LiveToolRow(tool: LiveTool) {
             }
         }
         Column(Modifier.weight(1f)) {
-            Text("${tool.name} · ${tool.status.replace('_', ' ')}", style = MaterialTheme.typography.labelMedium,
+            Text("${toolLabel(tool.name)} · ${tool.status.replace('_', ' ')}", style = MaterialTheme.typography.labelMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             tool.detail?.takeIf { it.isNotBlank() }?.let { detail ->
                 val mono = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
@@ -298,12 +298,14 @@ internal fun RunActivityDialog(
 
 @Composable
 internal fun ToolActivityRow(activity: ToolActivity) {
-    OutlinedSection(title = "${activity.name} · ${activity.status.replace('_', ' ')}") {
+    OutlinedSection(title = "${toolLabel(activity.name)} · ${activity.status.replace('_', ' ')}") {
         activity.detail?.takeIf { it.isNotBlank() }?.let {
             CopyableText(it, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
         }
     }
 }
+
+private fun toolLabel(name: String): String = if (name == "openrouter_body_builder") "Body Builder" else name
 
 internal fun compactCount(value: Int): String = when {
     value >= 1_000_000 -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
@@ -333,7 +335,7 @@ internal fun AgentProgress.status(providerName: String = "OpenRouter"): String =
     "reasoning" -> if (detail == "hidden") "Model is reasoning privately" else "Model is reasoning"
     "tools" -> {
         val active = tools.lastOrNull { it.status in setOf("preparing", "in_progress", "searching", "running", "running in background") }
-        active?.let { "Tool · ${it.name}" } ?: "Processing tools"
+        active?.let { "Tool · ${toolLabel(it.name)}" } ?: "Processing tools"
     }
     "answering" -> "Streaming reply"
     "finishing" -> "Saving reply"
