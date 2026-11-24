@@ -120,7 +120,6 @@ Run the `assembleDebug` Gradle task to compile the app and package the signed de
 
 Optional Gradle properties supported by `app/build.gradle.kts`:
 - `-PagentDebugKeystore=/path/to/debug.keystore` — sign the debug build with a specific debug keystore so upgrading an existing installation preserves local app data.
-- `-PmoderationReportUrl=https://...` — configure the endpoint used by the in-app response reporting dialog (`BuildConfig.MODERATION_REPORT_URL`).
 
 **APK output locations:**
 - Gradle output: `app/build/outputs/apk/debug/app-debug.apk`
@@ -142,6 +141,20 @@ On Windows PowerShell:
 Copy-Item app\build\outputs\apk\debug\app-debug.apk app\APK\app-debug.apk -Force
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
+
+### Receive moderation reports in n8n
+
+1. On your VPS, add an n8n **Webhook** trigger with HTTP method **POST**, path `moderation-reports`, and **Authentication** set to **None**. Use HTTPS and rate-limit this public route at your reverse proxy. Keep the n8n editor and report storage private.
+2. Save `{{ $json.body.prompt }}`, `{{ $json.body.response }}`, and `{{ $json.body.reason }}` to your private review queue. Set the webhook to **Using 'Respond to Webhook' Node**. After the write succeeds, have that node respond with **No Data** and HTTP `204`. Let a failed write fail the workflow or return a non-`2xx` status. The app treats any `2xx` response as successful.
+3. Publish the workflow and copy its **Production URL** into `gradle.properties`. Replace the example below with your full webhook URL, including the `/webhook/` path.
+
+   ```properties
+   moderationReportUrl=https://n8n.example.com/webhook/moderation-reports
+   ```
+
+4. Rebuild the app and send a report from **Report response** on an AI reply. Check that the report reached your queue. You can also set or override the URL for a build with `-PmoderationReportUrl=https://n8n.example.com/webhook/moderation-reports`. A blank URL leaves reporting unconfigured.
+
+[n8n Webhook node documentation](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/)
 
 ### Run unit tests and lint
 

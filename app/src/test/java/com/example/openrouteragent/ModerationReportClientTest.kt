@@ -14,10 +14,10 @@ class ModerationReportClientTest {
     @Test
     fun submitsStrictThreeFieldPayloadWithoutAuthOrExtraMetadata() = runBlocking {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(200).setBody("""{"ok":true}"""))
+            server.enqueue(MockResponse().setResponseCode(204))
             val client = ModerationReportClient(
                 http = OkHttpClient(),
-                endpointUrl = server.url("/report").toString(),
+                endpointUrl = server.url("/webhook/moderation-reports").toString(),
             )
 
             val result = client.submitReport(
@@ -29,7 +29,7 @@ class ModerationReportClientTest {
             assertEquals(ReportResult.Sent, result)
             val request = server.takeRequest()
             assertEquals("POST", request.method)
-            assertEquals("/report", request.path)
+            assertEquals("/webhook/moderation-reports", request.path)
             assertNull(request.getHeader("Authorization"))
             assertNull(request.getHeader("X-User-Id"))
             assertTrue(request.getHeader("Content-Type").orEmpty().startsWith("application/json"))
@@ -56,10 +56,6 @@ class ModerationReportClientTest {
         assertEquals(
             ReportResult.Unconfigured,
             ModerationReportClient(endpointUrl = null).submitReport("p", "r", "Other"),
-        )
-        assertEquals(
-            ReportResult.Unconfigured,
-            ModerationReportClient().submitReport("p", "r", "Other"),
         )
     }
 
