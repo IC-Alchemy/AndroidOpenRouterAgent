@@ -65,6 +65,8 @@ internal fun SdkSettingsSheet(
     catalog: List<CatalogModel>,
     onDismiss: () -> Unit,
     onSave: suspend (AgentConfig) -> Unit,
+    /** Loads the price OpenRouter would bill for the current model under these routing settings. */
+    routedPrice: (suspend (SdkSettings) -> String?)? = null,
 ) {
     val sdk = current.sdk
     var section by rememberSaveable { mutableStateOf("generation") }
@@ -224,6 +226,17 @@ internal fun SdkSettingsSheet(
                     }
                     "routing" -> {
                         Options("route", "Provider routing", ROUTING_OPTIONS, ROUTING_DESCRIPTIONS)
+                        if (routedPrice != null) {
+                            // The price follows the unsaved routing fields, so it changes as they are edited.
+                            val preview = sdk.copy(
+                                providerSort = value("route").takeIf { it in ROUTING_SORTS }.orEmpty(),
+                                routingVariant = value("route").takeIf { it in ROUTING_VARIANTS }.orEmpty(),
+                                providerOrder = value("order").trim(), providerOnly = value("only").trim(),
+                                providerIgnore = value("ignore").trim(), quantizations = value("quant").trim(),
+                                maxPromptPrice = value("maxIn").trim().toDoubleOrNull(),
+                                maxCompletionPrice = value("maxOut").trim().toDoubleOrNull())
+                            RoutedPriceLine(preview) { routedPrice(preview) }
+                        }
                         if (value("route") in ROUTING_SORTS && value("models").isNotBlank()) {
                             Options("partition", "Sort across fallback models", listOf("" to "Per model", "none" to "All together"),
                                 mapOf("" to "Tries every provider of your main model first, then the fallback models.",

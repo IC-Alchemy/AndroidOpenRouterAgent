@@ -10,6 +10,12 @@ import java.util.UUID
 @Serializable
 data class AgentConfig(
     val apiKey: String = "",
+    /** An OpenRouter management key, used only to read and change workspaces and their guardrails. */
+    val managementKey: String = "",
+    /** The OpenRouter workspace chosen in Workspaces. Empty follows the API key's own workspace. */
+    val workspaceId: String = "",
+    /** API keys saved per workspace ID, so switching workspace also switches where chats are billed. */
+    val workspaceKeys: Map<String, String> = emptyMap(),
     val sdk: SdkSettings = SdkSettings(),
     val customTools: List<CustomAgentTool> = emptyList(),
     val savedSkills: List<SavedAgentSkill> = emptyList(),
@@ -170,6 +176,11 @@ fun AgentConfig.settingsError(): String? = when {
         it.password.isEmpty() && it.fragment == null } != true -> "Enter an HTTPS MCP endpoint without URL credentials."
     mcpToken.trim().any { it.code !in 33..126 } -> "Enter an MCP token without spaces."
     mcpToken.isNotBlank() && mcpToken.trim() == apiKey.trim() -> "Use a separate token for the MCP server."
+    managementKey.trim().any { it.code !in 33..126 } -> "Enter a management key without spaces."
+    managementKey.isNotBlank() && managementKey.trim() == apiKey.trim() ->
+        "A management key can't send chats. Use a regular API key for chats."
+    workspaceKeys.values.any { key -> key.isBlank() || key.trim().any { it.code !in 33..126 } } ->
+        "Enter workspace API keys without spaces."
     customTools.size > 32 || customTools.map { it.name }.distinct().size != customTools.size ||
         customTools.any { it.problem() != null } -> "Check your custom tools for invalid or duplicate names."
     savedSkills.size > 32 || savedSkills.map { it.name }.distinct().size != savedSkills.size ||

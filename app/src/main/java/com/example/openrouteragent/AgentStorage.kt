@@ -37,7 +37,10 @@ class AgentStorage internal constructor(context: Context, private val key: () ->
         val saved = raw?.let { json.decodeFromString<AgentConfig>(it) } ?: AgentConfig()
         removeLegacyProviderSettings(raw)
         return saved.copy(apiKey = readSecret("encrypted_key", "key_iv"),
-            mcpToken = readSecret("encrypted_mcp_token", "mcp_token_iv"))
+            mcpToken = readSecret("encrypted_mcp_token", "mcp_token_iv"),
+            managementKey = readSecret("encrypted_management_key", "management_key_iv"),
+            workspaceKeys = readSecret("encrypted_workspace_keys", "workspace_keys_iv").takeIf { it.isNotBlank() }
+                ?.let { json.decodeFromString<Map<String, String>>(it) }.orEmpty())
     }
 
     private fun removeLegacyProviderSettings(raw: String?) {
@@ -65,10 +68,13 @@ class AgentStorage internal constructor(context: Context, private val key: () ->
     }
 
     fun saveConfig(config: AgentConfig) {
-        val clean = config.copy(apiKey = "", mcpToken = "")
+        val clean = config.copy(apiKey = "", mcpToken = "", managementKey = "", workspaceKeys = emptyMap())
         val edit = prefs.edit().putString("config", json.encodeToString(AgentConfig.serializer(), clean))
         putSecret(edit, "encrypted_key", "key_iv", config.apiKey)
         putSecret(edit, "encrypted_mcp_token", "mcp_token_iv", config.mcpToken)
+        putSecret(edit, "encrypted_management_key", "management_key_iv", config.managementKey)
+        putSecret(edit, "encrypted_workspace_keys", "workspace_keys_iv",
+            if (config.workspaceKeys.isEmpty()) "" else json.encodeToString(config.workspaceKeys))
         if (!edit.commit()) throw IOException("Android could not save settings.")
     }
 

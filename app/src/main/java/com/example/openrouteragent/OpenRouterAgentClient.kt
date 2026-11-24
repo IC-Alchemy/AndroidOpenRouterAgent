@@ -94,6 +94,65 @@ class OpenRouterAgentClient(
         execute(request(apiKey, endpoint("key")).build(), apiKey) { Unit }
     }
 
+    /** The label and workspace of an API key. */
+    internal suspend fun keyInfo(apiKey: String): KeyInfo =
+        execute(request(apiKey, endpoint("key")).build(), apiKey, quick) { parseKeyInfo(it.bodyText()) }
+
+    /** Every workspace the management key can see, a page of 100 at a time. */
+    internal suspend fun listWorkspaces(managementKey: String): List<OpenRouterWorkspace> {
+        val all = mutableListOf<OpenRouterWorkspace>()
+        while (true) {
+            val url = endpoint("workspaces").newBuilder().addQueryParameter("offset", all.size.toString())
+                .addQueryParameter("limit", "100").build()
+            val (page, total) = execute(request(managementKey, url).build(), managementKey, quick) {
+                parseWorkspaces(it.bodyText())
+            }
+            all += page
+            if (page.isEmpty() || all.size >= total || all.size >= 1_000) return all.distinctBy { it.id }
+        }
+    }
+
+    /** The provider and model lists of a guardrail, read with a management key. */
+    internal suspend fun guardrailRules(managementKey: String, guardrailId: String): GuardrailRules =
+        execute(request(managementKey, endpoint("guardrails", guardrailId)).build(), managementKey, quick) {
+            parseGuardrailRules(it.bodyText())
+        }
+
+    /** Replaces a guardrail's provider and model lists and returns what OpenRouter saved. */
+    internal suspend fun updateGuardrailRules(managementKey: String, guardrailId: String, rules: GuardrailRules): GuardrailRules {
+        rules.problem()?.let { throw IllegalArgumentException(it) }
+        val body = rules.patchBody().toString().toRequestBody("application/json".toMediaType())
+        return execute(request(managementKey, endpoint("guardrails", guardrailId)).patch(body).build(),
+            managementKey, quick) { parseGuardrailRules(it.bodyText()) }
+    }
+
+    /** OpenRouter's providers, with their display names and IDs. */
+    internal suspend fun providers(apiKey: String): List<ProviderInfo> =
+        execute(request(apiKey, endpoint("providers")).build(), apiKey, quick) { parseProviders(it.bodyText()) }
+
+    /** The full catalog, before any guardrail filtering, so hidden models can be shown again. */
+    internal suspend fun fullCatalog(apiKey: String): List<CatalogModel> =
+        execute(request(apiKey, endpoint("models")).build(), apiKey) { parseModelCatalog(it.bodyText()) }
+
+    /** IDs of the models that at least one of these providers hosts. [providerNames] are display names. */
+    internal suspend fun modelIdsHostedBy(apiKey: String, providerNames: List<String>): Set<String> {
+        if (providerNames.isEmpty()) return emptySet()
+        val url = endpoint("models").newBuilder()
+            .addQueryParameter("providers", providerNames.joinToString(",")).build()
+        return execute(request(apiKey, url).build(), apiKey) { parseModelIds(it.bodyText()) }
+    }
+
+    /** Each provider endpoint that serves a model, with its own price and recent speed. */
+    internal suspend fun modelEndpoints(apiKey: String, modelId: String): List<ModelEndpoint> {
+        val base = withoutRoutingVariant(modelId.trim())
+        val author = base.substringBefore('/', "")
+        val slug = base.substringAfter('/', "")
+        require(author.isNotEmpty() && slug.isNotEmpty() && '/' !in slug) { "Choose a model with an author/name ID." }
+        return execute(request(apiKey, endpoint("models", author, slug, "endpoints")).build(), apiKey, quick) {
+            parseModelEndpoints(it.bodyText())
+        }
+    }
+
     internal suspend fun listWorkspaceFiles(apiKey: String, cursor: String?): WorkspaceFilePage {
         val url = endpoint("files").newBuilder()
             .addQueryParameter("limit", "100")

@@ -97,6 +97,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         }
     }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showWorkspaces by rememberSaveable { mutableStateOf(false) }
+    var showGuide by rememberSaveable { mutableStateOf(false) }
     var showMiniApps by rememberSaveable { mutableStateOf(false) }
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val heard = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
@@ -320,14 +322,15 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showConfigure = false
                                         showSdkSettings = true
                                     })
-                                    DropdownMenuItem(text = { Text("Custom tools") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Workspaces") }, onClick = {
                                         showConfigure = false
-                                        customizeTab = "tools"
+                                        showWorkspaces = true
                                     })
-                                    DropdownMenuItem(text = { Text("Subagents") },
+                                    // Tools, subagents and skills share one page with tabs, so one row opens it.
+                                    DropdownMenuItem(text = { Text("Tools, subagents & skills") },
                                         leadingIcon = { Icon(StudioSymbols.Agent, null) }, onClick = {
                                         showConfigure = false
-                                        customizeTab = "subagents"
+                                        customizeTab = "tools"
                                     })
                                     DropdownMenuItem(text = { Text("Show reasoning") }, onClick = {
                                         agent.setShowReasoning(!config.sdk.showReasoning)
@@ -349,9 +352,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showConfigure = false
                                         showMiniApps = true
                                     })
-                                    DropdownMenuItem(text = { Text("Skills & app guide") }, onClick = {
+                                    DropdownMenuItem(text = { Text("App guide") }, onClick = {
                                         showConfigure = false
-                                        customizeTab = "skills"
+                                        showGuide = true
                                     })
                                 }
                             }
@@ -501,12 +504,18 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey, agent)
     }
     if (showSdkSettings) {
-        SdkSettingsSheet(config, agent.availableModels, { showSdkSettings = false }, agent::saveSettings)
+        SdkSettingsSheet(config, agent.availableModels, { showSdkSettings = false }, agent::saveSettings,
+            routedPrice = { sdk -> model?.let { agent.routedPriceFor(it.id, sdk) } })
+    }
+    if (showWorkspaces) {
+        WorkspacesSheet(agent) { showWorkspaces = false }
+    }
+    if (showGuide) {
+        AppGuideSheet(agent.builtInGuide) { showGuide = false }
     }
     customizeTab?.let { tab ->
         CustomizationSheet(
             config = config,
-            guide = agent.builtInGuide,
             initialTab = tab,
             availableModels = agent.availableModels,
             selectedModel = model,
@@ -524,7 +533,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     }
     if (showModels) {
         ModelPicker(agent.availableModels, model, config.agentToolsEnabled(), agent.catalogLoading,
-            agent.catalogError, { agent.refreshModels() }, { showModels = false }) { chosen ->
+            agent.catalogError, { agent.refreshModels() }, { showModels = false },
+            routedPrice = { id -> agent.routedPriceFor(id, config.sdk) },
+            workspaceName = agent.selectedWorkspace?.name?.takeIf { agent.workspaceRules != null }) { chosen ->
             agent.chooseModel(chosen)
             showModels = false
         }

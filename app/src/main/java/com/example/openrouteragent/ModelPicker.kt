@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -42,6 +43,10 @@ internal fun ModelPicker(
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
     allowManual: Boolean = false,
+    /** Loads the routed price line for a model ID; null hides it. */
+    routedPrice: (suspend (String) -> String?)? = null,
+    /** The workspace whose provider and model rules filter the list, if any. */
+    workspaceName: String? = null,
     onSelect: (CatalogModel) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -65,6 +70,12 @@ internal fun ModelPicker(
                 }
                 if (requireTools) {
                     Text("Showing models that support your enabled tools.", style = MaterialTheme.typography.bodySmall)
+                }
+                if (workspaceName != null) {
+                    Text("Showing models allowed in $workspaceName.", style = MaterialTheme.typography.bodySmall)
+                }
+                if (selected != null && routedPrice != null) {
+                    RoutedPriceLine(selected.id) { routedPrice(selected.id) }
                 }
                 val typed = query.trim()
                 if (allowManual && typed.length in 1..256 && typed.none(Char::isWhitespace) &&
@@ -116,4 +127,25 @@ internal fun ModelPicker(
         confirmButton = { SymbolAction("Done", Icons.Default.Check, onDismiss) },
         dismissButton = { SymbolAction("Refresh", Icons.Default.Refresh, onRefresh, enabled = !loading) },
     )
+}
+
+/**
+ * One line with the price OpenRouter would charge for the chosen provider, model and routing mode, loaded
+ * from the model's endpoint list. [key] reloads it when the model or the routing settings change.
+ */
+@Composable
+internal fun RoutedPriceLine(key: Any?, load: suspend () -> String?) {
+    val text by produceState<String?>("Checking the price…", key) {
+        value = "Checking the price…"
+        value = try {
+            load()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            "Price unavailable. ${e.message?.take(160).orEmpty()}".trim()
+        }
+    }
+    text?.let {
+        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+    }
 }

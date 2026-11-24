@@ -95,7 +95,6 @@ private fun normalizeCustomizationTab(tab: String): String = when (tab) {
 @Composable
 internal fun CustomizationSheet(
     config: AgentConfig,
-    guide: SavedAgentSkill?,
     initialTab: String,
     availableModels: List<CatalogModel>,
     selectedModel: CatalogModel?,
@@ -116,7 +115,6 @@ internal fun CustomizationSheet(
     var oldSkillName by remember { mutableStateOf<String?>(null) }
     var subagent by remember { mutableStateOf<SubagentDraft?>(null) }
     var showSubagentAdvanced by rememberSaveable { mutableStateOf(false) }
-    var readGuide by rememberSaveable { mutableStateOf(false) }
     var searchingSkills by rememberSaveable { mutableStateOf(false) }
 
     var skillQuery by rememberSaveable { mutableStateOf("") }
@@ -194,7 +192,6 @@ internal fun CustomizationSheet(
         oldSkillName = null
         subagent = null
         showSubagentAdvanced = false
-        readGuide = false
         searchingSkills = false
         skillSearchError = null
         message = null
@@ -261,7 +258,7 @@ internal fun CustomizationSheet(
     ) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding().padding(horizontal = 20.dp)) {
             val editing = tool != null || skill != null || subagent != null
-            val inSubScreen = editing || readGuide || searchingSkills
+            val inSubScreen = editing || searchingSkills
 
             Row(
                 Modifier.fillMaxWidth(),
@@ -271,7 +268,6 @@ internal fun CustomizationSheet(
                 Column(Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
                         text = when {
-                            readGuide -> "App guide"
                             searchingSkills -> "Search skills.sh"
                             tool != null -> if (config.customTools.any { it.id == tool?.id }) "Edit tool" else "New tool"
                             skill != null -> if (oldSkillName != null) "Edit skill" else "New skill"
@@ -335,13 +331,6 @@ internal fun CustomizationSheet(
                 val currentSkill = skill
                 val currentSubagent = subagent
                 when {
-                    readGuide -> guide?.let { entry ->
-                        OutlinedSection {
-                            CopyableText(entry.body, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        OutlinedButton(onClick = { export(entry) }) { Text("Export guide") }
-                    }
-
                     searchingSkills -> {
                         OutlinedSection(title = "vercel-labs/skills directory") {
                             Row(
@@ -581,33 +570,6 @@ internal fun CustomizationSheet(
                                 }
                             },
                         )
-                        guide?.let {
-                            OutlinedSection(
-                                modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { readGuide = true },
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Text(
-                                        "App guide",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    StatusBadge("Built in", BadgeTone.MUTED)
-                                }
-                                Text(
-                                    "Setup, controls, and customization reference",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                OutlinedButton(onClick = { readGuide = true }, enabled = !busy) {
-                                    Text("View guide")
-                                }
-                            }
-                        }
                         if (config.savedSkills.isEmpty()) {
                             EmptyCustomizationCard(
                                 title = "No saved skills yet",
