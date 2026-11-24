@@ -182,6 +182,11 @@ internal fun SettingsBottomSheet(
                     }
                 }
 
+                OutlinedSection(title = "Appearance") {
+                    val labels = LocalControlLabels.current
+                    SettingsToggleRow("Show control labels", "Show names beside symbols.", labels.visible, labels.setVisible)
+                }
+
                 OutlinedSection(title = "Content moderation") {
                     SettingsToggleRow(
                         title = "On-device content moderation",
