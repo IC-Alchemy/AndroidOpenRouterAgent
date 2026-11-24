@@ -6,9 +6,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -103,8 +105,12 @@ internal fun AgentRunStatus(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (!following) TextButton(onClick = onFollow) { Text("Latest") }
-            TextButton(onClick = onActivity) { Text("Activity") }
+            if (!following) IconButton(onClick = onFollow) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Jump to latest")
+            }
+            IconButton(onClick = onActivity) {
+                Icon(Icons.Default.Info, contentDescription = "Run activity")
+            }
         }
         if (!waitingForApproval && idle >= 12) {
             Text("No new events for ${idle}s", style = MaterialTheme.typography.bodySmall,
@@ -114,8 +120,8 @@ internal fun AgentRunStatus(
 }
 
 @Composable
-internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, showReasoning: Boolean = true,
-    onShowReasoning: ((Boolean) -> Unit)? = null, onRetry: (() -> Unit)? = null,
+internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, showReasoning: Boolean = false,
+    renderMarkdown: Boolean = true, onRetry: (() -> Unit)? = null,
     onRetryWithoutTools: (() -> Unit)? = null, onActivity: (() -> Unit)? = null) {
     // Interrupted turns restored from storage have no timeline, only the joined text.
     val blocks = progress.timeline.ifEmpty {
@@ -132,9 +138,9 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
                 // Keys follow each block, so expanded state stays put when old blocks are trimmed.
                 key(progress.timelineOffset + index) {
                     when (block) {
-                        is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning, onShowReasoning)
+                        is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning)
                         is LiveBlock.ToolCall -> progress.tool(block.id)?.let { LiveToolRow(it) }
-                        is LiveBlock.Answer -> CopyableText(block.text, style = MaterialTheme.typography.bodyMedium,
+                        is LiveBlock.Answer -> ReplyText(block.text, renderMarkdown = renderMarkdown,
                             keepSelectionOnReplacement = live)
                     }
                 }
@@ -159,20 +165,9 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
 
 private const val LIVE_THINKING_TAIL = 520
 
-/** Streams the model's reasoning as it arrives. Collapses to a header once the model moves on. */
 @Composable
-private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((Boolean) -> Unit)?) {
+private fun ThinkingBlock(text: String, live: Boolean, showPreview: Boolean) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    if (!show) {
-        // Hidden reasoning still shows that the model is thinking, without the text.
-        if (live) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
-            Text("Thinking…", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            onShow?.let { TextButton(onClick = { it(true) }) { Text("Show reasoning") } }
-        }
-        return
-    }
     StudioRailBlock(
         railColor = MaterialTheme.colorScheme.primary,
         modifier = Modifier.fillMaxWidth(),
@@ -184,7 +179,6 @@ private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((
             if (live) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
             Text(if (live) "Thinking…" else "Thought", style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            onShow?.let { TextButton(onClick = { it(false) }) { Text("Hide") } }
             Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = null, modifier = Modifier.size(18.dp))
         }
@@ -198,7 +192,7 @@ private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((
                 color = color,
                 keepSelectionOnReplacement = live,
             )
-            live -> Text(
+            live && showPreview -> Text(
                 if (text.length > LIVE_THINKING_TAIL) "…" + text.takeLast(LIVE_THINKING_TAIL).trimStart()
                 else text.trim(),
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -251,7 +245,6 @@ internal fun RunActivityDialog(
     progress: AgentProgress,
     providerName: String,
     onDismiss: () -> Unit,
-    showReasoning: Boolean = true,
     onFile: (LiveFile) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -261,11 +254,7 @@ internal fun RunActivityDialog(
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (progress.summary.isNotBlank() && showReasoning) {
-                    OutlinedSection(title = "Reasoning") {
-                        CopyableText(progress.summary, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+                if (progress.summary.isNotBlank()) CollapsibleReasoningBox(progress.summary)
                 progress.tools.forEach {
                     ToolActivityRow(ToolActivity(it.name, it.status, it.detail))
                 }

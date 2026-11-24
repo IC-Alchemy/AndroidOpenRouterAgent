@@ -490,7 +490,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         entry = entry,
                                         onCopyText = clipboard::copy,
                                         onFileClick = ::openFile,
-                                        showReasoning = config.sdk.showReasoning,
+                                        renderMarkdown = config.sdk.renderMarkdown,
                                         onReport = { reportTarget = ReportTarget(prompt = prompt, response = entry.text) },
                                     )
                                 }
@@ -499,13 +499,13 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 item("active_prompt") { UserMessageBubble(activePrompt) }
                                 item("running") {
                                     if (runProgress != null) LiveAgentReply(runProgress,
-                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning)
+                                        showReasoning = config.sdk.showReasoning, renderMarkdown = config.sdk.renderMarkdown)
                                 }
                             }
                             if (interrupted != null) {
                                 item("interrupted") {
                                     LiveAgentReply(interrupted, interrupted = true,
-                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
+                                        renderMarkdown = config.sdk.renderMarkdown,
                                         onRetry = { following = true; agent.retryTurn() },
                                         onRetryWithoutTools = if (!agent.chatMode && config.agentToolsEnabled()) {
                                             { following = true; agent.retryTurn(toolsOff = true) }
@@ -523,8 +523,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
 
     if (showRunActivity) {
         val selected = runProgress ?: interrupted
-        if (selected != null) RunActivityDialog(selected, "OpenRouter", { showRunActivity = false },
-            config.sdk.showReasoning) { file ->
+        if (selected != null) RunActivityDialog(selected, "OpenRouter", { showRunActivity = false }) { file ->
             showRunActivity = false
             openFile(file.containerId, file.file)
         }
@@ -1030,7 +1029,7 @@ internal fun AgentResponseCard(
     entry: ChatEntry,
     onCopyText: (String) -> Unit,
     onFileClick: (containerId: String, fileRef: ContainerFileRef) -> Unit,
-    showReasoning: Boolean = true,
+    renderMarkdown: Boolean = true,
     onReport: () -> Unit = {},
 ) {
     val uriHandler = LocalUriHandler.current
@@ -1066,9 +1065,9 @@ internal fun AgentResponseCard(
                             .size(18.dp)
                     )
                 }
-                CopyableText(
+                ReplyText(
                     text = entry.text,
-                    style = MaterialTheme.typography.bodyMedium,
+                    renderMarkdown = renderMarkdown && !isWarningCard,
                     color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
                         else MaterialTheme.colorScheme.onSurface,
                 )
@@ -1078,7 +1077,6 @@ internal fun AgentResponseCard(
                 CopyableText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
             }
 
-            // Optional collapsible reasoning summary
             if (entry.toolActivity.isNotEmpty()) {
                 var showToolActivity by rememberSaveable { mutableStateOf(false) }
                 TextButton(onClick = { showToolActivity = !showToolActivity }) {
@@ -1086,7 +1084,7 @@ internal fun AgentResponseCard(
                 }
                 if (showToolActivity) entry.toolActivity.forEach { ToolActivityRow(it) }
             }
-            if (showReasoning && !entry.reasoningSummary.isNullOrBlank()) {
+            if (!entry.reasoningSummary.isNullOrBlank()) {
                 CollapsibleReasoningBox(entry.reasoningSummary)
             }
 
@@ -1175,27 +1173,16 @@ internal fun AgentResponseCard(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!isWarningCard) {
-                        TextButton(
-                            onClick = { onCopyText(entry.text) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        ) {
-                            Text("Copy reply")
+                        IconButton(onClick = { onCopyText(entry.text) }) {
+                            Icon(painterResource(R.drawable.ic_content_copy), contentDescription = "Copy reply")
                         }
                     }
-                    TextButton(
-                        onClick = onReport,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = agentResponseReportContentColor(isWarningCard, MaterialTheme.colorScheme),
-                        ),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
+                    IconButton(onClick = onReport) {
                         Icon(
                             imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            contentDescription = "Report reply",
+                            tint = agentResponseReportContentColor(isWarningCard, MaterialTheme.colorScheme),
                         )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Report")
                     }
                 }
             }
@@ -1406,15 +1393,13 @@ internal fun AgentInputBar(
             if (chatMode != null) {
                 Row(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
                     listOf(false to "Agent", true to "Chat").forEach { (chat, label) ->
                         FilterChip(selected = chatMode == chat, onClick = { onChatMode(chat) },
                             enabled = !isLoading && !isRunning, label = { Text(label) })
                     }
-                    Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    StudioInfoButton("Chat modes") {
+                        Text("Agent can use tools and work across several steps. Chat replies directly without tools.")
+                    }
                 }
             }
             if (error != null) {

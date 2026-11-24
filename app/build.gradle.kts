@@ -64,6 +64,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-tflite-java:16.4.0")
     implementation("androidx.webkit:webkit:1.13.0")
     implementation("com.caverock:androidsvg-aar:1.4")
+    implementation("org.commonmark:commonmark:0.30.1")
+    implementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.30.1")
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.30.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
