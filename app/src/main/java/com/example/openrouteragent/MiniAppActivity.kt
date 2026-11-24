@@ -195,7 +195,10 @@ internal class MiniAppWebViewClient(
             if (isBlockedInternalPath(lookupUrl.path)) {
                 return emptyResponse(404, "Not Found")
             }
+            // AndroidX InternalStoragePathHandler returns a response with no data (not null) for a
+            // missing file, so treat both cases as 404 instead of rewriting status 0 to 200 below.
             val response = assetLoader.shouldInterceptRequest(lookupUrl)
+                ?.takeIf { it.data != null }
                 ?: return emptyResponse(404, "Not Found")
             val mime = response.mimeType?.lowercase()?.substringBefore(';')?.trim().orEmpty()
             if (response.encoding.isNullOrBlank() && isUtf8Mime(mime)) {
