@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">OpenRouter Agent Studio</string>
+    <string name="share_label">Ask the agent</string>
     <style name="Theme.SandboxAgent" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">#000000</item>
         <item name="android:colorAccent">#CFC4FF</item>

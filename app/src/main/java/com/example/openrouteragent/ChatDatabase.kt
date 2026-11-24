@@ -189,7 +189,8 @@ internal class ChatDatabase(context: Context) : SQLiteOpenHelper(
 }
 
 internal fun chatTitle(workspace: Workspace): String = workspace.messages.firstOrNull { it.isUser && it.text.isNotBlank() }
-    ?.text.orEmpty().ifBlank { workspace.interruptedTurn?.prompt.orEmpty() }.trim().replace(Regex("\\s+"), " ").take(80)
+    ?.text.orEmpty().ifBlank { workspace.interruptedTurn?.prompt.orEmpty() }
+    .ifBlank { workspace.messages.firstOrNull { it.isUser && it.media.isNotEmpty() }?.media?.first()?.name.orEmpty() }.trim().replace(Regex("\\s+"), " ").take(80)
 
 internal fun libraryName(input: String): String = input.trim().also {
     require(it.isNotEmpty() && it.length <= 80) { "Enter a name between 1 and 80 characters." }

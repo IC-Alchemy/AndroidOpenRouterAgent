@@ -23,6 +23,8 @@ internal data class OpenRouterRunFiles(
     val projectSandbox: String? = null,
     val attachments: List<WorkspaceFileRef> = emptyList(),
     val github: Boolean = false,
+    /** Photos, documents and recordings attached to this message. */
+    val media: List<RunMedia> = emptyList(),
 )
 
 internal fun projectSandboxId(projectId: String, config: AgentConfig): String {

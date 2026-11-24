@@ -44,6 +44,17 @@ class AgentViewModel internal constructor(
     ) : this(application, textModerator, reportClient, OpenRouterAgentClient())
 
     internal val files = OpenRouterFiles(application, client)
+    private val mediaStore = chatMediaStore(application)
+    private val importer = AttachmentImporter(application.contentResolver, mediaStore)
+
+    /** Photos and files waiting in the composer. They are sent with the next message. */
+    var pendingMedia by mutableStateOf<List<ChatMedia>>(emptyList())
+        private set
+    /** Attachments of the message being sent. */
+    var activeMedia by mutableStateOf<List<ChatMedia>>(emptyList())
+        private set
+    var isImporting by mutableStateOf(false)
+        private set
     internal val github = GitHubProjects(File(application.noBackupFilesDir, "github"), storage.githubCredentials())
     private var githubDecision: CompletableDeferred<Boolean>? = null
     internal var githubReview by mutableStateOf<GitHubReview?>(null)
@@ -132,6 +143,7 @@ class AgentViewModel internal constructor(
                 }.getOrNull())
             }
             builtInGuide = guide
+            withContext(Dispatchers.IO) { runCatching { mediaStore.pruneDrafts() } }
             savedConfig.onSuccess {
                 config = it
                 if (it.enableModeration && textModerator is ContentModerator) {
@@ -278,8 +290,10 @@ class AgentViewModel internal constructor(
         send(prompt, toolsOff)
     }
 
-    private fun beginTurn(prompt: String) {
+    private fun beginTurn(prompt: String, media: List<ChatMedia>) {
         activePrompt = prompt
+        activeMedia = media
+        pendingMedia = emptyList()
         promptText = ""
         interrupted = null
         retryPrompt = null
@@ -291,7 +305,9 @@ class AgentViewModel internal constructor(
 
     fun send(text: String, toolsOff: Boolean = false) {
         val prompt = text.trim()
-        if (isLoading || isSavingSettings || isWorkingChat || isModerating || activePrompt != null || prompt.isBlank()) return
+        val sentMedia = pendingMedia
+        if (isLoading || isSavingSettings || isWorkingChat || isModerating || isImporting || activePrompt != null ||
+            (prompt.isBlank() && sentMedia.isEmpty())) return
         if (!providerReady) {
             turnError = "Add your OpenRouter API key in Settings before sending."
             return
@@ -303,6 +319,10 @@ class AgentViewModel internal constructor(
         }
         val model = selectedModel ?: run {
             turnError = if (catalogLoading) "Loading models…" else "Open Models to choose a model."
+            return
+        }
+        attachmentProblem(sentMedia, model)?.let {
+            turnError = it
             return
         }
         val priorWorkspace = workspace
@@ -324,7 +344,7 @@ class AgentViewModel internal constructor(
         if (activeModerator != null) {
             isModerating = true
         } else {
-            beginTurn(prompt)
+            beginTurn(prompt, sentMedia)
         }
 
         running = viewModelScope.launch {
@@ -343,7 +363,7 @@ class AgentViewModel internal constructor(
                     return@launch
                 }
                 if (activePrompt != null || isLoading || isSavingSettings || isWorkingChat) return@launch
-                beginTurn(prompt)
+                beginTurn(prompt, sentMedia)
             }
 
             var finishedTitle = "Reply ready"
@@ -351,9 +371,17 @@ class AgentViewModel internal constructor(
             try {
                 val gitHubAccess = if (noTools || currentConfig.sdk.toolChoice == "none") null
                     else area.projectId?.let { github.session(it) }
+                val runMedia = withContext(Dispatchers.IO) {
+                    sentMedia.map { item ->
+                        RunMedia(item, if (item.kind == MEDIA_TEXT) {
+                            mediaStore.find(priorWorkspace.id, item.file)?.readText()
+                                ?: throw IOException("The attachment ${item.name} is no longer on this device.")
+                        } else null)
+                    }
+                }
                 val sdkResult = sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
                     onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
-                    files = runFiles.copy(github = gitHubAccess != null),
+                    files = runFiles.copy(github = gitHubAccess != null, media = runMedia),
                     onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
                         executeAppAction(area, gitHubAccess, name, args)
                     })
@@ -394,8 +422,14 @@ class AgentViewModel internal constructor(
                     )
                 }
                 if (attachments.isNotEmpty()) attachmentSelection = null
+                if (sentMedia.isNotEmpty()) withContext(Dispatchers.IO + NonCancellable) {
+                    runCatching {
+                        mediaStore.adopt(priorWorkspace.id, sentMedia)
+                        mediaStore.discardDrafts(sentMedia)
+                    }
+                }
                 val messages = priorWorkspace.messages + listOf(
-                    ChatEntry(isUser = true, text = prompt),
+                    ChatEntry(isUser = true, text = prompt, media = sentMedia),
                     assistantEntry,
                 )
                 val finished = scopedWorkspace(priorWorkspace.copy(
@@ -428,6 +462,7 @@ class AgentViewModel internal constructor(
                 keepInterrupted(prompt, turnError)
             } finally {
                 activePrompt = null
+                activeMedia = emptyList()
                 progress = null
                 approvals = emptyList()
                 finishBackground(finishedTitle, finishedText)
@@ -502,10 +537,12 @@ class AgentViewModel internal constructor(
     private suspend fun keepInterrupted(prompt: String, error: String?) {
         promptText = prompt
         retryPrompt = prompt
+        val media = activeMedia
+        pendingMedia = media
         val partial = progress ?: return
         interrupted = partial
         val snapshot = scopedWorkspace(workspace.copy(
-            interruptedTurn = InterruptedTurn(prompt, partial.answer, partial.summary, error),
+            interruptedTurn = InterruptedTurn(prompt, partial.answer, partial.summary, error, media),
         ))
         workspace = snapshot
         withContext(NonCancellable) {
@@ -513,6 +550,82 @@ class AgentViewModel internal constructor(
                 saveWorkspace(snapshot)
             } catch (_: Exception) {
                 storageError = "Android could not save the interrupted reply."
+            }
+        }
+    }
+
+    /** Adds photos or files to the composer. Each is copied into app storage, so the picker's access can end. */
+    fun attach(uris: List<Uri>) {
+        if (uris.isEmpty() || isImporting || activePrompt != null || isLoading) return
+        isImporting = true
+        viewModelScope.launch {
+            try {
+                val (added, problem) = importMedia(uris)
+                pendingMedia = (pendingMedia + added).distinctBy { it.file }
+                turnError = problem
+            } finally {
+                isImporting = false
+            }
+        }
+    }
+
+    private suspend fun importMedia(uris: List<Uri>): Pair<List<ChatMedia>, String?> = withContext(Dispatchers.IO) {
+        val room = MAX_ATTACHMENTS - pendingMedia.size
+        val added = mutableListOf<ChatMedia>()
+        var problem: String? = if (uris.size > room) "Attach at most $MAX_ATTACHMENTS files to one message." else null
+        for (uri in uris.take(maxOf(0, room))) {
+            try {
+                added += importer.import(uri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                problem = e.message ?: "Android could not attach that file."
+            }
+        }
+        added to problem
+    }
+
+    fun removeAttachment(item: ChatMedia) {
+        if (activePrompt != null) return
+        pendingMedia = pendingMedia.filter { it.file != item.file }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { mediaStore.discardDrafts(listOf(item)) } }
+    }
+
+    /** The stored file behind a message's photo or document, or null when it is gone. */
+    internal fun mediaFile(item: ChatMedia): File? = mediaStore.find(workspace.id, item.file)
+
+    /**
+     * Takes text, photos or files shared from another app. They open in a new chat, ready to send.
+     * Called from the activity while it still holds access to the shared files.
+     */
+    fun receiveShare(text: String?, uris: List<Uri>) {
+        viewModelScope.launch {
+            ready.await()
+            if (activePrompt != null || isModerating || isWorkingChat || isSavingSettings || isImporting) {
+                turnError = "Wait for the current reply, then share again."
+                return@launch
+            }
+            isImporting = true
+            val (added, problem) = try {
+                importMedia(uris)
+            } finally {
+                isImporting = false
+            }
+            val fill = {
+                promptText = listOf(promptText.trim(), text?.trim().orEmpty()).filter { it.isNotEmpty() }
+                    .joinToString("\n\n")
+                pendingMedia = (pendingMedia + added).distinctBy { it.file }
+                turnError = problem
+            }
+            if (workspace.messages.isEmpty() && workspace.interruptedTurn == null) {
+                fill()
+                return@launch
+            }
+            chatAction { scope ->
+                val fresh = scopedWorkspace(Workspace(chatMode = workspace.chatMode))
+                withContext(Dispatchers.IO) { chats.save(scope, fresh, chatProject?.id) }
+                showWorkspace(fresh)
+                fill()
             }
         }
     }
@@ -556,6 +669,7 @@ class AgentViewModel internal constructor(
         val replaceCurrent = workspace.id == id
         val next = withContext(Dispatchers.IO) {
             chats.deleteChat(scope, id)
+            runCatching { mediaStore.deleteChat(id) }
             if (replaceCurrent) chats.active(scope) else null
         }
         if (replaceCurrent) showWorkspace(next?.let { restoreWorkspace(config, it) } ?: Workspace())
@@ -704,6 +818,7 @@ class AgentViewModel internal constructor(
         workspace = saved
         val previous = saved.interruptedTurn
         promptText = previous?.prompt.orEmpty()
+        pendingMedia = previous?.media.orEmpty()
         turnError = previous?.error
         interrupted = previous?.let {
             AgentProgress(SystemClock.elapsedRealtime(), answer = it.reply, summary = it.reasoningSummary)

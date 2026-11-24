@@ -34,6 +34,12 @@ To use a library, the agent adds an empty `<script src>` or stylesheet `<link>` 
 
 Open **Configure → Mini apps** to open, update, delete or share an app, or add it to your home screen. Each app runs in its own isolated WebView with no access to the agent, your files, the camera, the microphone or your location. It keeps its own data in `localStorage` and can call public HTTPS APIs. To change an app, ask the agent; it reads the app and saves a new version under the same id, so the app's data stays. Apps shared with you, opened from a `.html` file, are saved without internet access and cannot be changed by the agent. Switch the tools off under **Settings → Mini apps**. They are skipped for models without tool calling.
 
+## Photos and files
+
+Tap the paperclip in the composer to attach photos from your gallery, take a photo, or pick a PDF, MP3, WAV or text file. You can also share text, photos and PDFs to **Ask the agent** from any app; they open in a new chat, ready to send. Photos are shrunk to 1600 pixels on the long edge before sending. Up to 8 files, 8 MB in total, go with one message. Text files are sent as text.
+
+**Models** shows what each model reads and makes (Vision, PDF, Audio, Makes images), its price per million tokens, and a warning when OpenRouter plans to retire it. Photos are off in the composer when the chosen model can't read images. PDFs work with any model: when the model can't read them, OpenRouter's free PDF parser turns them into text. Attachments are kept on the phone with the chat and deleted with it; the saved conversation refers to them instead of copying them.
+
 ## Voice
 
 Tap the microphone in the composer to dictate a message. Android's speech recognizer is used, preferring on-device recognition. Add the **Ask agent** tile from Quick Settings to open the app straight into voice input.

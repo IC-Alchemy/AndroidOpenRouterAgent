@@ -1,12 +1,14 @@
 import { runAgent } from './runtime.mjs';
 import { createNativeTransport } from './native-fetch.mjs';
 import { createLocalBridge } from './local-tools.mjs';
+import { attachmentParts, dehydrate, dehydrateState, hydrate, hydrateState } from './media.mjs';
 
 const bridge = globalThis.AndroidAgent;
 const runs = new Map();
 const emit = (id, type, value) => bridge.post(JSON.stringify({ id, type, value }));
 
-async function start(options) {
+async function start(request) {
+  let options = request;
   if (runs.has(options.id)) return;
   const run = { controller: new AbortController(), decisions: new Map(), appRequests: new Map() };
   runs.set(options.id, run);
@@ -59,7 +61,19 @@ async function start(options) {
   run.transport = createNativeTransport(options.id, bridge,
     (phase, detail) => update({ kind: 'phase', phase, detail }));
   run.local = createLocalBridge(options.id, bridge, run.controller.signal);
+  // Media files live in Android's app storage. These calls read and save them for this run.
+  const known = new Map();
+  const readMedia = (kind, file) => (typeof bridge.readMedia === 'function'
+    ? bridge.readMedia(options.id, kind, file) : '') || '';
+  const storeMedia = (kind, value) => (typeof bridge.storeMedia === 'function'
+    ? bridge.storeMedia(options.id, kind, value) : '') || '';
   try {
+    options = {
+      ...options,
+      state: hydrateState(options.state, readMedia, known),
+      history: hydrate(options.history ?? [], readMedia, known) ?? [],
+      promptParts: attachmentParts(options.attachments, readMedia, known),
+    };
     const value = await runAgent(options, {
       fetcher: run.transport.fetcher,
       text: text => update({ kind: 'text', text }),
@@ -75,8 +89,10 @@ async function start(options) {
     }, run.controller.signal);
     flush();
     if (!run.controller.signal.aborted) {
-      const { response, history, state } = value;
-      emit(options.id, 'done', state.length <= 6_000_000 ? { response, state } : { response, history });
+      const response = dehydrate(value.response, storeMedia, known);
+      const state = dehydrateState(value.state, storeMedia, known);
+      emit(options.id, 'done', state.length <= 6_000_000 ? { response, state }
+        : { response, history: dehydrate(value.history, storeMedia, known) });
     }
   } catch (error) {
     flush();

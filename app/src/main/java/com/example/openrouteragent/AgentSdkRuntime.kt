@@ -69,6 +69,9 @@ internal open class AgentSdkRuntime(private val context: Context) {
 
     // Request interception runs on WebView worker threads.
     @Volatile private var approvedToolOrigins: Set<Triple<String, String, Int>> = emptySet()
+    // The run and chat whose media the runtime may read and save. Read on the JavaScript bridge thread.
+    @Volatile private var mediaRun: Pair<String, String>? = null
+    private val media = chatMediaStore(context)
 
     open suspend fun run(
         settings: AgentConfig,
@@ -103,6 +106,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
                 throw IOException("The Agent SDK did not start. Update Android System WebView and retry.", e)
             }
             activeRun = run
+            mediaRun = run.id to workspace.id
             val request = withContext(Dispatchers.Default) {
                 runtimeOptions(settings, workspace, prompt, model, catalog, guide, files, onAppAction != null).put("id", run.id)
             }
@@ -126,6 +130,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
             transport.cancelRun(run.id)
             run.localScope.cancel()
             approvedToolOrigins = emptySet()
+            if (mediaRun?.first == run.id) mediaRun = null
             if (activeRun?.id == run.id) activeRun = null
             if (!ready.isCompleted || ready.isCancelled) destroy()
         }
@@ -291,6 +296,22 @@ internal open class AgentSdkRuntime(private val context: Context) {
             }
         }
 
+        /** Returns a stored attachment or image as a data URL ("url") or bare base64 ("b64"), or "" when it is gone. */
+        @JavascriptInterface
+        fun readMedia(runId: String, kind: String, file: String): String {
+            val (id, chatId) = mediaRun ?: return ""
+            if (id != runId || (kind != "url" && kind != "b64")) return ""
+            return runCatching { media.encoded(chatId, file, kind == "url") }.getOrDefault("")
+        }
+
+        /** Saves a photo, document or recording from the run, returning its file name, or "" when it is not one. */
+        @JavascriptInterface
+        fun storeMedia(runId: String, kind: String, value: String): String {
+            val (id, chatId) = mediaRun ?: return ""
+            if (id != runId || (kind != "url" && kind != "b64") || value.length > MAX_HISTORY_BYTES * 2) return ""
+            return runCatching { media.storeEncoded(chatId, value, kind == "url") }.getOrNull().orEmpty()
+        }
+
         @JavascriptInterface
         fun readHttp(runId: String, requestId: String) = transport.read(runId, requestId)
 
@@ -391,7 +412,8 @@ internal fun runtimeOptions(
         config.sdk.fallbackModels.split(',').map(String::trim)).filter(String::isNotBlank).toSet()
     val modelDetails = JSONObject()
     catalog.filter { it.id in chosen }.forEach {
-        modelDetails.put(it.id, JSONObject().put("tools", it.supportsTools).put("parameters", JSONArray(it.parameters)))
+        modelDetails.put(it.id, JSONObject().put("tools", it.supportsTools).put("parameters", JSONArray(it.parameters))
+            .put("input", JSONArray(it.inputModalities)).put("output", JSONArray(it.outputModalities)))
     }
     val effectiveTools = config.customTools.filter { it.enabled && config.sdk.toolChoice != "none" }
     val skills = (listOfNotNull(guide) + config.savedSkills).filter { it.enabled }
@@ -406,6 +428,10 @@ internal fun runtimeOptions(
         .put("bodyBuilderModels", JSONArray(if (appActions && model.supportsTools) catalog.map { it.id } else emptyList()))
         .put("fileIds", JSONArray(files.attachments.map { it.id }))
         .put("attachmentNames", JSONArray(files.attachments.map { it.id.takeLast(8) + "-" + it.filename.substringAfterLast('/') }))
+        .put("attachments", JSONArray(files.media.map { (item, text) ->
+            JSONObject().put("kind", item.kind).put("file", item.file).put("name", item.name)
+                .put("mimeType", item.mimeType).put("text", text)
+        }))
         .put("miniApps", config.miniApps)
         .put("extraTools", JSONArray(config.extraToolsJson.ifBlank { "[]" }))
         .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)

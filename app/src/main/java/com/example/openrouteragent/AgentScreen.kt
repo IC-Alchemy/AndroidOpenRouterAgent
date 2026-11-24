@@ -104,6 +104,38 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             .filter { it.isNotEmpty() }.joinToString(" ")
     }
     val voiceContext = LocalContext.current
+    var viewingMedia by remember { mutableStateOf<ChatMedia?>(null) }
+    val pickPhotos = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS)) { uris -> agent.attach(uris) }
+    var cameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        val uri = cameraUri
+        cameraUri = null
+        if (taken && uri != null) agent.attach(listOf(android.net.Uri.parse(uri)))
+    }
+    val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        agent.attach(uris)
+    }
+    val attach: (AttachSource) -> Unit = { source ->
+        runCatching {
+            when (source) {
+                AttachSource.Photos -> pickPhotos.launch(androidx.activity.result.PickVisualMediaRequest(
+                    ActivityResultContracts.PickVisualMedia.ImageOnly))
+                AttachSource.Camera -> {
+                    val uri = cameraPhotoUri(voiceContext)
+                    cameraUri = uri.toString()
+                    takePhoto.launch(uri)
+                }
+                AttachSource.Files -> pickFiles.launch(arrayOf("application/pdf", "audio/mpeg", "audio/wav",
+                    "audio/x-wav", "text/*", "application/json", "application/xml", "image/*"))
+            }
+        }.onFailure {
+            android.widget.Toast.makeText(voiceContext, when (source) {
+                AttachSource.Camera -> "This phone has no camera app that can take a photo for the app."
+                else -> "Android could not open the picker."
+            }, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
     val listen: () -> Unit = {
         runCatching { speech.launch(speechIntent()) }.onFailure {
             android.widget.Toast.makeText(voiceContext, "This phone has no speech recognizer. Install or enable " +
@@ -332,6 +364,13 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         onVoice = listen,
                         chatMode = if (!agent.isLoading) agent.chatMode else null,
                         onChatMode = agent::setChatMode,
+                        attachments = if (isRunning) agent.activeMedia else agent.pendingMedia,
+                        mediaFile = agent::mediaFile,
+                        onOpenAttachment = { viewingMedia = it },
+                        onRemoveAttachment = agent::removeAttachment,
+                        onAttach = attach,
+                        canAttachImages = model?.accepts("image") != false,
+                        importing = agent.isImporting,
                     )
                 }
             }
@@ -366,7 +405,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             itemsIndexed(messages, key = { _, entry -> entry.id }) { index, entry ->
-                                if (entry.isUser) UserMessageBubble(entry.text)
+                                if (entry.isUser) UserMessageBubble(entry.text, entry.media, agent::mediaFile) {
+                                    viewingMedia = it
+                                }
                                 else {
                                     val prompt = messages.take(index).lastOrNull { it.isUser }?.text.orEmpty()
                                     AgentResponseCard(
@@ -380,7 +421,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 }
                             }
                             if (activePrompt != null) {
-                                item("active_prompt") { UserMessageBubble(activePrompt) }
+                                item("active_prompt") {
+                                    UserMessageBubble(activePrompt, agent.activeMedia, agent::mediaFile) { viewingMedia = it }
+                                }
                                 item("running") {
                                     if (runProgress != null) LiveAgentReply(runProgress,
                                         showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
@@ -405,6 +448,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 }
             }
         }
+    }
+
+    viewingMedia?.let { item ->
+        MediaViewer(item, agent.mediaFile(item)) { viewingMedia = null }
     }
 
     if (showRunActivity) {
@@ -623,6 +670,14 @@ private fun ProjectFilePanel(
         exportFile = { path, uri -> files.exportFile(area, path, uri) },
         upload = upload,
     )
+}
+
+/** A new file in the shared cache folder for the camera app to write a photo into. */
+private fun cameraPhotoUri(context: android.content.Context): android.net.Uri {
+    val dir = java.io.File(context.cacheDir, "shared/camera").apply { mkdirs() }
+    dir.listFiles()?.forEach { it.delete() }
+    val file = java.io.File(dir, "photo-${System.currentTimeMillis()}.jpg")
+    return androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
 }
 
 /** Set by the Ask tile; the screen starts voice input when it sees it. */
