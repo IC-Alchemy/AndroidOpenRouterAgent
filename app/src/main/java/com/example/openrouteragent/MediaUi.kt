@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -126,6 +127,36 @@ internal fun MediaThumbnail(item: ChatMedia, file: File?, size: Dp, onOpen: () -
                     .clickable(role = Role.Button, onClickLabel = "Remove $label", onClick = onRemove)) {
                 Icon(Icons.Default.Close, "Remove $label", Modifier.padding(3.dp),
                     tint = MaterialTheme.colorScheme.inverseOnSurface)
+            }
+        }
+    }
+}
+
+/** Images the model made, shown full width under its reply. A tap opens them full screen. */
+@Composable
+internal fun GeneratedImages(items: List<ChatMedia>, fileFor: (ChatMedia) -> File?, onOpen: (ChatMedia) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.forEach { item ->
+            val file = fileFor(item)
+            val label = mediaLabel(item)
+            val bitmap = rememberMediaBitmap(file, 1600)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .clickable(role = Role.Button, onClickLabel = "Open $label", onClick = { onOpen(item) }),
+            ) {
+                when {
+                    bitmap != null -> Image(bitmap, label, Modifier.fillMaxWidth()
+                        .aspectRatio(bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1)),
+                        contentScale = ContentScale.Fit)
+                    file == null -> Text("This image is no longer on this device.", Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodySmall)
+                    else -> Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(28.dp))
+                    }
+                }
             }
         }
     }

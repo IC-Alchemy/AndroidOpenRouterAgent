@@ -958,3 +958,24 @@ test('the bundled runtime sends attachments, parses PDFs for text models and kee
     assert.ok(JSON.stringify(requests[1].input).includes(photo));
     assert.equal(requests[1].plugins, undefined);
   });
+
+test('image generation from settings goes on the wire with its model, aspect ratio and quality', async () => {
+  const requests = [];
+  const events = { text() {}, fetcher: async request => {
+    requests.push(await request.json());
+    return new Response(stream(1, answer('msg_image', 'Done.')),
+      { headers: { 'Content-Type': 'text/event-stream' } });
+  }};
+  const signal = new AbortController().signal;
+  await runAgent({ ...base, imageGeneration: { model: 'google/gemini-3-pro-image', aspectRatio: '16:9',
+    quality: 'high' } }, events, signal);
+  await runAgent({ ...base, imageGeneration: { model: '', aspectRatio: '', quality: '' } }, events, signal);
+  await runAgent({ ...base, imageGeneration: { model: 'x/y' }, sdk: { toolChoice: 'none' } }, events, signal);
+  assert.deepEqual(requests[0].tools.find(tool => tool.type === 'openrouter:image_generation'), {
+    type: 'openrouter:image_generation',
+    parameters: { model: 'google/gemini-3-pro-image', aspect_ratio: '16:9', quality: 'high' },
+  });
+  assert.deepEqual(requests[1].tools.find(tool => tool.type === 'openrouter:image_generation'),
+    { type: 'openrouter:image_generation' });
+  assert.ok(!requests[2].tools?.length);
+});

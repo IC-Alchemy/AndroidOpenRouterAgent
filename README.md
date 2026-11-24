@@ -40,6 +40,10 @@ Tap the paperclip in the composer to attach photos from your gallery, take a pho
 
 **Models** shows what each model reads and makes (Vision, PDF, Audio, Makes images), its price per million tokens, and a warning when OpenRouter plans to retire it. Photos are off in the composer when the chosen model can't read images. PDFs work with any model: when the model can't read them, OpenRouter's free PDF parser turns them into text. Attachments are kept on the phone with the chat and deleted with it; the saved conversation refers to them instead of copying them.
 
+## Image generation
+
+Turn on **Image generation** in settings to let the agent draw pictures with OpenRouter's `openrouter:image_generation` tool. You can name an image model, or leave it blank for OpenRouter's default, and pick an aspect ratio and quality. Each image is billed by OpenRouter. Pictures appear full width under the reply; tap one to see it full screen, share it or save it to Photos. Models that make images themselves, marked **Makes images** in the picker, are asked for images and text, and their pictures show the same way. Generated images are kept on the phone with the chat, like attachments.
+
 ## Voice
 
 Tap the microphone in the composer to dictate a message. Android's speech recognizer is used, preferring on-device recognition. Add the **Ask agent** tile from Quick Settings to open the app straight into voice input.
@@ -235,5 +239,5 @@ OpenRouter chat runs start with `callModel` from the bundled official Agent SDK.
 
 Advanced settings include SDK repetition detection, final-turn behavior, tool deadlines and concurrency, and stopping after a named function tool. Follow-up profiles use the SDK's dynamic model, instruction, and generation callbacks. Enabled skills can be discovered or pinned, and MCP and webhook calls request approval inside the app.
 
-The Android app handles approvals during a run, including from the background notification. It does not currently resume a run after the process dies. SDK telemetry and previews of images from OpenRouter server tools are unavailable. Server tool availability depends on the selected model and OpenRouter workspace.
+The Android app handles approvals during a run, including from the background notification. It does not currently resume a run after the process dies. SDK telemetry is unavailable. A generated image that OpenRouter returns only as a link is shown as a link, not downloaded. Server tool availability depends on the selected model and OpenRouter workspace.
 

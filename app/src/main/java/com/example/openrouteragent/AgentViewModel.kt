@@ -407,11 +407,16 @@ class AgentViewModel internal constructor(
                         citations = (result.citations + progress?.sources.orEmpty()).distinctBy { it.url },
                         usage = result.usage, modelUsed = result.modelUsed,
                         notice = result.notice,
+                        media = result.media,
                         toolActivity = progress?.tools.orEmpty().map {
                             ToolActivity(it.name, it.status, it.detail)
                         }
                     )
                 } else {
+                    // Images from a reply that failed moderation are not kept.
+                    if (result.media.isNotEmpty()) withContext(Dispatchers.IO + NonCancellable) {
+                        result.media.forEach { runCatching { mediaStore.find(priorWorkspace.id, it.file)?.delete() } }
+                    }
                     finishedText = POLICY_RESPONSE_WARNING
                     ChatEntry(
                         isUser = false,

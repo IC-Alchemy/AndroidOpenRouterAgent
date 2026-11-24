@@ -308,9 +308,27 @@ internal fun parseAgentResult(raw: String): AgentRunResult {
     val shellSteps = mutableListOf<ShellExecutionStep>()
     val calls = mutableMapOf<String, Pair<List<String>, String?>>()
     val searchQueries = mutableListOf<String>()
+    val images = mutableListOf<ChatMedia>()
+    val imageLinks = mutableListOf<String>()
+    val imageErrors = mutableListOf<String>()
     var containerId: String? = null
     for (item in root.optJSONArray("output").objects()) {
-        when (item.string("type")) {
+        val type = item.string("type")
+        val caption = if (type in IMAGE_ITEMS) (item.string("revised_prompt") ?: item.string("revisedPrompt")
+            ?: item.string("prompt"))?.take(120).orEmpty() else ""
+        val before = images.size
+        collectSavedImages(item, caption, images)
+        when (type) {
+            in IMAGE_ITEMS -> {
+                val failure = item.string("error")
+                if (failure != null || item.string("status") == "failed") {
+                    imageErrors.add(failure?.take(300) ?: "the image tool failed")
+                } else if (images.size == before) {
+                    // Images the app could not keep on the device are shown as a link instead.
+                    listOf("image_url", "imageUrl", "result").mapNotNull { item.string(it) }
+                        .firstOrNull { it.toHttpUrlOrNull()?.isHttps == true }?.let(imageLinks::add)
+                }
+            }
             "message" -> {
                 val parts = item.optJSONArray("content").objects()
                 val text = parts.mapNotNull { part ->
@@ -380,8 +398,13 @@ internal fun parseAgentResult(raw: String): AgentRunResult {
         TokenUsage(it.optInt("input_tokens"), it.optInt("output_tokens"), it.optInt("total_tokens"),
             it.optDouble("cost").takeIf { cost -> cost.isFinite() }, it.optInt("cached_tokens"), it.optInt("reasoning_tokens"))
     }
-    val text = finalText.ifEmpty { intermediateText }.joinToString("\n\n").ifBlank {
+    val links = imageLinks.distinct().mapIndexed { index, url ->
+        "[Generated image${if (imageLinks.size > 1) " ${index + 1}" else ""}]($url)"
+    }
+    val text = (finalText.ifEmpty { intermediateText } + links).joinToString("\n\n").ifBlank {
         root.string("output_text") ?: when {
+            images.size == 1 -> "Here is the image."
+            images.isNotEmpty() -> "Here are the images."
             shellSteps.isNotEmpty() -> "The sandbox returned tool results."
             else -> "OpenRouter did not return a text answer."
         }
@@ -390,11 +413,33 @@ internal fun parseAgentResult(raw: String): AgentRunResult {
     val notice = when {
         root.optBoolean("stopped_for_repetition") -> "The agent stopped after detecting repeated steps."
         status == "incomplete" -> "OpenRouter returned a partial response${reason?.let { " (${it.replace('_', ' ')})" }.orEmpty()}."
+        imageErrors.isNotEmpty() -> "The image could not be made: ${imageErrors.first()}"
         else -> null
     }
     return AgentRunResult(text, summary.joinToString("\n").ifBlank { null }, shellSteps,
         searchQueries.distinct(), citations.distinctBy { it.url }, containerId, usage, root.string("model"),
-        notice)
+        notice, images.distinctBy { it.file })
+}
+
+private val IMAGE_ITEMS = setOf("openrouter:image_generation", "image_generation_call")
+
+/** The runtime swaps image data for a marker naming the file it saved, such as oratt:b64:<sha256>.png. */
+private val savedMediaMarker = Regex("^oratt:(?:url|b64):([0-9a-f]{64}\\.[a-z0-9]{2,4})$")
+
+/** Finds images the runtime already saved with the chat, wherever they sit in an output item. */
+private fun collectSavedImages(value: Any?, caption: String, into: MutableList<ChatMedia>, depth: Int = 0) {
+    if (depth > 8) return
+    when (value) {
+        is JSONObject -> value.keys().forEach { collectSavedImages(value.opt(it), caption, into, depth + 1) }
+        is JSONArray -> (0 until value.length()).forEach { collectSavedImages(value.opt(it), caption, into, depth + 1) }
+        is String -> {
+            val file = savedMediaMarker.matchEntire(value)?.groupValues?.get(1) ?: return
+            val mime = mimeForMediaFile(file)
+            if (mime.startsWith("image/") && into.none { it.file == file }) {
+                into.add(ChatMedia(file, MEDIA_IMAGE, mime, caption))
+            }
+        }
+    }
 }
 
 private fun limitedOutput(text: String): String =
