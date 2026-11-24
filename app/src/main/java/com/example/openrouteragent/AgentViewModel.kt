@@ -373,8 +373,9 @@ class AgentViewModel internal constructor(
                     finishedText = replyPreview(result.assistantText)
                     ChatEntry(
                         isUser = false, text = result.assistantText,
-                        // Keep the reasoning even while it is hidden, so turning it back on shows it.
-                        reasoningSummary = progress?.summary?.ifBlank { null } ?: result.reasoningSummary,
+                        reasoningSummary = if (currentConfig.sdk.saveReasoning) {
+                            progress?.summary?.ifBlank { null } ?: result.reasoningSummary
+                        } else null,
                         shellSteps = result.shellSteps, searchQueries = result.searchQueries,
                         citations = (result.citations + progress?.sources.orEmpty()).distinctBy { it.url },
                         usage = result.usage, modelUsed = result.modelUsed,
@@ -505,7 +506,8 @@ class AgentViewModel internal constructor(
         val partial = progress ?: return
         interrupted = partial
         val snapshot = scopedWorkspace(workspace.copy(
-            interruptedTurn = InterruptedTurn(prompt, partial.answer, partial.summary, error),
+            interruptedTurn = InterruptedTurn(prompt, partial.answer,
+                partial.summary.takeIf { config.sdk.saveReasoning }.orEmpty(), error),
         ))
         workspace = snapshot
         withContext(NonCancellable) {
