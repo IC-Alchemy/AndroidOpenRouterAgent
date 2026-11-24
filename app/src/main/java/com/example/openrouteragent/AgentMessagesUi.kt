@@ -57,8 +57,6 @@ internal fun UserMessageBubble(
     media: List<ChatMedia> = emptyList(),
     mediaFile: (ChatMedia) -> java.io.File? = { null },
     onOpenMedia: (ChatMedia) -> Unit = {},
-    speaking: Boolean = false,
-    onSpeak: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
@@ -97,6 +95,8 @@ internal fun AgentResponseCard(
     onReport: () -> Unit = {},
     mediaFile: (ChatMedia) -> File? = { null },
     onOpenMedia: (ChatMedia) -> Unit = {},
+    speaking: Boolean = false,
+    onSpeak: (() -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
     val isWarningCard = entry.isError || entry.isModerated
