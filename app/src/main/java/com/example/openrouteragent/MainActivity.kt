@@ -43,14 +43,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -72,6 +70,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -105,6 +104,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -119,6 +119,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -137,6 +138,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ControlLabelPreferences(this).startOnboarding()
         enableEdgeToEdge()
         setContent {
             // The process-wide store keeps a run going after this activity is closed.
@@ -181,7 +183,7 @@ fun OpenRouterAgentTheme(
     val clipboard = remember(context, scope) { SelectionClipboard(scope) { copyText(context, it) } }
     val colorScheme = if (darkTheme) StudioDarkColorScheme else StudioLightColorScheme
 
-    CompositionLocalProvider(LocalSelectionClipboard provides clipboard) {
+    CompositionLocalProvider(LocalSelectionClipboard provides clipboard, LocalControlLabels provides rememberControlLabels()) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = StudioTypography,
@@ -195,10 +197,15 @@ fun OpenRouterAgentTheme(
 // 5. MAIN SCREEN & INTERACTIVE UI
 // =============================================================================
 
+private data class QuickPrompt(val icon: ImageVector, val title: String, val message: String)
+
 private val QUICK_PROMPTS = listOf(
-    "Check the Linux OS, Python, and Node.js versions in my sandbox.",
-    "Write and run a Python script to simulate 10,000 dice rolls and save a summary report to report.txt.",
-    "Search the web for the latest OpenRouter server tools updates and summarize them."
+    QuickPrompt(StudioSymbols.Sandbox, "Check sandbox",
+        "Check the Linux OS, Python, and Node.js versions in my sandbox."),
+    QuickPrompt(StudioSymbols.Models, "Compare models",
+        "Use Body Builder to compare Claude and Gemini on why stars shine."),
+    QuickPrompt(Icons.Default.Search, "Search the web",
+        "Search the web for the latest OpenRouter server tools updates and summarize them."),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -361,39 +368,44 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 contentColor = MaterialTheme.colorScheme.onSurface,
                             )
                             if (agent.providerReady) {
-                                TextButton(
+                                SymbolAction(
+                                    label = "Models", icon = StudioSymbols.Models,
                                     enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating,
                                     onClick = { showModels = true },
                                     shape = RoundedCornerShape(10.dp),
                                     colors = pillColors,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                ) { Text("Models", style = MaterialTheme.typography.labelMedium) }
+                                )
                                 Spacer(Modifier.width(4.dp))
                             }
-                            TextButton(
+                            SymbolAction(
+                                label = "Chats", icon = StudioSymbols.Chats,
                                 enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
                                     !agent.isWorkingChat && !isExporting && !agent.isModerating,
                                 onClick = { showChatLibrary = true },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = pillColors,
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            ) { Text("Chats", style = MaterialTheme.typography.labelMedium) }
+                            )
                             Box {
-                                IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
-                                    onClick = { showConfigure = true }) {
-                                    Icon(Icons.Default.Settings, contentDescription = "Configure")
+                                ControlTooltip("Configure") {
+                                    IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
+                                        onClick = { showConfigure = true }) {
+                                        Icon(Icons.Default.Settings, contentDescription = "Configure")
+                                    }
                                 }
                                 DropdownMenu(expanded = showConfigure, onDismissRequest = { showConfigure = false }) {
-                                    DropdownMenuItem(text = { Text("Settings") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Settings") },
+                                        leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = {
                                         showConfigure = false
                                         showSettings = true
                                     })
-                                    DropdownMenuItem(text = { Text("Device files") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Device files") },
+                                        leadingIcon = { Icon(StudioSymbols.Folder, null) }, onClick = {
                                         showConfigure = false
                                         deviceFilesTarget = "all"
                                     })
                                     if (agent.chatProject != null && agent.providerReady) {
-                                        DropdownMenuItem(text = { Text("All workspace files") }, onClick = {
+                                        DropdownMenuItem(text = { Text("All workspace files") },
+                                            leadingIcon = { Icon(StudioSymbols.Workspace, null) }, onClick = {
                                             showConfigure = false
                                             workspaceFilesTarget = "all"
                                         })
@@ -406,7 +418,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showConfigure = false
                                         customizeTab = "tools"
                                     })
-                                    DropdownMenuItem(text = { Text("Subagents") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Subagents") },
+                                        leadingIcon = { Icon(StudioSymbols.Agent, null) }, onClick = {
                                         showConfigure = false
                                         customizeTab = "subagents"
                                     })
@@ -420,7 +433,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     }, trailingIcon = {
                                         Switch(checked = config.sdk.renderMarkdown, onCheckedChange = null)
                                     })
-                                    DropdownMenuItem(text = { Text("Mini apps") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Mini apps") },
+                                        leadingIcon = { Icon(StudioSymbols.MiniApps, null) }, onClick = {
                                         showConfigure = false
                                         showMiniApps = true
                                     })
@@ -819,6 +833,7 @@ internal fun StatusCapabilitiesBar(
     onOpenFiles: () -> Unit,
     onResetContainer: () -> Unit
 ) {
+    val showLabels = LocalControlLabels.current.visible
     Surface(
         modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
         shape = RoundedCornerShape(12.dp),
@@ -834,31 +849,41 @@ internal fun StatusCapabilitiesBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AssistChip(onClick = onOpenProjectFiles, label = { Text(if (inProject) "Project files" else "Chat files") },
-                modifier = Modifier.heightIn(min = 48.dp))
+            val filesLabel = if (inProject) "Project files" else "Chat files"
+            ControlTooltip(filesLabel, enabled = !showLabels) {
+                AssistChip(onClick = onOpenProjectFiles, label = { SymbolLabel(filesLabel, StudioSymbols.Folder) },
+                    modifier = Modifier.heightIn(min = 48.dp))
+            }
             if (onOpenWorkspaceFiles != null) {
-                AssistChip(onClick = onOpenWorkspaceFiles, label = {
-                    Text(if (attachmentCount == 0) "Workspace files" else "Workspace files · $attachmentCount attached")
-                }, modifier = Modifier.heightIn(min = 48.dp))
-                if (attachmentCount > 0) TextButton(onClick = onClearAttachments, enabled = canDetach) {
-                    Text("Clear attachments")
+                val workspaceLabel = if (attachmentCount == 0) "Workspace files" else "Workspace files · $attachmentCount attached"
+                ControlTooltip(workspaceLabel, enabled = !showLabels) {
+                    AssistChip(onClick = onOpenWorkspaceFiles, label = {
+                        SymbolLabel(workspaceLabel, StudioSymbols.Workspace,
+                            badge = attachmentCount.takeIf { it > 0 }?.toString())
+                    }, modifier = Modifier.heightIn(min = 48.dp))
                 }
+                if (attachmentCount > 0) SymbolAction("Clear attachments", StudioSymbols.Detach, onClearAttachments, canDetach)
             }
             if (config.enableShellSandbox) {
                 if (activeContainerId != null) {
-                    AssistChip(onClick = onOpenFiles, label = { Text("Sandbox files") }, modifier = Modifier.heightIn(min = 48.dp))
-                    if (!inProject) TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
-                } else StatusPill("Hosted shell", MaterialTheme.colorScheme.secondary)
+                    ControlTooltip("Sandbox files", enabled = !showLabels) {
+                        AssistChip(onClick = onOpenFiles, label = { SymbolLabel("Sandbox files", StudioSymbols.Sandbox) },
+                            modifier = Modifier.heightIn(min = 48.dp))
+                    }
+                    if (!inProject) SymbolAction("Detach sandbox", StudioSymbols.Detach, onResetContainer, canDetach)
+                } else StatusPill("Hosted shell", StudioSymbols.Sandbox, MaterialTheme.colorScheme.secondary)
             }
             if (config.enableWebSearch) {
                 StatusPill(
                     label = "Web Search",
+                    icon = Icons.Default.Search,
                     accent = MaterialTheme.colorScheme.primary
                 )
             }
             if (config.enableShellSandbox && config.allowSandboxNetwork) {
                 StatusPill(
                     label = "Egress Allowlist",
+                    icon = StudioSymbols.Network,
                     accent = MaterialTheme.colorScheme.tertiary
                 )
             }
@@ -869,26 +894,21 @@ internal fun StatusCapabilitiesBar(
 @Composable
 internal fun StatusPill(
     label: String,
+    icon: ImageVector,
     accent: Color
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = accent.copy(alpha = 0.11f),
-        border = BorderStroke(StudioHairlineWidth, accent.copy(alpha = 0.38f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ControlTooltip(label, enabled = !LocalControlLabels.current.visible) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = accent.copy(alpha = 0.11f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = BorderStroke(StudioHairlineWidth, accent.copy(alpha = 0.38f))
         ) {
-            StudioStatusDot(color = accent, size = 5.dp)
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium
-            )
+            Box(Modifier.padding(horizontal = 9.dp, vertical = 5.dp)) {
+                ProvideTextStyle(MaterialTheme.typography.labelSmall) {
+                    SymbolLabel(label, icon)
+                }
+            }
         }
     }
 }
@@ -916,7 +936,7 @@ internal fun EmptyAgentState(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Default.Build,
+                    imageVector = StudioSymbols.Agent,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(28.dp)
@@ -933,12 +953,6 @@ internal fun EmptyAgentState(
             modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Run code, work with files, and search the web using OpenRouter’s hosted tools.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
         Spacer(Modifier.height(20.dp))
 
         if (!hasApiKey) {
@@ -959,48 +973,45 @@ internal fun EmptyAgentState(
         )
         Spacer(Modifier.height(8.dp))
 
-        QUICK_PROMPTS.forEachIndexed { index, sample ->
-            Card(
-                onClick = { onSelectPrompt(sample) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                        border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                    ) {
-                        Text(
-                            text = "%02d".format(index + 1),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                        )
+        if (LocalControlLabels.current.visible) {
+            QUICK_PROMPTS.forEach { prompt ->
+                QuickPromptCard(prompt, compact = false, onSelect = onSelectPrompt, modifier = Modifier.padding(vertical = 4.dp))
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QUICK_PROMPTS.forEach { prompt ->
+                    Box(Modifier.weight(1f)) {
+                        ControlTooltip(prompt.message) { QuickPromptCard(prompt, compact = true, onSelect = onSelectPrompt) }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = sample,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickPromptCard(prompt: QuickPrompt, compact: Boolean, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val symbol: @Composable () -> Unit = {
+        Surface(shape = RoundedCornerShape(6.dp), color = colors.primaryContainer.copy(alpha = 0.6f),
+            border = BorderStroke(StudioHairlineWidth, colors.primary.copy(alpha = 0.35f))) {
+            Icon(prompt.icon, contentDescription = null, tint = colors.primary, modifier = Modifier.padding(7.dp).size(20.dp))
+        }
+    }
+    Card(onClick = { onSelect(prompt.message) }, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow),
+        border = BorderStroke(StudioHairlineWidth, colors.outlineVariant)) {
+        if (compact) {
+            Column(Modifier.fillMaxWidth().heightIn(min = 104.dp).padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterVertically)) {
+                symbol()
+                Text(prompt.title, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+            }
+        } else {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                symbol()
+                Text(prompt.message, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -1189,28 +1200,15 @@ internal fun AgentResponseCard(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!isWarningCard) {
-                        TextButton(
-                            onClick = { onCopyText(entry.text) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        ) {
-                            Text("Copy reply")
-                        }
+                        SymbolAction("Copy reply", StudioSymbols.Copy, onClick = { onCopyText(entry.text) })
                     }
-                    TextButton(
+                    SymbolAction(
+                        label = "Report", icon = Icons.Default.Warning,
                         onClick = onReport,
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = agentResponseReportContentColor(isWarningCard, MaterialTheme.colorScheme),
                         ),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Report")
-                    }
+                    )
                 }
             }
         }
@@ -1414,6 +1412,7 @@ internal fun AgentInputBar(
     chatMode: Boolean? = null,
     onChatMode: (Boolean) -> Unit = {},
 ) {
+    val showLabels = LocalControlLabels.current.visible
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             HorizontalDivider(thickness = StudioHairlineWidth, color = MaterialTheme.colorScheme.outlineVariant)
@@ -1422,13 +1421,22 @@ internal fun AgentInputBar(
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
                     listOf(false to "Agent", true to "Chat").forEach { (chat, label) ->
-                        FilterChip(selected = chatMode == chat, onClick = { onChatMode(chat) },
-                            enabled = !isLoading && !isRunning, label = { Text(label) })
+                        val icon = if (chat) StudioSymbols.Chat else StudioSymbols.Agent
+                        ControlTooltip(label, enabled = !showLabels) {
+                            FilterChip(selected = chatMode == chat, onClick = { onChatMode(chat) },
+                                enabled = !isLoading && !isRunning, label = { SymbolLabel(label, icon) },
+                                modifier = Modifier.heightIn(min = 48.dp))
+                        }
                     }
-                    Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    if (showLabels) {
+                        Text(if (chatMode) "No tools · faster, cheaper" else "Tools on",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    ControlLabelsToggle()
                 }
             }
             if (error != null) {
@@ -1454,19 +1462,21 @@ internal fun AgentInputBar(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { onSend() })
                 )
-                if (!isRunning) IconButton(onClick = onVoice, enabled = !isLoading, modifier = Modifier.size(48.dp)) {
-                    Icon(painterResource(R.drawable.ic_mic), contentDescription = "Speak a message")
+                if (!isRunning) ControlTooltip("Speak a message") {
+                    IconButton(onClick = onVoice, enabled = !isLoading, modifier = Modifier.size(48.dp)) {
+                        Icon(painterResource(R.drawable.ic_mic), contentDescription = "Speak a message")
+                    }
                 }
-                FilledIconButton(
-                    onClick = if (isRunning) onStop else onSend,
-                    enabled = isRunning || (!isLoading && value.isNotBlank()),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isRunning) Icons.Default.Close else Icons.AutoMirrored.Filled.Send,
-                        contentDescription = if (isRunning) "Stop waiting" else "Send prompt"
-                    )
+                val action = if (isRunning) "Stop waiting" else "Send prompt"
+                ControlTooltip(action) {
+                    FilledIconButton(
+                        onClick = if (isRunning) onStop else onSend,
+                        enabled = isRunning || (!isLoading && value.isNotBlank()),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(if (isRunning) StudioSymbols.Stop else Icons.AutoMirrored.Filled.Send, action)
+                    }
                 }
             }
         }
@@ -1609,6 +1619,11 @@ internal fun SettingsBottomSheet(
                         Text("Changing the key starts a new conversation.",
                             style = MaterialTheme.typography.bodySmall)
                     }
+                }
+
+                OutlinedSection(title = "Appearance") {
+                    val labels = LocalControlLabels.current
+                    SettingsToggleRow("Show control labels", "Show names beside symbols.", labels.visible, labels.setVisible)
                 }
 
                 OutlinedSection(title = "Content moderation") {

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,7 +19,6 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -148,10 +146,7 @@ private fun CodeBlock(block: MdBlock.Code, md: MarkdownScope) {
             Row(Modifier.fillMaxWidth().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(block.language.ifBlank { "code" }, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace, color = colors.onSurfaceVariant)
-                TextButton(onClick = { clipboard.copy(block.code) },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                    Text("Copy code", style = MaterialTheme.typography.labelMedium)
-                }
+                SymbolAction("Copy code", StudioSymbols.Copy, onClick = { clipboard.copy(block.code) })
             }
             // Long lines scroll sideways instead of wrapping, so the code keeps its shape.
             Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())

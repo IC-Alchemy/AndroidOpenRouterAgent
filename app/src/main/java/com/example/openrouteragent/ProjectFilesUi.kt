@@ -248,10 +248,10 @@ internal fun ProjectFilesDialog(
                         content = previewText
                         editor = ProjectEditor.EditText
                     }) { Text("Edit text") }
-                    TextButton(enabled = !working, onClick = {
+                    SymbolAction("Export", StudioSymbols.Export, enabled = !working, onClick = {
                         pendingExportPath = path
                         exportDocument.launch(fileName(path))
-                    }) { Text("Export") }
+                    })
                     if (upload != null) Button(enabled = !working, onClick = {
                         operation.run(scope, "Uploading to OpenRouter…") {
                             val file = upload(path)
@@ -272,18 +272,20 @@ internal fun ProjectFilesDialog(
                     FileDetailText("Agent mode can send file names and text it reads in this folder to OpenRouter during a run.")
                 }
                 FileActionRow {
-                    Button(enabled = !working, onClick = {
-                        pendingImportDirectory = directory
-                        importDocument.launch(arrayOf("*/*"))
-                    }) { Text("Import file") }
-                    TextButton(enabled = !working, onClick = {
+                    ControlTooltip("Import file", enabled = !LocalControlLabels.current.visible) {
+                        Button(enabled = !working, onClick = {
+                            pendingImportDirectory = directory
+                            importDocument.launch(arrayOf("*/*"))
+                        }) { SymbolLabel("Import file", StudioSymbols.Import) }
+                    }
+                    SymbolAction("New folder", StudioSymbols.NewFolder, enabled = !working, onClick = {
                         operation.clear()
                         editor = ProjectEditor.Folder
-                    }) { Text("New folder") }
-                    TextButton(enabled = !working, onClick = {
+                    })
+                    SymbolAction("New text file", StudioSymbols.NewFile, enabled = !working, onClick = {
                         operation.clear()
                         editor = ProjectEditor.NewText
-                    }) { Text("New text file") }
+                    })
                 }
                 val visibleEntries = entries
                 when {
@@ -295,7 +297,7 @@ internal fun ProjectFilesDialog(
                             FileBrowserRow(
                                 fileName(entry.path),
                                 if (entry.isDirectory) "Folder" else fileSizeLabel(entry.sizeBytes),
-                                enabled = !working
+                                enabled = !working, isFolder = entry.isDirectory,
                             ) {
                                 if (entry.isDirectory) navigate(entry.path) else {
                                     operation.clear()
@@ -421,10 +423,13 @@ internal fun FileActionRow(content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun FileBrowserRow(name: String, detail: String?, enabled: Boolean, onOpen: () -> Unit) {
+internal fun FileBrowserRow(name: String, detail: String?, enabled: Boolean, isFolder: Boolean = false, onOpen: () -> Unit) {
+    val visibleDetail = detail?.takeUnless { isFolder && !LocalControlLabels.current.visible }
     ListItem(
         headlineContent = { Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        supportingContent = detail?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        supportingContent = visibleDetail?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        leadingContent = { Icon(if (isFolder) StudioSymbols.Folder else StudioSymbols.File,
+            contentDescription = if (isFolder && visibleDetail == null) "Folder" else null) },
         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
         modifier = Modifier.clickable(enabled = enabled, onClick = onOpen)
     )

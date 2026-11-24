@@ -234,17 +234,25 @@ internal open class AgentSdkRuntime(private val context: Context) {
     private inner class EventBridge(private val runtime: WebView) {
         @JavascriptInterface
         fun requestHttp(runId: String, requestId: String, json: String) {
-            val body = if (json.length <= MAX_HISTORY_BYTES * 2) {
-                runCatching { JSONObject(json).getString("body") }.getOrNull()
+            val payload = if (json.length <= MAX_HISTORY_BYTES * 2) {
+                runCatching { JSONObject(json) }.getOrNull()
             } else null
+            val body = payload?.opt("body") as? String
+            val route = when (payload?.optString("endpoint")) {
+                "" -> AgentEndpoint.Responses
+                "chatCompletions" -> AgentEndpoint.ChatCompletions
+                else -> null
+            }
             main.post {
                 val run = activeRun ?: return@post
                 if (runtime !== view || run.id != runId || run.completion.isCompleted) return@post
-                if (body == null) {
+                if (body == null || route == null) {
                     dispatch(runtime, "http", runId, requestId, "error", "The OpenRouter request is too large or invalid.")
                     return@post
                 }
-                transport.start(runId, requestId, run.apiKey, body, run.model, run.idleSeconds) { kind, value ->
+                val model = if (route == AgentEndpoint.Responses) run.model else
+                    runCatching { JSONObject(body).optString("model").takeIf(String::isNotBlank) }.getOrNull()
+                transport.start(runId, requestId, run.apiKey, body, model, run.idleSeconds, route) { kind, value ->
                     main.post {
                         if (runtime === view && activeRun?.id == runId) {
                             dispatch(runtime, "http", runId, requestId, kind, value)
@@ -395,6 +403,7 @@ internal fun runtimeOptions(
         .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
         .put("workspaceFiles", config.enableWorkspaceFiles).put("projectFolder", files.projectFolder)
         .put("appActions", appActions).put("github", appActions && files.github)
+        .put("bodyBuilderModels", JSONArray(if (appActions && model.supportsTools) catalog.map { it.id } else emptyList()))
         .put("fileIds", JSONArray(files.attachments.map { it.id }))
         .put("attachmentNames", JSONArray(files.attachments.map { it.id.takeLast(8) + "-" + it.filename.substringAfterLast('/') }))
         .put("miniApps", config.miniApps)

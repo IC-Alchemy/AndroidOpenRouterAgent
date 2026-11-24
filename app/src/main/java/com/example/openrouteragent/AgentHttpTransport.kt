@@ -29,6 +29,8 @@ private val jsonType = "application/json; charset=utf-8".toMediaType()
 private val retryableStatuses = setOf(408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524)
 private val requestIdHeaders = listOf("x-request-id", "x-generation-id", "openrouter-request-id", "cf-ray")
 
+internal enum class AgentEndpoint { Responses, ChatCompletions }
+
 /** Timeouts and retry limits for one OpenRouter Responses stream. */
 internal data class StreamPolicy(
     val connectTimeoutSeconds: Long = 10,
@@ -87,6 +89,7 @@ internal class AgentHttpTransport(
     private data class Key(val run: String, val request: String)
     private class Exchange(
         val key: Key, val request: Request, val client: OkHttpClient, val diagnostics: StreamDiagnostics,
+        val route: AgentEndpoint,
         val emit: (String, Any) -> Unit,
     ) {
         @Volatile var call: Call? = null
@@ -102,19 +105,24 @@ internal class AgentHttpTransport(
 
     fun start(
         runId: String, requestId: String, apiKey: String, body: String,
-        model: String? = null, idleSeconds: Long? = null, emit: (String, Any) -> Unit,
+        model: String? = null, idleSeconds: Long? = null, route: AgentEndpoint = AgentEndpoint.Responses,
+        emit: (String, Any) -> Unit,
     ) {
         val key = Key(runId, requestId)
         val idle = (idleSeconds ?: policy.idleTimeoutSeconds).coerceAtLeast(1)
-        val request = Request.Builder().url(endpoint)
+        val url = when (route) {
+            AgentEndpoint.Responses -> endpoint
+            AgentEndpoint.ChatCompletions -> endpoint.newBuilder().encodedPath("/api/v1/chat/completions").build()
+        }
+        val request = Request.Builder().url(url)
             .header("Authorization", "Bearer $apiKey")
             .header("X-Title", "OpenRouter Sandbox Agent")
-            .header("Accept", "text/event-stream, application/json")
+            .header("Accept", if (route == AgentEndpoint.Responses) "text/event-stream, application/json" else "application/json")
             .post(body.toRequestBody(jsonType))
             .build()
         val perRequest = if (idle == policy.idleTimeoutSeconds) client
             else client.newBuilder().readTimeout(idle, TimeUnit.SECONDS).build()
-        val exchange = Exchange(key, request, perRequest, StreamDiagnostics("$runId/$requestId", model, idle), emit)
+        val exchange = Exchange(key, request, perRequest, StreamDiagnostics("$runId/$requestId", model, idle), route, emit)
         if (active.putIfAbsent(key, exchange) != null) return
         attempt(exchange)
     }
@@ -158,6 +166,8 @@ internal class AgentHttpTransport(
 
     /** Schedules another attempt and tells the UI why. Returns false when retries are exhausted. */
     private fun retry(exchange: Exchange, reason: String, retryAfter: String?, detail: String? = null): Boolean {
+        // A non-streaming completion may have been billed before the connection failed.
+        if (exchange.route == AgentEndpoint.ChatCompletions) return false
         val diagnostics = exchange.diagnostics
         diagnostics.lastFailure = listOfNotNull(reason, detail).joinToString(": ")
         val retry = diagnostics.retries

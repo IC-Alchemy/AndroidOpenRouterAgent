@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -71,13 +72,16 @@ internal fun ChatLibrarySheet(
                 Column(Modifier.weight(1f)) {
                     Text("Chats", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
                 }
-                TextButton(onClick = onClose, enabled = !busy) { Text("Close") }
+                SymbolAction("Close", Icons.Default.Close, onClose, enabled = !busy)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(enabled = !busy, onClick = { agent.newConversation(project?.id); onClose() }) { Text("New chat") }
-                TextButton(enabled = !busy, onClick = { nameDialog = NameDialog("New project", "", agent::addProject) }) {
-                    Text("New project")
+                ControlTooltip("New chat", enabled = !LocalControlLabels.current.visible) {
+                    Button(enabled = !busy, onClick = { agent.newConversation(project?.id); onClose() }) {
+                        SymbolLabel("New chat", StudioSymbols.NewChat)
+                    }
                 }
+                SymbolAction("New project", StudioSymbols.NewFolder,
+                    onClick = { nameDialog = NameDialog("New project", "", agent::addProject) }, enabled = !busy)
             }
             ChoiceStrip(listOf(ALL_CHATS to "All chats", UNFILED_CHATS to "Unfiled") +
                 library.projects.map { it.id to it.name }, filter) { filter = it }
@@ -85,7 +89,7 @@ internal fun ChatLibrarySheet(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(project.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    TextButton(enabled = !busy, onClick = { onProjectFiles(project.id) }) { Text("Project files") }
+                    SymbolAction("Project files", StudioSymbols.Folder, onClick = { onProjectFiles(project.id) }, enabled = !busy)
                     IconButton(enabled = !busy, onClick = { projectsMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Manage project")
                     }

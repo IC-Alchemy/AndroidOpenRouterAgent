@@ -61,6 +61,83 @@ async function bundledRuntime(AndroidAgent) {
   return browser.AgentRuntime;
 }
 
+test('the bundled agent runs Body Builder comparisons over the Android bridge and reports worker usage',
+  { timeout: 5000 }, async () => {
+    const name = 'openrouter_body_builder';
+    const prompt = 'Compare the two workers on one short astronomy question.';
+    const workerModels = ['mock/worker-a', 'mock/worker-b'];
+    const functionCall = { type: 'function_call', id: 'item_builder', call_id: 'call_builder', name,
+      arguments: JSON.stringify({ request: prompt }), status: 'completed' };
+    const requests = [];
+    const replies = new Map();
+    const workers = [];
+    const events = [];
+    const chat = (content, usage) => JSON.stringify({ choices: [{ message: { content } }], usage });
+    const generate = JSON.stringify({ requests: [
+      ...workerModels.map(model => ({ model, messages: [{ role: 'user', content: 'Why do stars shine?' }],
+        max_tokens: 200, stream: true, tools: [{ type: 'web_search' }] })),
+      { model: 'mock/unavailable', messages: [{ role: 'user', content: 'Why do stars shine?' }] },
+    ] });
+    const respond = (id, requestId, content, contentType) => {
+      replies.set(requestId, Buffer.from(content).toString('base64'));
+      queueMicrotask(() => runtime.http(id, requestId, 'headers', { status: 200, contentType }));
+    };
+    const runtime = await bundledRuntime({
+      post: message => events.push(JSON.parse(message)),
+      requestHttp(id, requestId, payload) {
+        const { endpoint, body } = JSON.parse(payload);
+        const request = JSON.parse(body);
+        requests.push({ endpoint, request });
+        if (request.model === base.model) {
+          const first = requests.length === 1;
+          respond(id, requestId, stream(first ? 1 : 2, first ? functionCall : answer('msg_builder', 'Comparison ready.')),
+            'text/event-stream');
+        } else if (request.model === 'openrouter/bodybuilder') {
+          respond(id, requestId, chat('```json\n' + generate + '\n```'), 'application/json');
+        } else {
+          workers.push({ requestId, model: request.model });
+          // Both workers must start before either receives a response.
+          if (workers.length === 2) for (const worker of workers) {
+            if (worker.model === workerModels[0]) {
+              respond(id, worker.requestId, chat('Worker A answer', {
+                prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0.03,
+              }), 'application/json');
+            } else {
+              queueMicrotask(() => runtime.http(id, worker.requestId, 'error', 'OpenRouter HTTP 429.'));
+            }
+          }
+        }
+      },
+      readHttp(id, requestId) {
+        const reply = replies.get(requestId);
+        replies.delete(requestId);
+        queueMicrotask(() => runtime.http(id, requestId, reply ? 'chunk' : 'end', reply ?? null));
+      },
+      cancelHttp() {},
+    });
+    await runtime.start({ ...base, id: 'body-builder', prompt, appActions: true,
+      bodyBuilderModels: workerModels, sdk: { zdr: true, dataCollection: 'deny' } });
+    assert.ok(requests[0].request.tools?.some(tool => tool.name === name));
+    assert.deepEqual(requests.slice(1, 4).map(({ endpoint, request }) => [endpoint, request.model]),
+      ['openrouter/bodybuilder', ...workerModels].map(model => ['chatCompletions', model]));
+    assert.deepEqual(requests[1].request.messages, [{ role: 'user', content: prompt }]);
+    for (const { request } of requests.slice(2, 4)) {
+      assert.equal(request.max_tokens, 200);
+      assert.equal(request.stream, false);
+      assert.equal(request.tools, undefined);
+      assert.deepEqual(request.provider, { zdr: true, data_collection: 'deny' });
+    }
+    assert.equal(requests.length, 5);
+    const output = requests[4].request.input.find(item => item.call_id === 'call_builder' && item.type === 'function_call_output');
+    assert.match(output.output, /Worker A answer/);
+    assert.match(output.output, /mock\/worker-b/);
+    assert.match(output.output, /mock\/unavailable/);
+    assert.match(output.output, /429/);
+    const result = events.find(event => event.type === 'done').value.response;
+    assert.equal(result.usage.total_tokens, 37);
+    assert.equal(result.usage.cost, 0.05);
+  });
+
 test('the bundled SDK handles project files, subagent approval and mini apps together',
   { timeout: 5000 }, async () => {
     const events = [];

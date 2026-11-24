@@ -1,3 +1,5 @@
+import { chatCompletionsUrl } from './body-builder.mjs';
+
 export function createNativeTransport(id, bridge, onPhase) {
   let sequence = 0;
   const pending = new Map();
@@ -13,8 +15,9 @@ export function createNativeTransport(id, bridge, onPhase) {
 
   async function fetcher(input, init) {
     const request = new Request(input, init);
-    if (request.url !== 'https://openrouter.ai/api/v1/responses' || request.method !== 'POST') {
-      throw new TypeError('The agent transport only accepts OpenRouter Responses POST requests.');
+    const chatCompletions = request.url === chatCompletionsUrl;
+    if (request.method !== 'POST' || (!chatCompletions && request.url !== 'https://openrouter.ai/api/v1/responses')) {
+      throw new TypeError('The agent transport only accepts OpenRouter Responses and Chat Completions POST requests.');
     }
     const body = await request.text();
     if (request.signal.aborted) throw request.signal.reason;
@@ -27,13 +30,14 @@ export function createNativeTransport(id, bridge, onPhase) {
         if (entry?.stream) entry.stream.error(reason);
         else reject(reason);
       };
-      pending.set(requestId, { signal: request.signal, abort, resolve, reject });
+      pending.set(requestId, { signal: request.signal, abort, resolve, reject, chatCompletions });
       request.signal.addEventListener('abort', abort, { once: true });
       if (request.signal.aborted) return abort();
-      onPhase('connecting');
+      if (!chatCompletions) onPhase('connecting');
       try {
         bridge.requestHttp(id, requestId, JSON.stringify({
           body,
+          ...(chatCompletions && { endpoint: 'chatCompletions' }),
         }));
       } catch (error) {
         dispose(requestId, false);
@@ -62,7 +66,7 @@ export function createNativeTransport(id, bridge, onPhase) {
         },
         cancel() { entry.resolveRead?.(); dispose(requestId); },
       }, { highWaterMark: 0 });
-      onPhase('connected');
+      if (!entry.chatCompletions) onPhase('connected');
       entry.resolve(new Response(stream, { status: value.status,
         headers: { 'Content-Type': value.contentType, ...(value.retryAfter ? { 'Retry-After': value.retryAfter } : {}) } }));
       if (bodyless) dispose(requestId);
