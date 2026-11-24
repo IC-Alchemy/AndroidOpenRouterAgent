@@ -16,7 +16,7 @@ SQLite stores saved chats on the phone, including OpenRouter agent state and too
 
 ## Background runs
 
-A run keeps going when you switch apps, lock the phone, or close the app from recents. While a run is active, a foreground service keeps the app from being frozen. The ongoing notification shows the current step and has a **Stop** button. When a tool needs approval, the notification offers **Allow once** and **Deny**. Questions from the agent open the app. When a run finishes while the app is not on screen, a notification shows the start of the reply. The app asks for notification permission when your first run starts.
+A run keeps going when you switch apps, lock the phone, or close the app from recents. While a run is active, a foreground service keeps the app from being frozen. The ongoing notification shows the current step and has a **Stop** button. When a tool needs approval, the notification offers **Allow once** and **Deny**. Questions from the agent open the app. When a run finishes while the app is not on screen, a notification shows the start of the reply, with a **Reply** box for a follow-up in the same chat. A reply is sent only when it would go exactly as if you typed it: the chat is still open, nothing is running and the app's message box is empty. Otherwise the notification says why, and you finish in the app. The app asks for notification permission when your first run starts.
 
 A run still ends if Android stops the app, for example after a force stop or a restart. Its partial reply is not kept in that case. For a Google Play release, declare the `dataSync` foreground service type in Play Console.
 

@@ -6,6 +6,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.RemoteInput
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -19,6 +20,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 
@@ -71,6 +73,7 @@ object RunCommands {
     const val STOP = "stop"
     const val ALLOW = "allow"
     const val DENY = "deny"
+    const val REPLY = "reply"
 
     @Volatile var handler: ((command: String, decision: String?) -> Unit)? = null
 }
@@ -78,6 +81,14 @@ object RunCommands {
 class RunActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val command = intent.getStringExtra(EXTRA_COMMAND) ?: return
+        if (command == RunCommands.REPLY) {
+            val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(RunNotifications.KEY_REPLY)
+            // A reply can come after Android has closed the app, so this creates the view model if needed.
+            val app = context.applicationContext as AgentApplication
+            ViewModelProvider(app, ViewModelProvider.AndroidViewModelFactory.getInstance(app))[AgentViewModel::class.java]
+                .replyFromNotification(intent.getStringExtra(EXTRA_CHAT), text?.toString().orEmpty())
+            return
+        }
         val handler = RunCommands.handler
         // No live view model means no run, so the notice the button came from is stale.
         if (handler == null) RunNotifications.cancelOngoing(context)
@@ -87,6 +98,7 @@ class RunActionReceiver : BroadcastReceiver() {
     companion object {
         const val EXTRA_COMMAND = "command"
         const val EXTRA_DECISION = "decision"
+        const val EXTRA_CHAT = "chat"
     }
 }
 
@@ -172,6 +184,8 @@ object RunNotifications {
     private const val APPROVAL_CHANNEL = "agent_approvals"
     private const val UPDATE_INTERVAL_MS = 1_000L
     private const val STOP_REQUEST = 3
+    private const val REPLY_REQUEST = 4
+    const val KEY_REPLY = "reply_text"
     private val STARTING = RunNotice("Agent is working", "Starting agent")
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -279,10 +293,13 @@ object RunNotifications {
         builder.build()
     }
 
-    /** Posts the result of a run that finished while the app was not on screen. */
-    fun finished(context: Context, title: String, text: String) {
+    /**
+     * Posts the result of a run that finished while the app was not on screen. With [chatId], it has a Reply box
+     * that sends a follow-up in that chat.
+     */
+    fun finished(context: Context, title: String, text: String, chatId: String? = null) {
         if (!canPost(context)) return
-        val notification = Notification.Builder(context, DONE_CHANNEL)
+        val builder = Notification.Builder(context, DONE_CHANNEL)
             .setSmallIcon(R.drawable.ic_sandbox)
             .setContentTitle(title)
             .setContentText(text)
@@ -290,8 +307,22 @@ object RunNotifications {
             .setContentIntent(synchronized(this) { openApp(context) })
             .setCategory(Notification.CATEGORY_MESSAGE)
             .setAutoCancel(true)
-            .build()
-        runCatching { manager(context)?.notify(DONE_ID, notification) }
+        if (chatId != null) builder.addAction(replyAction(context, chatId))
+        runCatching { manager(context)?.notify(DONE_ID, builder.build()) }
+    }
+
+    private fun replyAction(context: Context, chatId: String): Notification.Action {
+        val input = RemoteInput.Builder(KEY_REPLY).setLabel("Reply to the agent").build()
+        // The system writes the typed text into this intent, so it must be mutable. It names our own receiver.
+        val intent = PendingIntent.getBroadcast(context.applicationContext, REPLY_REQUEST,
+            Intent(context, RunActionReceiver::class.java)
+                .putExtra(RunActionReceiver.EXTRA_COMMAND, RunCommands.REPLY)
+                .putExtra(RunActionReceiver.EXTRA_CHAT, chatId),
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val action = Notification.Action.Builder(null, "Reply", intent).addRemoteInput(input)
+            .setAllowGeneratedReplies(false)
+        if (Build.VERSION.SDK_INT >= 28) action.setSemanticAction(Notification.Action.SEMANTIC_ACTION_REPLY)
+        return action.build()
     }
 
     fun clearFinished(context: Context) {

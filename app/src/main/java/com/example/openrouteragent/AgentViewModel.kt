@@ -253,7 +253,43 @@ class AgentViewModel internal constructor(
     private fun finishBackground(title: String, text: String) {
         AgentRunService.stop(app)
         RunNotifications.end(app)
-        if (!AppVisibility.visible) RunNotifications.finished(app, title, text)
+        if (!AppVisibility.visible) RunNotifications.finished(app, title, text, workspace.id)
+    }
+
+    /**
+     * Sends a follow-up typed into the "reply ready" notification. It goes only when it would go exactly as if
+     * typed in the app: the same chat is open, nothing is running and the message box is empty. Otherwise the
+     * notification says why, so the reply is never lost without a word.
+     */
+    internal fun replyFromNotification(chatId: String?, text: String) {
+        viewModelScope.launch {
+            ready.await()
+            val prompt = text.trim()
+            if (prompt.isEmpty()) {
+                RunNotifications.clearFinished(app)
+                return@launch
+            }
+            val problem = when {
+                chatId == null || workspace.id != chatId -> "That chat is no longer open. Open the app to reply."
+                activePrompt != null || isModerating || isLoading || isWorkingChat || isSavingSettings || isImporting ->
+                    "The agent is busy. Open the app to reply."
+                promptText.isNotBlank() || pendingMedia.isNotEmpty() || attachedFiles.isNotEmpty() ->
+                    "You have an unsent message in the app. Open it to reply."
+                else -> null
+            }
+            if (problem == null) {
+                send(prompt)
+                if (activePrompt != null || isModerating) {
+                    // The run's own notification takes over from here.
+                    RunNotifications.clearFinished(app)
+                    return@launch
+                }
+                promptText = prompt
+            }
+            val reason = problem ?: ((turnError ?: "The reply could not be sent.") +
+                " Your reply is in the app's message box.")
+            RunNotifications.finished(app, "Reply not sent", reason, chatId)
+        }
     }
 
     internal fun attachRuntime(host: FrameLayout) = sdk.attach(host)
@@ -366,6 +402,7 @@ class AgentViewModel internal constructor(
                 isModerating = false
                 if (!promptSafe) {
                     turnError = POLICY_PROMPT_BLOCKED
+                    if (!AppVisibility.visible) RunNotifications.finished(app, "Message not sent", POLICY_PROMPT_BLOCKED)
                     return@launch
                 }
                 if (activePrompt != null || isLoading || isSavingSettings || isWorkingChat) return@launch
