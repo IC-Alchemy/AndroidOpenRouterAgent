@@ -407,8 +407,9 @@ class AgentViewModel internal constructor(
                     finishedText = replyPreview(result.assistantText)
                     ChatEntry(
                         isUser = false, text = result.assistantText,
-                        // Keep the reasoning even while it is hidden, so turning it back on shows it.
-                        reasoningSummary = progress?.summary?.ifBlank { null } ?: result.reasoningSummary,
+                        reasoningSummary = if (currentConfig.sdk.saveReasoning) {
+                            progress?.summary?.ifBlank { null } ?: result.reasoningSummary
+                        } else null,
                         shellSteps = result.shellSteps, searchQueries = result.searchQueries,
                         citations = (result.citations + progress?.sources.orEmpty()).distinctBy { it.url },
                         usage = result.usage, modelUsed = result.modelUsed,

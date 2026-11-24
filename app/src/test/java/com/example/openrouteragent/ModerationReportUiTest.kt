@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -75,10 +76,10 @@ class ModerationReportUiTest {
             }
         }
 
-        val reportButtons = composeRule.onAllNodesWithText("Report")
+        val reportButtons = composeRule.onAllNodesWithContentDescription("Report reply")
         reportButtons.assertCountEquals(3)
         // Copy reply only appears on the normal card, suppressed on error and moderated cards.
-        composeRule.onAllNodesWithText("Copy reply").assertCountEquals(1)
+        composeRule.onAllNodesWithContentDescription("Copy reply").assertCountEquals(1)
 
         reportButtons[0].performClick()
         reportButtons[1].performClick()
@@ -147,7 +148,7 @@ class ModerationReportUiTest {
             }
 
             composeRule.onNodeWithText("Questionable AI reply").assertIsDisplayed()
-            composeRule.onNodeWithText("Report").performClick()
+            composeRule.onNodeWithContentDescription("Report reply").performClick()
 
             composeRule.onNodeWithText("Report response").assertIsDisplayed()
             composeRule.onNodeWithText("Sexual content").assertIsDisplayed()

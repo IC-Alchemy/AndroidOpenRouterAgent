@@ -8,17 +8,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -26,6 +31,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +44,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -189,10 +196,12 @@ class PrecisionStudioUiTest {
         }
 
         composeRule.onAllNodesWithText("Agent").assertCountEquals(1)
-        composeRule.onNodeWithText("Tools on").assertIsDisplayed()
         composeRule.onNodeWithText("Chat").performClick()
         assertEquals(true, currentMode)
-        composeRule.onNodeWithText("No tools · faster, cheaper").assertIsDisplayed()
+        composeRule.onAllNodesWithText("No tools · faster, cheaper").assertCountEquals(0)
+        composeRule.onNodeWithContentDescription("About chat modes").performClick()
+        composeRule.onNodeWithText("Chat modes").assertIsDisplayed()
+        composeRule.onNodeWithText("Close").performClick()
         composeRule.onAllNodesWithText("Generate images").assertCountEquals(0)
         composeRule.onNodeWithText("Turn failed").assertIsDisplayed()
     }
@@ -280,7 +289,6 @@ class PrecisionStudioUiTest {
                         entry = entry,
                         onCopyText = {},
                         onFileClick = { _, file -> clickedFile = file },
-                        showReasoning = true,
                     )
                 }
             }
@@ -349,13 +357,15 @@ class PrecisionStudioUiTest {
         }
 
         composeRule.onNodeWithText("Model is reasoning").assertIsDisplayed()
-        composeRule.onNodeWithText("Latest").assertIsDisplayed()
-        composeRule.onNodeWithText("Activity").assertIsDisplayed()
-        composeRule.onNodeWithText("Thought").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithContentDescription("Jump to latest").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Run activity").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Thought").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Thought")[1].assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         composeRule
             .onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
-            .assertCountEquals(1)
-        composeRule.onNodeWithText("Thought").performClick()
+            .assertCountEquals(2)
+        composeRule.onAllNodesWithText("Analyzing sandbox environment").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Thought")[1].performClick()
         composeRule
             .onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
             .assertCountEquals(1)
@@ -369,5 +379,62 @@ class PrecisionStudioUiTest {
             StudioLightColorScheme.primary,
             agentResponseReportContentColor(isWarningCard = false, colors = StudioLightColorScheme),
         )
+    }
+
+    @Test
+    fun streamedThinkingStartsCollapsedAndCanBeOpenedWhileRunning() {
+        val progress = AgentProgress(started = 0L, phase = "reasoning", summary = "Thinking text")
+        composeRule.setContent { OpenRouterAgentTheme { LiveAgentReply(progress, showReasoning = true) } }
+
+        composeRule.onAllNodesWithText("Thinking text").assertCountEquals(0)
+        composeRule.onNodeWithText("Thinking…").performClick()
+        composeRule.onNodeWithText("Thinking text").assertIsDisplayed()
+    }
+
+    @Test
+    fun streamedAndSavedRepliesRenderMarkdownByDefaultAndCanShowSource() {
+        var renderMarkdown by mutableStateOf(true)
+        val source = "A **bold** answer with `code`."
+        composeRule.setContent {
+            OpenRouterAgentTheme {
+                androidx.compose.foundation.layout.Column {
+                    AgentResponseCard(ChatEntry(isUser = false, text = source), {}, { _, _ -> },
+                        renderMarkdown = renderMarkdown)
+                    LiveAgentReply(AgentProgress(started = 0L, answer = source), renderMarkdown = renderMarkdown)
+                }
+            }
+        }
+
+        composeRule.onAllNodesWithText("A bold answer with code.").assertCountEquals(2)
+        composeRule.onAllNodesWithText(source).assertCountEquals(0)
+        composeRule.runOnIdle { renderMarkdown = false }
+        composeRule.onAllNodesWithText(source).assertCountEquals(2)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun tappingRenderedMarkdownLinkOpensItsDestination() {
+        var openedUri: String? = null
+        val handler = object : UriHandler {
+            override fun openUri(uri: String) { openedUri = uri }
+        }
+        composeRule.setContent {
+            OpenRouterAgentTheme {
+                CompositionLocalProvider(LocalUriHandler provides handler) {
+                    ReplyText("[Read the source](https://example.com/source)", renderMarkdown = true)
+                }
+            }
+        }
+
+        val link = composeRule.onNodeWithText("Read the source")
+        val layout = mutableListOf<TextLayoutResult>()
+        link.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
+        val textLayout = layout.single()
+        val position = textLayout.getBoundingBox(2).center
+        link.performTouchInput { click(position) }
+        composeRule.runOnIdle {
+            assertEquals("Tap at $position mapped to character ${textLayout.getOffsetForPosition(position)}",
+                "https://example.com/source", openedUri)
+        }
     }
 }

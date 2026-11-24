@@ -11,11 +11,12 @@ Use these instructions to answer questions about the app's controls. Mention the
 
 1. Open Settings and tap Sign in with OpenRouter, approve the key in the browser, return to the app, and tap Save. You can also paste a key.
 2. Tap Models to find a model from the authenticated catalog. Switch off tools if you want to use a model that only supports text.
-3. Send a prompt. The status above the composer distinguishes connecting, waiting, reasoning, tool use, and an answer in progress. Activity shows progress, sources, and reported usage when available.
+3. Send a prompt. The status above the composer shows the current phase. The info icon opens run activity, including tools, sources, and reported usage. The down arrow jumps to the latest reply.
 
 ## Customize a run
 
 - Open Configure → SDK settings for fallback models, routing, reasoning effort, sampling, output and run limits, and response format. In Advanced, configure repetition detection, local and MCP tool deadlines, concurrency, and final-answer behavior when a stop condition is met. Unset fields use the model or provider default.
+- In SDK settings → Display, change Markdown rendering, the live reasoning preview, or whether new saved replies include reasoning. Markdown and saving reasoning start on. Thinking starts collapsed, and its row expands when reasoning is available.
 - A follow-up profile can switch models, change sampling or output length, and append instructions after a chosen number of SDK inference turns. This applies to later requests in the current run. Hosted tools can do several steps within one request.
 - Tools in Settings controls the hosted sandbox, web search, date and time, local time zone, and optional MCP. The sandbox can produce files. Open Sandbox files to preview or export them.
 - Open Configure → Subagents (or Settings → Agent tools → Subagents) to add or edit workers the main model can delegate to and assign each subagent's default model. Open Activity during a run to see the worker's task, status, and outcome.
