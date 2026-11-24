@@ -232,28 +232,15 @@ internal fun AgentResponseCard(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!isWarningCard) {
-                        TextButton(
-                            onClick = { onCopyText(entry.text) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        ) {
-                            Text("Copy reply")
-                        }
+                        SymbolAction("Copy reply", StudioSymbols.Copy, onClick = { onCopyText(entry.text) })
                     }
-                    TextButton(
+                    SymbolAction(
+                        label = "Report", icon = Icons.Default.Warning,
                         onClick = onReport,
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = agentResponseReportContentColor(isWarningCard, MaterialTheme.colorScheme),
                         ),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Report")
-                    }
+                    )
                 }
             }
         }

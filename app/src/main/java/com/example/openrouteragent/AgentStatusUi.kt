@@ -19,32 +19,47 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
+private data class QuickPrompt(val icon: ImageVector, val title: String, val message: String)
+
 private val QUICK_PROMPTS = listOf(
-    "Check the Linux OS, Python, and Node.js versions in my sandbox.",
-    "Write and run a Python script to simulate 10,000 dice rolls and save a summary report to report.txt.",
-    "Search the web for the latest OpenRouter server tools updates and summarize them."
+    QuickPrompt(
+        StudioSymbols.Sandbox,
+        "Check sandbox",
+        "Check the Linux OS, Python, and Node.js versions in my sandbox.",
+    ),
+    QuickPrompt(
+        StudioSymbols.Models,
+        "Compare models",
+        "Use Body Builder to compare Claude and Gemini on why stars shine.",
+    ),
+    QuickPrompt(
+        Icons.Default.Search,
+        "Search the web",
+        "Search the web for the latest OpenRouter server tools updates and summarize them.",
+    ),
 )
 
 @Composable
@@ -58,8 +73,9 @@ internal fun StatusCapabilitiesBar(
     onOpenWorkspaceFiles: (() -> Unit)?,
     onClearAttachments: () -> Unit,
     onOpenFiles: () -> Unit,
-    onResetContainer: () -> Unit
+    onResetContainer: () -> Unit,
 ) {
+    val showLabels = LocalControlLabels.current.visible
     Surface(
         modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
         shape = RoundedCornerShape(12.dp),
@@ -73,34 +89,64 @@ internal fun StatusCapabilitiesBar(
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            AssistChip(onClick = onOpenProjectFiles, label = { Text(if (inProject) "Project files" else "Chat files") },
-                modifier = Modifier.heightIn(min = 48.dp))
+            val filesLabel = if (inProject) "Project files" else "Chat files"
+            ControlTooltip(filesLabel, enabled = !showLabels) {
+                AssistChip(
+                    onClick = onOpenProjectFiles,
+                    label = { SymbolLabel(filesLabel, StudioSymbols.Folder) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                )
+            }
             if (onOpenWorkspaceFiles != null) {
-                AssistChip(onClick = onOpenWorkspaceFiles, label = {
-                    Text(if (attachmentCount == 0) "Workspace files" else "Workspace files · $attachmentCount attached")
-                }, modifier = Modifier.heightIn(min = 48.dp))
-                if (attachmentCount > 0) TextButton(onClick = onClearAttachments, enabled = canDetach) {
-                    Text("Clear attachments")
+                val workspaceLabel =
+                    if (attachmentCount == 0) "Workspace files" else "Workspace files · $attachmentCount attached"
+                ControlTooltip(workspaceLabel, enabled = !showLabels) {
+                    AssistChip(
+                        onClick = onOpenWorkspaceFiles,
+                        label = {
+                            SymbolLabel(
+                                workspaceLabel,
+                                StudioSymbols.Workspace,
+                                badge = attachmentCount.takeIf { it > 0 }?.toString(),
+                            )
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    )
+                }
+                if (attachmentCount > 0) {
+                    SymbolAction("Clear attachments", StudioSymbols.Detach, onClearAttachments, canDetach)
                 }
             }
             if (config.enableShellSandbox) {
                 if (activeContainerId != null) {
-                    AssistChip(onClick = onOpenFiles, label = { Text("Sandbox files") }, modifier = Modifier.heightIn(min = 48.dp))
-                    if (!inProject) TextButton(onClick = onResetContainer, enabled = canDetach) { Text("Detach") }
-                } else StatusPill("Hosted shell", MaterialTheme.colorScheme.secondary)
+                    ControlTooltip("Sandbox files", enabled = !showLabels) {
+                        AssistChip(
+                            onClick = onOpenFiles,
+                            label = { SymbolLabel("Sandbox files", StudioSymbols.Sandbox) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                    }
+                    if (!inProject) {
+                        SymbolAction("Detach sandbox", StudioSymbols.Detach, onResetContainer, canDetach)
+                    }
+                } else {
+                    StatusPill("Hosted shell", StudioSymbols.Sandbox, MaterialTheme.colorScheme.secondary)
+                }
             }
             if (config.enableWebSearch) {
                 StatusPill(
                     label = "Web Search",
-                    accent = MaterialTheme.colorScheme.primary
+                    icon = Icons.Default.Search,
+                    accent = MaterialTheme.colorScheme.primary,
                 )
             }
             if (config.enableShellSandbox && config.allowSandboxNetwork) {
                 StatusPill(
                     label = "Egress Allowlist",
-                    accent = MaterialTheme.colorScheme.tertiary
+                    icon = StudioSymbols.Network,
+                    accent = MaterialTheme.colorScheme.tertiary,
                 )
             }
         }
@@ -110,26 +156,21 @@ internal fun StatusCapabilitiesBar(
 @Composable
 internal fun StatusPill(
     label: String,
-    accent: Color
+    icon: ImageVector,
+    accent: Color,
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = accent.copy(alpha = 0.11f),
-        border = BorderStroke(StudioHairlineWidth, accent.copy(alpha = 0.38f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ControlTooltip(label, enabled = !LocalControlLabels.current.visible) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = accent.copy(alpha = 0.11f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = BorderStroke(StudioHairlineWidth, accent.copy(alpha = 0.38f)),
         ) {
-            StudioStatusDot(color = accent, size = 5.dp)
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium
-            )
+            Box(Modifier.padding(horizontal = 9.dp, vertical = 5.dp)) {
+                ProvideTextStyle(MaterialTheme.typography.labelSmall) {
+                    SymbolLabel(label, icon)
+                }
+            }
         }
     }
 }
@@ -138,7 +179,7 @@ internal fun StatusPill(
 internal fun EmptyAgentState(
     hasApiKey: Boolean,
     onOpenSettings: () -> Unit,
-    onSelectPrompt: (String) -> Unit
+    onSelectPrompt: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -147,20 +188,20 @@ internal fun EmptyAgentState(
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
             border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
-            modifier = Modifier.size(60.dp)
+            modifier = Modifier.size(60.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Default.Build,
+                    imageVector = StudioSymbols.Agent,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
             }
         }
@@ -173,14 +214,7 @@ internal fun EmptyAgentState(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.semantics { heading() },
         )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Run code, work with files, and search the web using OpenRouter’s hosted tools.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(26.dp))
 
         if (!hasApiKey) {
             Button(onClick = onOpenSettings) {
@@ -196,52 +230,79 @@ internal fun EmptyAgentState(
             style = MaterialTheme.typography.labelLarge,
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.align(Alignment.Start).semantics { heading() }
+            modifier = Modifier.align(Alignment.Start).semantics { heading() },
         )
         Spacer(Modifier.height(8.dp))
 
-        QUICK_PROMPTS.forEachIndexed { index, sample ->
-            Card(
-                onClick = { onSelectPrompt(sample) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                        border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                    ) {
-                        Text(
-                            text = "%02d".format(index + 1),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                        )
+        if (LocalControlLabels.current.visible) {
+            QUICK_PROMPTS.forEach { prompt ->
+                QuickPromptCard(
+                    prompt,
+                    compact = false,
+                    onSelect = onSelectPrompt,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QUICK_PROMPTS.forEach { prompt ->
+                    Box(Modifier.weight(1f)) {
+                        ControlTooltip(prompt.message) {
+                            QuickPromptCard(prompt, compact = true, onSelect = onSelectPrompt)
+                        }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = sample,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickPromptCard(
+    prompt: QuickPrompt,
+    compact: Boolean,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val symbol: @Composable () -> Unit = {
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = colors.primaryContainer.copy(alpha = 0.6f),
+            border = BorderStroke(StudioHairlineWidth, colors.primary.copy(alpha = 0.35f)),
+        ) {
+            Icon(
+                prompt.icon,
+                contentDescription = null,
+                tint = colors.primary,
+                modifier = Modifier.padding(7.dp).size(20.dp),
+            )
+        }
+    }
+    Card(
+        onClick = { onSelect(prompt.message) },
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow),
+        border = BorderStroke(StudioHairlineWidth, colors.outlineVariant),
+    ) {
+        if (compact) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(min = 104.dp).padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterVertically),
+            ) {
+                symbol()
+                Text(prompt.title, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+            }
+        } else {
+            Row(
+                Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                symbol()
+                Text(prompt.message, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }

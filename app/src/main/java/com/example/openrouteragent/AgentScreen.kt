@@ -232,39 +232,44 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 contentColor = MaterialTheme.colorScheme.onSurface,
                             )
                             if (agent.providerReady) {
-                                TextButton(
+                                SymbolAction(
+                                    label = "Models", icon = StudioSymbols.Models,
                                     enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating,
                                     onClick = { showModels = true },
                                     shape = RoundedCornerShape(10.dp),
                                     colors = pillColors,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                ) { Text("Models", style = MaterialTheme.typography.labelMedium) }
+                                )
                                 Spacer(Modifier.width(4.dp))
                             }
-                            TextButton(
+                            SymbolAction(
+                                label = "Chats", icon = StudioSymbols.Chats,
                                 enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
                                     !agent.isWorkingChat && !isExporting && !agent.isModerating,
                                 onClick = { showChatLibrary = true },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = pillColors,
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            ) { Text("Chats", style = MaterialTheme.typography.labelMedium) }
+                            )
                             Box {
-                                IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
-                                    onClick = { showConfigure = true }) {
-                                    Icon(Icons.Default.Settings, contentDescription = "Configure")
+                                ControlTooltip("Configure") {
+                                    IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
+                                        onClick = { showConfigure = true }) {
+                                        Icon(Icons.Default.Settings, contentDescription = "Configure")
+                                    }
                                 }
                                 DropdownMenu(expanded = showConfigure, onDismissRequest = { showConfigure = false }) {
-                                    DropdownMenuItem(text = { Text("Settings") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Settings") },
+                                        leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = {
                                         showConfigure = false
                                         showSettings = true
                                     })
-                                    DropdownMenuItem(text = { Text("Device files") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Device files") },
+                                        leadingIcon = { Icon(StudioSymbols.Folder, null) }, onClick = {
                                         showConfigure = false
                                         deviceFilesTarget = "all"
                                     })
                                     if (agent.chatProject != null && agent.providerReady) {
-                                        DropdownMenuItem(text = { Text("All workspace files") }, onClick = {
+                                        DropdownMenuItem(text = { Text("All workspace files") },
+                                            leadingIcon = { Icon(StudioSymbols.Workspace, null) }, onClick = {
                                             showConfigure = false
                                             workspaceFilesTarget = "all"
                                         })
@@ -277,7 +282,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showConfigure = false
                                         customizeTab = "tools"
                                     })
-                                    DropdownMenuItem(text = { Text("Subagents") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Subagents") },
+                                        leadingIcon = { Icon(StudioSymbols.Agent, null) }, onClick = {
                                         showConfigure = false
                                         customizeTab = "subagents"
                                     })
@@ -291,7 +297,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                     }, trailingIcon = {
                                         Switch(checked = config.sdk.renderMarkdown, onCheckedChange = null)
                                     })
-                                    DropdownMenuItem(text = { Text("Mini apps") }, onClick = {
+                                    DropdownMenuItem(text = { Text("Mini apps") },
+                                        leadingIcon = { Icon(StudioSymbols.MiniApps, null) }, onClick = {
                                         showConfigure = false
                                         showMiniApps = true
                                     })
