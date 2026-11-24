@@ -21,6 +21,19 @@ const allowedServerTools = new Set([
   'openrouter:fusion',
 ]);
 
+/** The image tool from the app's settings. Blank settings are left out so OpenRouter picks its defaults. */
+export function imageGenerationTool(settings) {
+  const extra = {};
+  if (settings.aspectRatio) extra.aspect_ratio = settings.aspectRatio;
+  if (settings.quality) extra.quality = settings.quality;
+  const parameters = {};
+  if (settings.model) parameters.model = settings.model;
+  if (Object.keys(extra).length) parameters.additionalProperties = extra;
+  return Object.keys(parameters).length
+    ? { type: 'openrouter:image_generation', parameters }
+    : { type: 'openrouter:image_generation' };
+}
+
 export function buildTools(options, events, signal, onWorkerUsage) {
   const tools = [];
   if (options.sdk?.toolChoice === 'none') return tools;
@@ -38,6 +51,8 @@ export function buildTools(options, events, signal, onWorkerUsage) {
   if (options.dateTime) tools.push(serverTool({ type: 'openrouter:datetime' }));
   if (options.webFetch) tools.push(serverTool({ type: 'openrouter:web_fetch' }));
   if (options.workspaceFiles && !options.projectFolder) tools.push(serverTool({ type: 'openrouter:files' }));
+  const extraImage = (options.extraTools ?? []).some(item => item?.type === 'openrouter:image_generation');
+  if (options.imageGeneration && !extraImage) tools.push(serverTool(imageGenerationTool(options.imageGeneration)));
   if (options.deviceTools) {
     tools.push(tool({
       name: 'device_time_zone',

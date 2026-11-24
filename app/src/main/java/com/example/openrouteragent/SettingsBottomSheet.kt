@@ -1,5 +1,8 @@
 package com.example.openrouteragent
 
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -72,6 +75,10 @@ internal fun SettingsBottomSheet(
     var allowedDomains by remember { mutableStateOf(initialConfig.allowedDomainsCsv) }
     var instructions by remember { mutableStateOf(initialConfig.systemInstructions) }
     var webFetch by remember { mutableStateOf(initialConfig.webFetch) }
+    var imageGeneration by remember { mutableStateOf(initialConfig.imageGeneration) }
+    var imageModel by remember { mutableStateOf(initialConfig.imageModel) }
+    var imageAspect by remember { mutableStateOf(initialConfig.imageAspect) }
+    var imageQuality by remember { mutableStateOf(initialConfig.imageQuality) }
     var workspaceFiles by remember { mutableStateOf(initialConfig.enableWorkspaceFiles) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
     var miniApps by remember { mutableStateOf(initialConfig.miniApps) }
@@ -90,6 +97,8 @@ internal fun SettingsBottomSheet(
     val uriHandler = LocalUriHandler.current
     val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
         enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
+        imageGeneration = imageGeneration, imageModel = imageModel.trim(), imageAspect = imageAspect,
+        imageQuality = imageQuality,
         deviceTools = deviceTools, miniApps = miniApps, enableModeration = enableModeration, allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
@@ -219,6 +228,12 @@ internal fun SettingsBottomSheet(
                     )
 
                     SettingsToggleRow("Web fetch", "Reads pages supplied by URL.", webFetch, { webFetch = it })
+                    SettingsToggleRow("Image generation", "Lets the agent draw pictures in the chat. Each image is billed by OpenRouter.",
+                        imageGeneration, { imageGeneration = it })
+                    if (imageGeneration) {
+                        ImageGenerationSettings(imageModel, { imageModel = it }, imageAspect, { imageAspect = it },
+                            imageQuality, { imageQuality = it })
+                    }
                     SettingsToggleRow("Workspace files tool", "Lets unfiled chats work with files in your OpenRouter workspace.",
                         workspaceFiles, { workspaceFiles = it })
                     SubagentsSettings(
@@ -352,5 +367,35 @@ private fun SettingsToggleRow(
             )
         }
         Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ImageGenerationSettings(
+    model: String,
+    onModel: (String) -> Unit,
+    aspect: String,
+    onAspect: (String) -> Unit,
+    quality: String,
+    onQuality: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        CopyableOutlinedTextField(model, onModel, label = { Text("Image model (optional)") },
+            supportingText = { Text("Blank uses OpenRouter's default image model.") },
+            modifier = Modifier.fillMaxWidth(), singleLine = true)
+        Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            IMAGE_ASPECTS.forEach { option ->
+                FilterChip(aspect == option, { onAspect(option) }, label = { Text(option.ifBlank { "Auto" }) })
+            }
+        }
+        Text("Quality", style = MaterialTheme.typography.labelMedium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            IMAGE_QUALITIES.forEach { option ->
+                FilterChip(quality == option, { onQuality(option) },
+                    label = { Text(option.ifBlank { "Auto" }.replaceFirstChar { it.uppercase() }) })
+            }
+        }
     }
 }

@@ -19,6 +19,14 @@ data class AgentConfig(
     val enableDateTime: Boolean = true,
     val webFetch: Boolean = false,
     val enableWorkspaceFiles: Boolean = false,
+    /** Adds the openrouter:image_generation server tool, so the agent can draw pictures in chat. */
+    val imageGeneration: Boolean = false,
+    /** The image model for that tool. Empty uses OpenRouter's default. */
+    val imageModel: String = "",
+    /** An aspect ratio such as 16:9. Empty lets the model choose. */
+    val imageAspect: String = "",
+    /** low, medium or high. Empty lets the model choose. */
+    val imageQuality: String = "",
     val deviceTools: Boolean = false,
     val miniApps: Boolean = true,
     val enableModeration: Boolean = false,
@@ -124,10 +132,16 @@ data class AgentRunResult(
     val discoveredContainerId: String?,
     val usage: TokenUsage?,
     val modelUsed: String?,
-    val notice: String? = null
+    val notice: String? = null,
+    /** Images the model made, already saved with the chat. */
+    val media: List<ChatMedia> = emptyList(),
 )
 
 const val DEFAULT_MODEL = "anthropic/claude-sonnet-4.5"
+
+/** Aspect ratios offered for generated images. The empty value lets the model choose. */
+val IMAGE_ASPECTS = listOf("", "1:1", "16:9", "9:16", "4:3", "3:4")
+val IMAGE_QUALITIES = listOf("", "low", "medium", "high")
 
 fun AgentConfig.sandboxDomains(): List<String> {
     if (!enableShellSandbox || !allowSandboxNetwork) return emptyList()
@@ -142,6 +156,9 @@ fun AgentConfig.settingsError(): String? = when {
         "Enter an API key without spaces."
     model.trim().any { it.isWhitespace() } ->
         "Enter a model ID without spaces."
+    imageModel.trim().any { it.isWhitespace() } -> "Enter an image model ID without spaces."
+    imageAspect !in IMAGE_ASPECTS -> "Choose an image aspect ratio from the list."
+    imageQuality !in IMAGE_QUALITIES -> "Choose an image quality from the list."
     enableShellSandbox && allowSandboxNetwork &&
         (sandboxDomains().isEmpty() || sandboxDomains().any { !hostname.matches(it) }) ->
         "Enter one or more domain names, separated by commas."
@@ -176,7 +193,7 @@ data class Workspace(
 )
 
 /** The settings for a message sent in chat mode, or retried without tools: every tool and tool source is off. */
-fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, enableWebSearch = false,
+fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, enableWebSearch = false, imageGeneration = false,
     enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false,
     miniApps = false, mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
     sdk = sdk.copy(discoverSkills = false, toolChoice = "none"))
@@ -189,5 +206,6 @@ data class InterruptedTurn(
 
 fun AgentConfig.agentToolsEnabled(): Boolean =
     sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||
+        imageGeneration ||
         enableWorkspaceFiles || customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
         (extraToolsJson.isNotBlank() && extraToolsJson.replace(Regex("\\s"), "") != "[]"))

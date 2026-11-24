@@ -417,6 +417,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showReasoning = config.sdk.showReasoning,
                                         renderMarkdown = config.sdk.renderMarkdown,
                                         onReport = { reportTarget = ReportTarget(prompt = prompt, response = entry.text) },
+                                        mediaFile = agent::mediaFile,
+                                        onOpenMedia = { viewingMedia = it },
                                     )
                                 }
                             }

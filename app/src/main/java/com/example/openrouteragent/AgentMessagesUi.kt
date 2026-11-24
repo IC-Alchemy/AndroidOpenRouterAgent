@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalUriHandler
+import java.io.File
 
 @Composable
 internal fun UserMessageBubble(
@@ -91,6 +92,8 @@ internal fun AgentResponseCard(
     showReasoning: Boolean = true,
     renderMarkdown: Boolean = true,
     onReport: () -> Unit = {},
+    mediaFile: (ChatMedia) -> File? = { null },
+    onOpenMedia: (ChatMedia) -> Unit = {},
 ) {
     val uriHandler = LocalUriHandler.current
     val isWarningCard = entry.isError || entry.isModerated
@@ -137,6 +140,8 @@ internal fun AgentResponseCard(
                     )
                 }
             }
+
+            if (entry.media.isNotEmpty() && !isWarningCard) GeneratedImages(entry.media, mediaFile, onOpenMedia)
 
             entry.notice?.let {
                 CopyableText(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
