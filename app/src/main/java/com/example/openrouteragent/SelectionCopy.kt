@@ -102,7 +102,11 @@ private fun SelectionCopyField(
     val keepDisplayedText = keepSelectionOnReplacement && !fieldState.selection.collapsed &&
         !text.text.startsWith(fieldState.text)
     val value = if (fieldState.annotatedString == text || keepDisplayedText) fieldState
-        else TextFieldValue(text, fieldState.selection)
+        else TextFieldValue(
+            text,
+            fieldState.selection,
+            fieldState.composition.takeIf { fieldState.text == text.text },
+        )
     SideEffect { fieldState = value }
 
     content(value) { next ->
@@ -123,10 +127,12 @@ internal fun CopyableText(
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified,
     keepSelectionOnReplacement: Boolean = false,
-) {
-    CopyableText(remember(text) { AnnotatedString(text) }, modifier, style, color, keepSelectionOnReplacement)
-}
+) = CopyableText(AnnotatedString(text), modifier, style, color, keepSelectionOnReplacement)
 
+/**
+ * Selectable read-only text that copies what the user selects. Spans in [text] are drawn, and a tap on a range
+ * annotated with [MARKDOWN_URL_TAG] calls [onLinkClick] with its URL.
+ */
 @Composable
 internal fun CopyableText(
     text: AnnotatedString,
@@ -134,16 +140,27 @@ internal fun CopyableText(
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified,
     keepSelectionOnReplacement: Boolean = false,
+    onLinkClick: ((String) -> Unit)? = null,
 ) {
     val contentColor = LocalContentColor.current
     val uriHandler = LocalUriHandler.current
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    fun openLink(url: String) = runCatching { uriHandler.openUri(url) }.isSuccess
+    val linkText by rememberUpdatedState(text)
+    val linkClick by rememberUpdatedState(onLinkClick)
+    fun openLink(url: String) = runCatching {
+        if (linkClick != null) linkClick?.invoke(url) else uriHandler.openUri(url)
+    }.isSuccess
+    val hasMarkdownLinks = onLinkClick != null && text.hasStringAnnotations(MARKDOWN_URL_TAG, 0, text.length)
+    val markdownLinkTaps = if (hasMarkdownLinks) {
+        Modifier.linkTaps({ layout?.let { it to linkText } }) { openLink(it) }
+    } else Modifier
     SelectionCopyField(text, keepSelectionOnReplacement = keepSelectionOnReplacement) { value, onChange ->
         val displayed = value.annotatedString
-        val links = displayed.getStringAnnotations(REPLY_LINK, 0, displayed.length)
+        val links = displayed.getStringAnnotations(REPLY_LINK, 0, displayed.length) +
+            displayed.getStringAnnotations(MARKDOWN_URL_TAG, 0, displayed.length)
         val displayedText by rememberUpdatedState(displayed)
-        val linkTaps = if (links.isEmpty()) Modifier else Modifier.pointerInput(uriHandler) {
+        val replyLinkTaps = if (displayed.getStringAnnotations(REPLY_LINK, 0, displayed.length).isEmpty()) Modifier
+        else Modifier.pointerInput(uriHandler, onLinkClick) {
             // Observe taps without consuming the gestures used for text selection and scrolling.
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -159,8 +176,8 @@ internal fun CopyableText(
             }
         }
         // Expose selectable static text to accessibility services while keeping the native handle and toolbar UI.
-        Box(modifier.then(linkTaps).clearAndSetSemantics {
-            this.text = displayed
+        Box(modifier.then(markdownLinkTaps).then(replyLinkTaps).clearAndSetSemantics {
+            this.text = value.annotatedString
             textSelectionRange = value.selection
             getTextLayoutResult { results -> layout?.let { results.add(it) } ?: false }
             if (links.isNotEmpty()) {
@@ -212,8 +229,7 @@ internal fun CopyableOutlinedTextField(
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     shape: CornerBasedShape = MaterialTheme.shapes.small,
 ) {
-    SelectionCopyField(remember(value) { AnnotatedString(value) }, enabled = enabled,
-        onTextChange = onValueChange) { fieldValue, onChange ->
+    SelectionCopyField(AnnotatedString(value), enabled = enabled, onTextChange = onValueChange) { fieldValue, onChange ->
         OutlinedTextField(
             value = fieldValue,
             onValueChange = onChange,
@@ -231,3 +247,34 @@ internal fun CopyableOutlinedTextField(
         )
     }
 }
+
+/** The URL annotated in [text] at [position] of its [layout], when the position is on the linked characters. */
+internal fun linkAt(layout: TextLayoutResult, text: AnnotatedString, position: Offset): String? {
+    val offset = layout.getOffsetForPosition(position)
+    // The nearest offset may sit just after the character under the finger, so both sides are checked.
+    return listOf(offset, offset - 1).filter { it in text.indices }.firstNotNullOfOrNull { index ->
+        if (!layout.getBoundingBox(index).inflate(4f).contains(position)) null
+        else text.getStringAnnotations(MARKDOWN_URL_TAG, index, index + 1).firstOrNull()?.item
+    }
+}
+
+/**
+ * Opens links on a quick tap without consuming other gestures, so long-press selection keeps working.
+ * Runs before the text field sees the pointer and consumes only the release of a tap on a link.
+ */
+internal fun Modifier.linkTaps(
+    layout: () -> Pair<TextLayoutResult, AnnotatedString>?,
+    onLinkClick: (String) -> Unit,
+): Modifier =
+    pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val url = layout()?.let { (result, text) -> linkAt(result, text, down.position) } ?: return@awaitEachGesture
+            val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                waitForUpOrCancellation(PointerEventPass.Initial)
+            } ?: return@awaitEachGesture
+            if ((up.position - down.position).getDistance() > viewConfiguration.touchSlop) return@awaitEachGesture
+            up.consume()
+            onLinkClick(url)
+        }
+    }

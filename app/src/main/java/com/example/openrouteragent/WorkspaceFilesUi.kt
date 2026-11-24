@@ -245,10 +245,10 @@ internal fun WorkspaceFilesDialog(
                             "Copied to $path."
                         }
                     }) { Text("Copy to device files") }
-                    if (canExport) TextButton(enabled = !working, onClick = {
+                    if (canExport) SymbolAction("Export", StudioSymbols.Export, enabled = !working, onClick = {
                         pendingExportId = selected.id
                         exportDocument.launch(fileName(selected.filename))
-                    }) { Text("Export") }
+                    })
                     if (onToggleAttachment != null) {
                         val attached = isAttached(selected.id)
                         TextButton(enabled = !working, onClick = {
@@ -297,7 +297,7 @@ internal fun WorkspaceFilesDialog(
                 }
                 LazyColumn(Modifier.weight(1f)) {
                     items(folders, key = { "folder/$it" }) { folder ->
-                        FileBrowserRow(folder, "Folder", enabled = !working) {
+                        FileBrowserRow(folder, "Folder", enabled = !working, isFolder = true) {
                             navigate(joinFilePath(directory, folder))
                         }
                     }

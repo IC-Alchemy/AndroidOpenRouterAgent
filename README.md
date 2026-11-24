@@ -24,6 +24,8 @@ A run still ends if Android stops the app, for example after a force stop or a r
 
 The switch above the message field picks how each chat works. **Agent** is the default: the model can use the tools you turned on in Settings, such as the hosted shell, web search, files, mini apps, MCP and custom tools, over several steps. **Chat** sends messages without tools. Replies start sooner and cost less, because tool definitions are not sent with every message, and models without tool calling work too. Reasoning and streaming work the same in both modes. The mode is saved with the chat, a new chat starts in the mode of the chat you were in, and you can switch at any time between messages.
 
+Tap **Aa** above the message field to switch between Symbols and Labels. You can also change it in **Settings → Appearance**. Labels show during the first day. An explicit choice stays saved. In Symbols mode, long-press a control to see its name.
+
 ## Mini apps
 
 Ask for a small app, for example “make a habit tracker with a streak counter”. The agent builds one HTML file and saves it with the `mini_app_save` tool. The app checks the file before saving it. It needs a title and a viewport tag, the app's own CSS and JavaScript must be inline, and it may not use frames, form actions or redirects. Problems go back to the model so it can fix them.
@@ -61,6 +63,7 @@ Drafts and cached files are available offline. Use **Refresh** to check for upst
 
 ## Agent controls
 
+- **Body Builder** runs a text task across up to five OpenRouter models in parallel. In **Agent** mode, choose a model that supports tools and ask, for example, “Use Body Builder to compare Claude and Gemini on why stars shine.” The agent receives each reply or error and can compare the results. Generating the requests is free. Each model call is billed at its usual rate and contributes its reported usage to the run totals. [OpenRouter Body Builder](https://openrouter.ai/docs/guides/features/body-builder)
 - **Settings** controls hosted shell, search, date and time, web fetch, and the local device time-zone tool. The SDK dispatches local tools and feeds their results back to the model.
 - **Advanced agent settings** includes a step limit, an optional USD stop threshold, and temperature for models that advertise that parameter. The SDK and provider check the threshold between steps. A step in progress can take the total above the threshold.
 - The app supports one HTTPS remote MCP server with no authentication or a separate bearer token. The server must accept cross-origin requests from `https://agent-runtime.invalid`. The app shows the tool name, endpoint, and arguments before each call and offers **Allow once** or **Decline**. Tool discovery occurs on connection.
@@ -120,7 +123,6 @@ Run the `assembleDebug` Gradle task to compile the app and package the signed de
 
 Optional Gradle properties supported by `app/build.gradle.kts`:
 - `-PagentDebugKeystore=/path/to/debug.keystore` — sign the debug build with a specific debug keystore so upgrading an existing installation preserves local app data.
-- `-PmoderationReportUrl=https://...` — configure the endpoint used by the in-app response reporting dialog (`BuildConfig.MODERATION_REPORT_URL`).
 
 **APK output locations:**
 - Gradle output: `app/build/outputs/apk/debug/app-debug.apk`
@@ -142,6 +144,20 @@ On Windows PowerShell:
 Copy-Item app\build\outputs\apk\debug\app-debug.apk app\APK\app-debug.apk -Force
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
+
+### Receive moderation reports in n8n
+
+1. On your VPS, add an n8n **Webhook** trigger with HTTP method **POST**, path `moderation-reports`, and **Authentication** set to **None**. Use HTTPS and rate-limit this public route at your reverse proxy. Keep the n8n editor and report storage private.
+2. Save `{{ $json.body.prompt }}`, `{{ $json.body.response }}`, and `{{ $json.body.reason }}` to your private review queue. Set the webhook to **Using 'Respond to Webhook' Node**. After the write succeeds, have that node respond with **No Data** and HTTP `204`. Let a failed write fail the workflow or return a non-`2xx` status. The app treats any `2xx` response as successful.
+3. Publish the workflow and copy its **Production URL** into `gradle.properties`. Replace the example below with your full webhook URL, including the `/webhook/` path.
+
+   ```properties
+   moderationReportUrl=https://n8n.example.com/webhook/moderation-reports
+   ```
+
+4. Rebuild the app and send a report from **Report response** on an AI reply. Check that the report reached your queue. You can also set or override the URL for a build with `-PmoderationReportUrl=https://n8n.example.com/webhook/moderation-reports`. A blank URL leaves reporting unconfigured.
+
+[n8n Webhook node documentation](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/)
 
 ### Run unit tests and lint
 

@@ -105,12 +105,8 @@ internal fun AgentRunStatus(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (!following) IconButton(onClick = onFollow) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Jump to latest")
-            }
-            IconButton(onClick = onActivity) {
-                Icon(Icons.Default.Info, contentDescription = "Run activity")
-            }
+            if (!following) SymbolAction("Latest", Icons.Default.KeyboardArrowDown, onFollow)
+            SymbolAction("Activity", StudioSymbols.Activity, onActivity)
         }
         if (!waitingForApproval && idle >= 12) {
             Text("No new events for ${idle}s", style = MaterialTheme.typography.bodySmall,
@@ -121,7 +117,7 @@ internal fun AgentRunStatus(
 
 @Composable
 internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, showReasoning: Boolean = false,
-    renderMarkdown: Boolean = true, onRetry: (() -> Unit)? = null,
+    onShowReasoning: ((Boolean) -> Unit)? = null, renderMarkdown: Boolean = true, onRetry: (() -> Unit)? = null,
     onRetryWithoutTools: (() -> Unit)? = null, onActivity: (() -> Unit)? = null) {
     // Interrupted turns restored from storage have no timeline, only the joined text.
     val blocks = progress.timeline.ifEmpty {
@@ -138,7 +134,7 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
                 // Keys follow each block, so expanded state stays put when old blocks are trimmed.
                 key(progress.timelineOffset + index) {
                     when (block) {
-                        is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning)
+                        is LiveBlock.Thinking -> ThinkingBlock(block.text, live, showReasoning, onShowReasoning)
                         is LiveBlock.ToolCall -> progress.tool(block.id)?.let { LiveToolRow(it) }
                         is LiveBlock.Answer -> ReplyText(block.text, renderMarkdown = renderMarkdown,
                             keepSelectionOnReplacement = live)
@@ -158,7 +154,7 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
                 onRetry?.let { TextButton(onClick = it) { Text("Retry") } }
                 onRetryWithoutTools?.let { TextButton(onClick = it) { Text("Retry without tools") } }
             }
-            onActivity?.let { TextButton(onClick = it) { Text("Run activity") } }
+            onActivity?.let { SymbolAction("Run activity", StudioSymbols.Activity, it) }
         }
     }
 }
@@ -166,8 +162,17 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
 private const val LIVE_THINKING_TAIL = 520
 
 @Composable
-private fun ThinkingBlock(text: String, live: Boolean, showPreview: Boolean) {
+private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((Boolean) -> Unit)?) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    if (!show) {
+        if (live) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+            Text("Thinking…", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            onShow?.let { TextButton(onClick = { it(true) }) { Text("Show reasoning") } }
+        }
+        return
+    }
     StudioRailBlock(
         railColor = MaterialTheme.colorScheme.primary,
         modifier = Modifier.fillMaxWidth(),
@@ -179,6 +184,7 @@ private fun ThinkingBlock(text: String, live: Boolean, showPreview: Boolean) {
             if (live) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
             Text(if (live) "Thinking…" else "Thought", style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            onShow?.let { TextButton(onClick = { it(false) }) { Text("Hide") } }
             Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = null, modifier = Modifier.size(18.dp))
         }
@@ -192,7 +198,7 @@ private fun ThinkingBlock(text: String, live: Boolean, showPreview: Boolean) {
                 color = color,
                 keepSelectionOnReplacement = live,
             )
-            live && showPreview -> Text(
+            live -> Text(
                 if (text.length > LIVE_THINKING_TAIL) "…" + text.takeLast(LIVE_THINKING_TAIL).trimStart()
                 else text.trim(),
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -221,7 +227,7 @@ private fun LiveToolRow(tool: LiveTool) {
             }
         }
         Column(Modifier.weight(1f)) {
-            Text("${tool.name} · ${tool.status.replace('_', ' ')}", style = MaterialTheme.typography.labelMedium,
+            Text("${toolLabel(tool.name)} · ${tool.status.replace('_', ' ')}", style = MaterialTheme.typography.labelMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             tool.detail?.takeIf { it.isNotBlank() }?.let { detail ->
                 val mono = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
@@ -283,12 +289,14 @@ internal fun RunActivityDialog(
 
 @Composable
 internal fun ToolActivityRow(activity: ToolActivity) {
-    OutlinedSection(title = "${activity.name} · ${activity.status.replace('_', ' ')}") {
+    OutlinedSection(title = "${toolLabel(activity.name)} · ${activity.status.replace('_', ' ')}") {
         activity.detail?.takeIf { it.isNotBlank() }?.let {
             CopyableText(it, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
         }
     }
 }
+
+private fun toolLabel(name: String): String = if (name == "openrouter_body_builder") "Body Builder" else name
 
 internal fun compactCount(value: Int): String = when {
     value >= 1_000_000 -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
@@ -318,7 +326,7 @@ internal fun AgentProgress.status(providerName: String = "OpenRouter"): String =
     "reasoning" -> if (detail == "hidden") "Model is reasoning privately" else "Model is reasoning"
     "tools" -> {
         val active = tools.lastOrNull { it.status in setOf("preparing", "in_progress", "searching", "running", "running in background") }
-        active?.let { "Tool · ${it.name}" } ?: "Processing tools"
+        active?.let { "Tool · ${toolLabel(it.name)}" } ?: "Processing tools"
     }
     "answering" -> "Streaming reply"
     "finishing" -> "Saving reply"

@@ -37,7 +37,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -249,40 +248,33 @@ internal fun MiniAppsSheet(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.semantics { heading() },
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Create custom mobile tools with AI or import a .miniapp bundle. Each app saves its own data privately.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            val showLabels = LocalControlLabels.current.visible
+            if (showLabels) {
+                Spacer(Modifier.height(4.dp))
+                Text("Each app stores its own data.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Spacer(Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilledTonalButton(
-                    onClick = {
+                ControlTooltip("Create with AI", enabled = !showLabels) {
+                    FilledTonalButton(onClick = {
                         errorMessage = null
                         aiDialogMode = AiMiniAppDialogMode.Create
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Create with AI")
+                    }) { SymbolLabel("Create with AI", StudioSymbols.NewMiniApp) }
                 }
-                OutlinedButton(
-                    onClick = {
+                ControlTooltip("Import", enabled = !showLabels) {
+                    OutlinedButton(onClick = {
                         errorMessage = null
                         try {
                             importDocument.launch(arrayOf("*/*"))
                         } catch (_: ActivityNotFoundException) {
                             errorMessage = "No file picker is available to import mini apps."
                         }
-                    },
-                ) {
-                    Text("Import")
+                    }) { SymbolLabel("Import", StudioSymbols.Import) }
                 }
             }
 
