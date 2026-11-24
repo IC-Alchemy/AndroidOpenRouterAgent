@@ -189,6 +189,7 @@ data class SdkSettings(
     val renderMarkdown: Boolean = true,
     /** Reads a reply aloud when its prompt was dictated with the microphone or the Ask tile. */
     val readVoiceReplies: Boolean = true,
+    val saveReasoning: Boolean = true,
     val discoverSkills: Boolean = true,
     val theme: String = "oled",
 ) {
