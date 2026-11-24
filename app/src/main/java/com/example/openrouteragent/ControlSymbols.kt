@@ -165,6 +165,14 @@ internal object StudioSymbols {
     val MiniApps = symbol("Mini apps", "M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z")
     val NewMiniApp = symbol("Create mini app", "M4 4 H10 V10 H4 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z M14 7 H20 M17 4 V10")
 
+    val Attach = symbol("Attach", "M16 7 V16 A4 4 0 0 1 8 16 V6 A2.5 2.5 0 0 1 13 6 V15 A1 1 0 0 1 11 15 V8")
+    val Camera = symbol("Camera", "M3 8 H7 L9 5 H15 L17 8 H21 V19 H3 Z M8.5 13.5 A3.5 3.5 0 1 0 15.5 13.5 " +
+        "A3.5 3.5 0 1 0 8.5 13.5")
+    val Photo = symbol("Photo", "M3 5 H21 V19 H3 Z M3 16 L8 11 L13 16 L16 13 L21 18 M14 9 A1.5 1.5 0 1 0 17 9 " +
+        "A1.5 1.5 0 1 0 14 9")
+    val Speaker = symbol("Read aloud", "M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 A4 4 0 0 1 16 15 " +
+        "M18.5 6.5 A7.5 7.5 0 0 1 18.5 17.5")
+
     private fun symbol(name: String, data: String): ImageVector = ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
         .addPath(pathData = PathParser().parsePathString(data).toNodes(), stroke = SolidColor(Color.Black),
             strokeLineWidth = 1.65f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round)

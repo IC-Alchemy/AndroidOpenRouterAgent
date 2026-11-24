@@ -1,6 +1,7 @@
 package com.example.openrouteragent
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +17,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,12 +29,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import java.io.File
+
+/** Where a new attachment comes from. */
+internal enum class AttachSource { Photos, Camera, Files }
 
 @Composable
 internal fun AgentInputBar(
@@ -44,6 +56,14 @@ internal fun AgentInputBar(
     onVoice: () -> Unit,
     chatMode: Boolean? = null,
     onChatMode: (Boolean) -> Unit = {},
+    attachments: List<ChatMedia> = emptyList(),
+    mediaFile: (ChatMedia) -> File? = { null },
+    onOpenAttachment: (ChatMedia) -> Unit = {},
+    onRemoveAttachment: (ChatMedia) -> Unit = {},
+    onAttach: ((AttachSource) -> Unit)? = null,
+    /** False when the chosen model can't read images, so photo choices are off. */
+    canAttachImages: Boolean = true,
+    importing: Boolean = false,
 ) {
     val showLabels = LocalControlLabels.current.visible
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
@@ -90,6 +110,12 @@ internal fun AgentInputBar(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            if (importing) LinearProgressIndicator(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 16.dp))
+            if (attachments.isNotEmpty()) {
+                MediaStrip(attachments, mediaFile, onOpenAttachment,
+                    Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp),
+                    size = 56.dp, onRemove = if (isRunning) null else onRemoveAttachment)
+            }
             Row(
                 modifier = Modifier
                     .widthIn(max = 840.dp)
@@ -98,6 +124,36 @@ internal fun AgentInputBar(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (onAttach != null && !isRunning) {
+                    var menu by remember { mutableStateOf(false) }
+                    Box {
+                        ControlTooltip("Attach") {
+                            IconButton(onClick = { menu = true }, enabled = !isLoading && !importing,
+                                modifier = Modifier.size(48.dp)) {
+                                Icon(StudioSymbols.Attach, contentDescription = "Attach a photo or file")
+                            }
+                        }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (canAttachImages) "Photos" else "Photos (this model can't read images)") },
+                                leadingIcon = { Icon(StudioSymbols.Photo, null) },
+                                enabled = canAttachImages,
+                                onClick = { menu = false; onAttach(AttachSource.Photos) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Take a photo") },
+                                leadingIcon = { Icon(StudioSymbols.Camera, null) },
+                                enabled = canAttachImages,
+                                onClick = { menu = false; onAttach(AttachSource.Camera) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("PDF, audio or text file") },
+                                leadingIcon = { Icon(StudioSymbols.File, null) },
+                                onClick = { menu = false; onAttach(AttachSource.Files) },
+                            )
+                        }
+                    }
+                }
                 CopyableOutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -120,7 +176,7 @@ internal fun AgentInputBar(
                 ControlTooltip(action) {
                     FilledIconButton(
                         onClick = if (isRunning) onStop else onSend,
-                        enabled = isRunning || (!isLoading && value.isNotBlank()),
+                        enabled = isRunning || (!isLoading && !importing && (value.isNotBlank() || attachments.isNotEmpty())),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.size(48.dp),
                     ) {

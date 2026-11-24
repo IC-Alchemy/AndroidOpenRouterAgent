@@ -104,7 +104,9 @@ data class ChatEntry(
     val isError: Boolean = false,
     val isModerated: Boolean = false,
     val notice: String? = null,
-    val toolActivity: List<ToolActivity> = emptyList()
+    val toolActivity: List<ToolActivity> = emptyList(),
+    /** Photos and files the user attached, or images the model made. */
+    val media: List<ChatMedia> = emptyList(),
 )
 
 @Serializable
@@ -180,7 +182,10 @@ fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, e
     sdk = sdk.copy(discoverSkills = false, toolChoice = "none"))
 
 @Serializable
-data class InterruptedTurn(val prompt: String, val reply: String, val reasoningSummary: String, val error: String?)
+data class InterruptedTurn(
+    val prompt: String, val reply: String, val reasoningSummary: String, val error: String?,
+    val media: List<ChatMedia> = emptyList(),
+)
 
 fun AgentConfig.agentToolsEnabled(): Boolean =
     sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||

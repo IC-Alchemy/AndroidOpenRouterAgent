@@ -894,3 +894,67 @@ test('mini app tools need the setting and a bridge, and the local bridge rejects
   controller.abort(new Error('stopped'));
   await assert.rejects(second, /stopped/);
 });
+
+test('the bundled runtime sends attachments, parses PDFs for text models and keeps base64 out of saved chats',
+  { timeout: 7000 }, async () => {
+    const photo = 'data:image/jpeg;base64,' + '/9j/' + 'A'.repeat(900);
+    const pdf = 'data:application/pdf;base64,' + 'JVBERi0' + 'B'.repeat(900);
+    const png = 'iVBORw0KGgo' + 'C'.repeat(900);
+    const files = new Map([['a'.repeat(64) + '.jpg', photo], ['b'.repeat(64) + '.pdf', pdf]]);
+    const image = { type: 'openrouter:image_generation', id: 'ig_1', status: 'completed', imageB64: png,
+      prompt: 'a red bicycle' };
+    const events = [];
+    const requests = [];
+    const replies = [];
+    const runtime = await bundledRuntime({
+      post: message => events.push(JSON.parse(message)),
+      readMedia(id, kind, file) {
+        const value = files.get(file) ?? '';
+        return kind === 'b64' ? value.replace(/^data:[^,]+,/, '') : value;
+      },
+      storeMedia(id, kind, value) {
+        const name = String(files.size).repeat(64).slice(0, 64) + (kind === 'b64' ? '.png' : '.jpg');
+        files.set(name, kind === 'b64' ? 'data:image/png;base64,' + value : value);
+        return name;
+      },
+      requestHttp(id, requestId, json) {
+        requests.push(JSON.parse(JSON.parse(json).body));
+        replies.push(Buffer.from(stream(requests.length, requests.length === 1
+          ? [image, answer('msg_media', 'A bicycle.')] : answer('msg_again', 'Still a bicycle.'))).toString('base64'));
+        queueMicrotask(() => runtime.http(id, requestId, 'headers', { status: 200, contentType: 'text/event-stream' }));
+      },
+      readHttp(id, requestId) {
+        const reply = replies.shift();
+        queueMicrotask(() => runtime.http(id, requestId, reply ? 'chunk' : 'end', reply ?? null));
+      },
+      cancelHttp() {},
+    });
+    const details = { [base.model]: { tools: true, parameters: [], input: ['text', 'image'], output: ['text'] } };
+    await runtime.start({ ...base, id: 'media-1', prompt: 'What is in these?', modelDetails: details,
+      attachments: [
+        { kind: 'image', file: 'a'.repeat(64) + '.jpg', name: 'photo.jpg', mimeType: 'image/jpeg' },
+        { kind: 'file', file: 'b'.repeat(64) + '.pdf', name: 'notes.pdf', mimeType: 'application/pdf' },
+        { kind: 'text', file: 'c'.repeat(64) + '.txt', name: 'todo.txt', mimeType: 'text/plain', text: 'buy milk' },
+      ] });
+    const done = events.find(event => event.type === 'done');
+    assert.ok(done, JSON.stringify(events.filter(event => event.type === 'error')));
+    const content = requests[0].input.at(-1).content;
+    assert.deepEqual(content.map(part => part.type), ['input_text', 'input_image', 'input_file', 'input_text']);
+    assert.equal(content[1].image_url, photo);
+    assert.equal(content[2].file_data, pdf);
+    assert.equal(content[2].filename, 'notes.pdf');
+    assert.deepEqual(requests[0].plugins, [{ id: 'file-parser', pdf: { engine: 'cloudflare-ai' } }]);
+
+    // The saved state and the reply carry short markers instead of base64.
+    const { state, response } = done.value;
+    assert.ok(!state.includes('A'.repeat(900)) && !state.includes('C'.repeat(900)));
+    assert.match(state, /oratt:url:a{64}\.jpg/);
+    const saved = response.output.find(item => item.type === 'openrouter:image_generation');
+    assert.match(saved.image_b64, /^oratt:b64:\d{64}\.png$/);
+
+    // The next run restores the photo from the device before it reaches the SDK.
+    await runtime.start({ ...base, id: 'media-2', prompt: 'And now?', modelDetails: details, state });
+    assert.ok(events.some(event => event.type === 'done' && event.id === 'media-2'));
+    assert.ok(JSON.stringify(requests[1].input).includes(photo));
+    assert.equal(requests[1].plugins, undefined);
+  });

@@ -3,6 +3,8 @@ package com.example.openrouteragent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -12,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +31,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ModelPicker(
     models: List<CatalogModel>,
@@ -41,8 +45,11 @@ internal fun ModelPicker(
     onSelect: (CatalogModel) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    var visionOnly by rememberSaveable { mutableStateOf(false) }
+    var imagesOnly by rememberSaveable { mutableStateOf(false) }
     val visible = models.filter { model ->
-        (!requireTools || model.supportsTools) &&
+        (!requireTools || model.supportsTools) && (!visionOnly || model.readsImages) &&
+            (!imagesOnly || model.makesImages) &&
             (model.name.contains(query.trim(), ignoreCase = true) || model.id.contains(query.trim(), ignoreCase = true))
     }
     AlertDialog(
@@ -52,6 +59,10 @@ internal fun ModelPicker(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 CopyableOutlinedTextField(query, { query = it }, label = { Text("Search models") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(visionOnly, { visionOnly = !visionOnly }, label = { Text("Reads images") })
+                    FilterChip(imagesOnly, { imagesOnly = !imagesOnly }, label = { Text("Makes images") })
+                }
                 if (requireTools) {
                     Text("Showing models that support your enabled tools.", style = MaterialTheme.typography.bodySmall)
                 }
@@ -79,9 +90,23 @@ internal fun ModelPicker(
                                 if (current) Icon(Icons.Default.Check, "Selected model")
                             }
                             CopyableText(model.id, style = MaterialTheme.typography.bodySmall)
-                            if (model.contextLength > 0) {
-                                val count = NumberFormat.getIntegerInstance().format(model.contextLength)
-                                Text("$count context tokens", style = MaterialTheme.typography.labelSmall)
+                            val details = listOfNotNull(
+                                model.contextLength.takeIf { it > 0 }?.let {
+                                    NumberFormat.getIntegerInstance().format(it) + " context tokens"
+                                },
+                                priceLabel(model.pricing),
+                            )
+                            if (details.isNotEmpty()) {
+                                Text(details.joinToString(" · "), style = MaterialTheme.typography.labelSmall)
+                            }
+                            val labels = capabilityLabels(model)
+                            if (labels.isNotEmpty()) {
+                                Text(labels.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                            retirementLabel(model)?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }

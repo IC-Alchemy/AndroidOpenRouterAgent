@@ -50,12 +50,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalUriHandler
 
 @Composable
-internal fun UserMessageBubble(text: String) {
-    Row(
+internal fun UserMessageBubble(
+    text: String,
+    media: List<ChatMedia> = emptyList(),
+    mediaFile: (ChatMedia) -> java.io.File? = { null },
+    onOpenMedia: (ChatMedia) -> Unit = {},
+) {
+    Column(
         modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
-        horizontalArrangement = Arrangement.End
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Surface(
+        MediaStrip(media, mediaFile, onOpenMedia, size = 96.dp)
+        if (text.isNotBlank()) Surface(
             shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
