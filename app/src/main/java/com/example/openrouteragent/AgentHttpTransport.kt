@@ -116,7 +116,7 @@ internal class AgentHttpTransport(
         }
         val request = Request.Builder().url(url)
             .header("Authorization", "Bearer $apiKey")
-            .header("X-Title", "OpenRouter Sandbox Agent")
+            .openRouterAttribution()
             .header("Accept", if (route == AgentEndpoint.Responses) "text/event-stream, application/json" else "application/json")
             .post(body.toRequestBody(jsonType))
             .build()

@@ -246,7 +246,7 @@ class OpenRouterAgentClient(
         return Request.Builder()
             .url(url)
             .header("Authorization", "Bearer ${apiKey.trim()}")
-            .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
+            .openRouterAttribution()
     }
 
     private suspend fun <T> execute(

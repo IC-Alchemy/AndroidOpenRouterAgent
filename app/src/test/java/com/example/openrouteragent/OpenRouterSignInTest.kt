@@ -62,6 +62,7 @@ class OpenRouterSignInTest {
             }
             val exchange = api.takeRequest()
             assertEquals("/api/v1/auth/keys", exchange.path)
+            assertEquals(OpenRouterAttribution.REFERER, exchange.getHeader("HTTP-Referer"))
             val body = JSONObject(exchange.body.readUtf8())
             assertEquals("good", body.getString("code"))
             assertEquals(signIn.verifier, body.getString("code_verifier"))

@@ -62,6 +62,7 @@ class MiniAppGeneratorTest {
 
             val req = server.takeRequest()
             assertEquals("/api/v1/chat/completions", req.path)
+            assertEquals(OpenRouterAttribution.REFERER, req.getHeader("HTTP-Referer"))
             val reqJson = JSONObject(req.body.readUtf8())
             val responseFormat = reqJson.getJSONObject("response_format")
             assertEquals("json_schema", responseFormat.getString("type"))

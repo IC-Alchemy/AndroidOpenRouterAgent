@@ -114,7 +114,7 @@ class OpenRouterSignIn internal constructor(
     internal suspend fun exchange(code: String): String = withContext(Dispatchers.IO) {
         val body = JSONObject().put("code", code).put("code_verifier", verifier)
             .put("code_challenge_method", "S256").toString()
-        val request = Request.Builder().url(apiBase.resolve("auth/keys")!!)
+        val request = Request.Builder().url(apiBase.resolve("auth/keys")!!).openRouterAttribution()
             .post(body.toRequestBody("application/json".toMediaType())).build()
         http.newBuilder().callTimeout(30, TimeUnit.SECONDS).build().newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
