@@ -195,15 +195,19 @@ class GitHubProjectTest {
 
     @Test fun pendingFirstPublishCanRefreshAfterBaseMoves() = runBlocking {
         MockWebServer().use { server ->
-            val service = connected(server)
+            val folder = temp.newFolder()
+            val service = connected(server, folder)
             service.create("p", "new.txt", "draft")
             enqueuePublish(server)
             repeat(2) { server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)) }
             assertTrue(runCatching { service.submit(service.preparePublish("p", "Add file")) }.isFailure)
+            // Refresh through a fresh client: the dropped connections mark the IPv4 route as failed in the
+            // old client, which then tries [::1] first and, with retries off, never falls back.
+            val reopened = GitHubProjects(folder, credentials, GitHubClient(server.url("/")))
             server.enqueue(MockResponse().setResponseCode(404))
             enqueueHead(server, candidate, subtree)
             server.enqueue(json("""{"truncated":false,"tree":[]}"""))
-            val refreshed = service.refresh("p")
+            val refreshed = reopened.refresh("p")
             assertEquals(candidate, refreshed.head.commit)
             assertNull(refreshed.pending)
             assertEquals("draft", refreshed.drafts.single().text)
