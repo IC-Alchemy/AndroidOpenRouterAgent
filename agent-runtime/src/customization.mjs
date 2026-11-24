@@ -147,7 +147,7 @@ export function sdkParameters(options, hasTools) {
   const compatible = id => Boolean(details?.[id] && (!hasTools || details[id].tools));
   const followUp = prefs.followUpModel?.trim();
   const fallback = split(prefs.fallbackModels).filter(compatible);
-  // Agent SDK 1.2.2 counts completed model requests from zero. The editor numbers the initial request as step 1.
+  // The Agent SDK (1.2.2 through 1.3.0) counts completed model requests from zero. The editor numbers the initial request as step 1.
   const turnChanged = ctx => (ctx?.numberOfTurns ?? 0) + 1 >= (prefs.followUpTurn ?? 2);
   const resolveModel = ctx => turnChanged(ctx) && compatible(followUp) ? followUp : options.model;
   const supports = (id, ...parameters) => !details || parameters.some(value => details[id]?.parameters.includes(value));
