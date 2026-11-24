@@ -90,6 +90,47 @@ class AgentViewModelModerationTest {
     }
 
     @Test
+    fun savedChatKeepsReasoningByDefaultAndOmitsItForNewRepliesWhenDisabled() {
+        MockWebServer().use { server ->
+            val vm = createConfiguredViewModel(server, moderator = null)
+            val app = ApplicationProvider.getApplicationContext<Application>()
+            ChatDatabase(app).use { chats ->
+                val scope = chatScope(vm.config)
+                server.enqueue(MockResponse().setBody("First answer").setHeader("X-Test-Reasoning", "First thought"))
+                vm.send("First prompt")
+                awaitCondition { vm.activePrompt == null && vm.workspace.messages.size == 2 }
+                assertEquals("First thought", chats.active(scope)?.messages?.last()?.reasoningSummary)
+
+                runBlocking { vm.saveSettings(vm.config.copy(sdk = vm.config.sdk.copy(saveReasoning = false))) }
+                server.enqueue(MockResponse().setBody("Second answer").setHeader("X-Test-Reasoning", "Second thought"))
+                vm.send("Second prompt")
+                awaitCondition { vm.activePrompt == null && vm.workspace.messages.size == 4 }
+                val saved = checkNotNull(chats.active(scope))
+                assertEquals("First thought", saved.messages[1].reasoningSummary)
+                assertEquals("Second answer", saved.messages.last().text)
+                assertNull(saved.messages.last().reasoningSummary)
+            }
+        }
+    }
+
+    @Test
+    fun interruptedReasoningRemainsAvailableDuringTheSessionWhenSavingIsOff() {
+        MockWebServer().use { server ->
+            val vm = createConfiguredViewModel(server, moderator = null)
+            runBlocking { vm.saveSettings(vm.config.copy(sdk = vm.config.sdk.copy(saveReasoning = false))) }
+            server.enqueue(MockResponse().setResponseCode(500).setHeader("X-Test-Reasoning", "Partial thought"))
+            vm.send("First prompt")
+            awaitCondition { vm.activePrompt == null && vm.interrupted != null }
+            assertEquals("Partial thought", vm.interrupted?.summary)
+            ChatDatabase(ApplicationProvider.getApplicationContext<Application>()).use { chats ->
+                val saved = checkNotNull(chats.active(chatScope(vm.config))?.interruptedTurn)
+                assertEquals("First prompt", saved.prompt)
+                assertEquals("", saved.reasoningSummary)
+            }
+        }
+    }
+
+    @Test
     fun moderationDisabledByDefaultSkipsModeratorCallsAndAllowsAllPromptsAndResponses() {
         MockWebServer().use { server ->
             val calls = mutableListOf<String>()

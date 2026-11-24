@@ -184,7 +184,7 @@ data class SdkSettings(
     /** Seconds without any stream bytes (keepalives included) before a run fails. Null means 90. */
     val streamIdleSeconds: Int? = null,
     val toolConcurrency: Int? = null,
-    val showReasoning: Boolean = true,
+    val showReasoning: Boolean = false,
     /** Renders agent replies as Markdown; off shows the raw text the model sent. */
     val renderMarkdown: Boolean = true,
     /** Reads a reply aloud when its prompt was dictated with the microphone or the Ask tile. */

@@ -1,6 +1,7 @@
 package com.example.openrouteragent
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -72,8 +73,9 @@ internal fun SdkSettingsSheet(
     var requireParams by remember { mutableStateOf(sdk.requireParameters) }
     var strictFinal by remember { mutableStateOf(sdk.strictFinalResponse) }
     var detectRepetition by remember { mutableStateOf(sdk.detectRepetition) }
-    var showReasoning by remember { mutableStateOf(sdk.showReasoning) }
-    var renderMarkdown by remember { mutableStateOf(sdk.renderMarkdown) }
+    var showReasoning by rememberSaveable { mutableStateOf(sdk.showReasoning) }
+    var renderMarkdown by rememberSaveable { mutableStateOf(sdk.renderMarkdown) }
+    var saveReasoning by rememberSaveable { mutableStateOf(sdk.saveReasoning) }
     var discoverSkills by remember { mutableStateOf(sdk.discoverSkills) }
     var zdr by remember { mutableStateOf(sdk.zdr) }
     var distillable by remember { mutableStateOf(sdk.distillableText) }
@@ -138,6 +140,7 @@ internal fun SdkSettingsSheet(
                 followUpOutputTokens = number("followOutput", "Follow-up output limit"),
                 followUpInstructions = value("followInstructions").trim(), showReasoning = showReasoning,
                 renderMarkdown = renderMarkdown,
+                saveReasoning = saveReasoning,
                 discoverSkills = discoverSkills, theme = value("theme"), detectRepetition = detectRepetition,
                 strictFinalResponse = strictFinal, stopOnTool = value("stopTool").trim(), finalResponse = value("finalResponse"),
                 finalDirective = value("finalDirective").trim(), toolTimeoutSeconds = number("timeout", "Tool timeout"),
@@ -289,8 +292,16 @@ internal fun SdkSettingsSheet(
                     }
                     "display" -> {
                         Options("theme", "App theme", listOf("oled" to "OLED black", "system" to "System", "light" to "Light"))
-                        ToggleLine("Show streamed reasoning", showReasoning) { showReasoning = it }
                         ToggleLine("Render Markdown in replies", renderMarkdown) { renderMarkdown = it }
+                        ToggleLine("Show streamed reasoning", showReasoning) { showReasoning = it }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) {
+                                ToggleLine("Save reasoning in chat history", saveReasoning) { saveReasoning = it }
+                            }
+                            StudioInfoButton("Saved reasoning") {
+                                Text("Includes thinking in new saved replies and interrupted replies.")
+                            }
+                        }
                         ToggleLine("Let the agent discover saved skills", discoverSkills) { discoverSkills = it }
                     }
                 }
