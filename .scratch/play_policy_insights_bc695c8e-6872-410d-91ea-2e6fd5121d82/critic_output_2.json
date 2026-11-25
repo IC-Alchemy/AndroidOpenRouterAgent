@@ -1,0 +1,21 @@
+{
+  "9": {
+    "action": "MANUAL_REVIEW",
+    "confidence": "High",
+    "critic_justification": "Gradle line 64 includes Google Play services LiteRT. ContentModerator.kt:93 initializes that runtime. AgentViewModel.kt:137 and :654 gate initialization on the moderation setting, and MainActivity.kt:1602 describes local checks. Google's LiteRT documentation confirms on-device inference plus separate transfer of device identifiers and diagnostic and usage metrics to Google. The settings text omits those metrics. No traffic capture or release declarations were available. Play's prominent-disclosure requirement depends on the nature of the data and reasonable user expectations, so a specific policy violation remains unverified.",
+    "issue_summary": "Review disclosure of Google Play services LiteRT diagnostics and device identifiers",
+    "severity": "SUGGESTION",
+    "recommendation": "Account for LiteRT device identifiers and diagnostics in the app privacy policy and Play Console Data safety form. Verify the SDK data-handling relationship and the release build's behavior. Explain the Google metrics when enabling moderation and obtain affirmative consent before initialization if the transfer falls outside users' reasonable expectations. [LiteRT data handling](https://developers.google.com/edge/litert/android/play_services#privacy_and_data_collection) · [Google Play User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311)"
+  },
+  "12": {
+    "action": "VERIFIED",
+    "confidence": "High",
+    "critic_justification": "app/build.gradle.kts:16 sets targetSdk to 35 in the mobile application's default configuration. Google Play requires target API 36 or later for new mobile app submissions and updates beginning August 31, 2026. The published extension deadline was November 1, 2026. [Google Play target API level requirements](https://support.google.com/googleplay/android-developer/answer/11926878)"
+  },
+  "14": {
+    "action": "MANUAL_REVIEW",
+    "confidence": "High",
+    "critic_justification": "AgentViewModel.kt:108 and :295 confirm core chat requires a configured OpenRouter API key. MainActivity.kt:1538 and :1587 provide direct key entry and browser authorization, and GitHubUi.kt:311 shows a token gate for the optional integration. The source establishes reviewer access requirements. The private Play Console App access declaration and reviewer credential validity were unavailable to verify.",
+    "severity": "SUGGESTION"
+  }
+}

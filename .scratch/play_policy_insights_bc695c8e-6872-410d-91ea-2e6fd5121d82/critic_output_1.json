@@ -1,0 +1,25 @@
+{
+  "6": {
+    "action": "MANUAL_REVIEW",
+    "confidence": "High",
+    "critic_justification": "ProjectFilesUi.kt:255 opens an explicit Upload to OpenRouter action, and line 277 accepts files of any MIME type. OpenRouterFiles.kt:56 copies the selected file, and OpenRouterAgentClient.kt:124-136 writes the file bytes into the multipart request. This can transmit a selected recording without a microphone permission. The source does not establish which audio types the production service accepts or what Play Console declares.",
+    "issue_summary": "Check whether optional uploads include existing voice or sound recordings",
+    "severity": "SUGGESTION",
+    "recommendation": "Verify which recordings the release can send and include supported voice or sound recordings under optional collection for App functionality. Evaluate whether the explicit upload qualifies for Play's expected user-action sharing exemption. [Play Data safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469)"
+  },
+  "7": {
+    "action": "MANUAL_REVIEW",
+    "confidence": "High",
+    "critic_justification": "ProjectFilesUi.kt:255-277 lets a user deliberately upload a chosen file, and OpenRouterAgentClient.kt:117-136 streams any eligible local file as application/octet-stream. The client can send user-selected music, and OpenRouter's terms reserve the right to limit accepted file types. Production music support and the Play Console answer remain unverified.",
+    "issue_summary": "Check whether optional uploads include music files",
+    "severity": "SUGGESTION",
+    "recommendation": "Verify which music file types the release can send. Account for those types as optional collection for App functionality and assess the sharing exceptions for each applicable transfer. [Play Data safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469) · [OpenRouter Files terms](https://openrouter.ai/terms)"
+  },
+  "8": {
+    "action": "MANUAL_REVIEW",
+    "confidence": "High",
+    "critic_justification": "MainActivity.kt:773 wires the user-triggered upload to OpenRouterFiles.kt:56-62. OpenRouterAgentClient.kt:124-136 sends the named file bytes to the OpenRouter Files API using the user's account key. The source establishes off-device collection. Play Console and the agreements needed to classify all onward transfers are unavailable.",
+    "issue_summary": "Verify the Data safety declaration for project files and filenames sent to OpenRouter",
+    "severity": "SUGGESTION"
+  }
+}

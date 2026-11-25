@@ -1,0 +1,32 @@
+{
+  "domain": "User Account and Identity",
+  "findings": [
+    {
+      "policy_id": "login_credentials",
+      "issue_summary": "Core chat requires an OpenRouter credential; verify reviewer access in Play Console",
+      "severity": "IMPORTANT",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:295",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1538",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1587",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubUi.kt:311"
+      ],
+      "evidence": "The app can open without a credential, but AgentViewModel.send returns before starting a run when no OpenRouter API key is stored. Settings accepts a pasted key or starts the OpenRouter browser flow. Optional GitHub integration requires a fine-grained token. Play Console App access instructions and reviewer credentials were unavailable for verification.",
+      "recommendation": "In Play Console under App content > App access, provide a dedicated reusable, non-expiring reviewer OpenRouter key with a working model and sufficient quota. Include English instructions to paste the key in Settings, save it, choose a model and send a test prompt. Supply a disposable test repository and suitable credentials for any gated GitHub feature included in review. Verify all reviewer steps on a fresh install. See https://support.google.com/googleplay/android-developer/answer/15748846."
+    },
+    {
+      "policy_id": "account_deletion",
+      "issue_summary": "Confirm Data safety account-creation answers for the OpenRouter connection",
+      "severity": "SUGGESTION",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1550",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterSignIn.kt:49",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterSignIn.kt:114",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentStorage.kt:67",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubClient.kt:54"
+      ],
+      "evidence": "Settings links to OpenRouter key management and starts browser authorization at OpenRouter. The exchange obtains a user-controlled OpenRouter API key and the app stores that key locally with Android Keystore. The optional GitHub connection also uses an externally issued credential. The audited app paths exposed no developer-managed app-account creation flow. Play also considers creation of an app-specific identity through an external signup flow to be account creation.",
+      "recommendation": "Complete the Data safety deletion questions using the actual production sign-up flow. If the release provisions an app-specific account through OpenRouter or any other service, provide a discoverable in-app path and a public web resource for requesting deletion of the app account and associated data. Document which data users can delete locally and how they can manage retained OpenRouter files and account data. See https://support.google.com/googleplay/android-developer/answer/13327111 and https://openrouter.ai/privacy."
+    }
+  ]
+}

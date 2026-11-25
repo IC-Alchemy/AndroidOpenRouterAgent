@@ -1,0 +1,49 @@
+{
+  "domain": "Data Safety and Privacy",
+  "findings": [
+    {
+      "psl_constant": "MUSIC",
+      "policy_id": "data_safety_section",
+      "issue_summary": "User-Initiated Collection: The optional file upload can transmit user-selected music files",
+      "severity": "IMPORTANT",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ProjectFilesUi.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterFiles.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterAgentClient.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/BackgroundRuns.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppGenerator.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js"
+      ],
+      "evidence": "The scanner hits in agent.js:40, 47, 53, 55, 78 refer to tracking tool work or generating an app, and BackgroundRuns.kt:40, 50, 212, 243 tracks run lifecycle. MiniAppGenerator.kt:35 suggests synthesized Web Audio and a JavaScript music library. None of those hits reads a user's music. The actual path is ProjectFilesUi.kt:119, 255–260, 275–278: the Android picker accepts */* and a separate Upload to OpenRouter button sends the selected project file. OpenRouterFiles.kt:56–62, 128–129 copies raw bytes. OpenRouterAgentClient.kt:71, 117–136 posts those bytes and the filename to OpenRouter's HTTPS Files API without a client-side media type filter. OpenRouter documents that uploads are stored under the authenticating API key's workspace. A live music upload was not performed.",
+      "recommendation": "Include Music files as optional collection for App functionality if audio/music uploads remain supported in the release. Verify backend file-type restrictions and whether any model-provider transfer meets Google's sharing exceptions. See [Play Data safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en) and [OpenRouter Files API](https://openrouter.ai/docs/api/api-reference/files/upload-file).",
+      "is_transferred": true,
+      "user_initiated": true,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "purpose": "App functionality",
+      "linked_to_user": true
+    },
+    {
+      "psl_constant": "FILES_AND_DOCS",
+      "policy_id": "data_safety_section",
+      "issue_summary": "User-Initiated Collection: OpenRouter receives project files and associated names",
+      "severity": "IMPORTANT",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ProjectFilesUi.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterFiles.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterAgentClient.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentSdkRuntime.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppActivity.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js"
+      ],
+      "evidence": "ProjectFilesUi.kt:255–260 starts a labeled upload. OpenRouterFiles.kt:56–62, 128–129 reads the selected file and OpenRouterAgentClient.kt:71, 117–136 POSTs its filename and bytes as multipart data to https://openrouter.ai/api/v1/files using the user's key. AgentSdkRuntime.kt:398–399 also supplies selected file IDs and names to the agent request for attachments. The text/plain scanner hits at AgentSdkRuntime.kt:226 and MiniAppActivity.kt:270–275 construct empty local error responses. The localStorage hit at agent.js:78 tells the model to persist mini-app state locally. MiniAppActivity.kt:99–100, 158–163 isolates origin storage and blocks device-file access. Network-enabled generated mini apps can make HTTPS requests (MiniAppGenerator.kt:115, MiniAppActivity.kt:218–222), but the localStorage hint alone does not establish a concrete document payload. The separate MiniAppActivity.kt:482–500 transfer is an explicit Android Sharesheet export.",
+      "recommendation": "Declare Files and docs collection as optional for App functionality. Cover uploaded content and filenames, the OpenRouter workspace, attachment processing by model providers, and retention/deletion in the privacy policy. Determine the sharing answer using Google's service-provider and expected user-action exceptions and the actual provider arrangements. See [Play Data safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en) and [OpenRouter privacy policy](https://openrouter.ai/privacy/).",
+      "is_transferred": true,
+      "user_initiated": true,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "purpose": "App functionality",
+      "linked_to_user": true
+    }
+  ]
+}

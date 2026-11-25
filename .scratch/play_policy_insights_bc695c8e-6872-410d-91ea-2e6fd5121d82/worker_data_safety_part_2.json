@@ -1,0 +1,82 @@
+{
+  "domain": "Data Safety and Privacy",
+  "findings": [
+    {
+      "policy_id": "data_safety_section",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "severity": "SUGGESTION",
+      "purpose": "Local functionality only",
+      "linked_to_user": false,
+      "psl_constant": "OTHER_APP_PERFORMANCE",
+      "issue_summary": "Data Safety Compliant (Local-Only): App performance telemetry export was not observed",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentCustomizationUi.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentHttpTransport.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/SkillsDirectoryClient.kt"
+      ],
+      "evidence": "agent.js:44 defines status_code in OpenRouter Fusion error schemas, and agent.js:91 renders the returned HTTP status in run progress. AgentHttpTransport.kt:84,126,142 and 185 log local Android diagnostics. AgentCustomizationUi.kt:239–247 and 360–371 trigger a typed skills.sh search on user action. SkillsDirectoryClient.kt:106–117,300–304 sends the search query, limit and DNT header via HTTPS using OkHttp, with no performance metrics in the observed request. The telemetry label at AgentCustomizationUi.kt:371 describes a CLI flag rather than a telemetry API.",
+      "recommendation": "Assess the user-entered skills.sh search query separately as optional in-app search data under Google Play Data safety. Keep the discovery UI description aligned with the HTTPS request in SkillsDirectoryClient."
+    },
+    {
+      "policy_id": "data_safety_section",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "severity": "SUGGESTION",
+      "purpose": "Local functionality only",
+      "linked_to_user": false,
+      "psl_constant": "RACE_ETHNICITY",
+      "issue_summary": "Data Safety Compliant (Local-Only): No dedicated race or ethnicity collection observed",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppGenerator.kt"
+      ],
+      "evidence": "The race matches in agent.js:55 and 63 use Promise.race to resolve competing operations. The MiniAppGenerator.kt:36 match comes from the word gracefully in bundled rendering instructions. The inference path at MiniAppGenerator.kt:262–271 sends the system instructions and the user prompt, with no race or ethnicity field in the observed request.",
+      "recommendation": "Cover open-ended user prompts in the appropriate chat or user-generated-content Data safety category. The traced code provides no basis for a dedicated race or ethnicity declaration."
+    },
+    {
+      "policy_id": "data_safety_section",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "severity": "SUGGESTION",
+      "purpose": "Local functionality only",
+      "linked_to_user": false,
+      "psl_constant": "PERSONAL_INFO_OTHER",
+      "issue_summary": "Data Safety Compliant (Local-Only): No dedicated date-of-birth or other-profile collection observed",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js"
+      ],
+      "evidence": "The dob substring matches in agent.js:4, 38, 40 and 79 are Zod object identifiers or the Czech localization text for duration. There is no literal dob field or date-of-birth source in the matched code.",
+      "recommendation": "Cover open-ended prompts and documents under their applicable Data safety categories. The traced patterns provide no evidence of a dedicated personal profile payload."
+    },
+    {
+      "psl_constant": "AUDIO",
+      "policy_id": "data_safety_section",
+      "issue_summary": "User-Initiated Collection: Project-file upload can include existing voice or sound recordings",
+      "severity": "IMPORTANT",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppActivity.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ProjectFilesUi.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterFiles.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterAgentClient.kt"
+      ],
+      "evidence": "agent.js:38,40,48,50,51 and 95 uses record for data structures or agent behavior, and agent.js:44 contains SDK input_audio schemas without a matching native audio capture path. MiniAppActivity.kt:676 denies WebView permission requests. Separately, ProjectFilesUi.kt:277 accepts any system-picker MIME type and :255–260 offers an explicit Upload to OpenRouter action. MainActivity.kt:773–774 and :788–793 wire these to OpenRouterFiles.kt:45–49 and :56–61, which copy the full selected file bytes. OpenRouterAgentClient.kt:117–136 posts those bytes as multipart application/octet-stream to the OpenRouter Files API, with the user's Bearer key at :248. Those bytes can include a user-selected recording.",
+      "recommendation": "Verify the Data safety declaration and privacy policy cover optional project-file uploads, including voice or sound recordings where applicable, and retain accurate file types, purpose, retention and deletion disclosures. Google Play treats off-device transmission as collection, while a specific and reasonably expected user-initiated action can qualify for an exemption from the sharing declaration. See https://support.google.com/googleplay/android-developer/answer/10787469?hl=en",
+      "is_transferred": true,
+      "user_initiated": true,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "purpose": "App functionality",
+      "linked_to_user": true
+    }
+  ]
+}

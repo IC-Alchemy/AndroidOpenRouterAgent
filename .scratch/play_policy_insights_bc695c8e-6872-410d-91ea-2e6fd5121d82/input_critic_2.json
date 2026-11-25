@@ -1,0 +1,57 @@
+{
+    "9": {
+        "psl_constant": "PERFORMANCE_DIAGNOSTICS",
+        "policy_id": "prominent_disclosure_policy",
+        "issue_summary": "Silent Background Transfer \u2014 Google Play services LiteRT metrics are absent from the moderation explanation.",
+        "severity": "CRITICAL",
+        "files_involved": [
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:64",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ContentModerator.kt:93",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ContentModerator.kt:145",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ContentModerator.kt:160",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:137",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:654",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1602",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppActivity.kt:389",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js:44"
+        ],
+        "evidence": "Moderation is off by default. Once a user enables it, the app initializes Google Play services LiteRT when settings are saved and during later app startup with that preference. Google's SDK documentation states that the device identifier, device and app information, API events, error codes, and performance and utilization metrics are sent to Google. User prompts and responses processed by this SDK stay on device. The setting describes only local prompt and response checks, so selecting it gives no notice of the SDK's metrics transfer. The scanner's ActivityManager match uses TaskDescription to set a Recents label/icon on device. The bundled agent's trace match is an optional request schema property and the app does not populate it. AgentHttpTransport diagnostics are written to logcat.",
+        "recommendation": "Include optional Diagnostics and Device or other IDs in the Play Console Data safety review and describe the SDK's diagnostics and usage analytics in the app privacy policy. Explain Google's SDK metrics before enabling moderation or initializing the SDK and obtain informed opt-in if continuing to use this runtime. Verify the precise collection and sharing answers against the SDK's terms. See https://developers.google.com/edge/litert/android/play_services#privacy_and_data_collection and https://support.google.com/googleplay/android-developer/answer/10144311.",
+        "is_transferred": true,
+        "user_initiated": false,
+        "is_third_party": true,
+        "prominent_disclosure_status": "MISSING",
+        "purpose": "Analytics",
+        "linked_to_user": true,
+        "worker_file": "worker_data_safety_part_4.json",
+        "finding_id": "9"
+    },
+    "12": {
+        "policy_id": "target_api_level",
+        "issue_summary": "The mobile app targets API 35 and cannot meet the API 36 submission requirement",
+        "severity": "CRITICAL",
+        "files_involved": [
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:16",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:10"
+        ],
+        "evidence": "The default configuration sets targetSdk to 35 and compileSdk to 35. The checked-in debug APK also reports target API 35. Google Play requires API 36 or later for new mobile apps and updates starting August 31, 2026. The announced extension ended November 1, 2026.",
+        "recommendation": "Raise compileSdk and targetSdk to at least 36, test the Android 16 behavior changes, and confirm the target SDK in the release artifact before submission. [Google Play target API level requirements](https://support.google.com/googleplay/android-developer/answer/11926878)",
+        "worker_file": "worker_permissions_and_apis.json",
+        "finding_id": "12"
+    },
+    "14": {
+        "policy_id": "login_credentials",
+        "issue_summary": "Core chat requires an OpenRouter credential; verify reviewer access in Play Console",
+        "severity": "IMPORTANT",
+        "files_involved": [
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:295",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1538",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1587",
+            "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubUi.kt:311"
+        ],
+        "evidence": "The app can open without a credential, but AgentViewModel.send returns before starting a run when no OpenRouter API key is stored. Settings accepts a pasted key or starts the OpenRouter browser flow. Optional GitHub integration requires a fine-grained token. Play Console App access instructions and reviewer credentials were unavailable for verification.",
+        "recommendation": "In Play Console under App content > App access, provide a dedicated reusable, non-expiring reviewer OpenRouter key with a working model and sufficient quota. Include English instructions to paste the key in Settings, save it, choose a model and send a test prompt. Supply a disposable test repository and suitable credentials for any gated GitHub feature included in review. Verify all reviewer steps on a fresh install. See https://support.google.com/googleplay/android-developer/answer/15748846.",
+        "worker_file": "worker_user_account.json",
+        "finding_id": "14"
+    }
+}

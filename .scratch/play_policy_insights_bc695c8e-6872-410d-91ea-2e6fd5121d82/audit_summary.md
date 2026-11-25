@@ -1,0 +1,36 @@
+# Google Play policy audit — OpenRouter Agent Studio
+
+**November 23, 2026 · Release package `com.icalchemy.openrouteragent` · Version 2.5.0**
+
+## Submission readiness
+
+| Priority | Finding | Action |
+| --- | --- | --- |
+| Blocker | The app targets API 35 in Gradle, the existing packaged release manifest, and the checked-in debug APK. Play requires API 36 or higher for new mobile apps and updates as of August 31, 2026. | Raise `compileSdk` and `targetSdk` to at least 36 and verify the signed release bundle. [Gradle](Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:16) · [Play target API rules](https://support.google.com/googleplay/android-developer/answer/11926878) |
+| Blocker | The in-app **Report response** dialog has an empty endpoint in the local generated release configuration. The default build returns `Unconfigured` without sending a report. | Supply a working HTTPS endpoint in the production build and verify a report reaches a developer moderation queue from the release app. Document that a submission sends the prompt, response, and reason. [Build configuration](Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:19) · [Report client](Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ModerationReportClient.kt:33) · [Play AI-generated content policy](https://support.google.com/googleplay/android-developer/answer/13985936) |
+| Blocker | The checkout contains no app-specific in-app privacy policy link or policy text. | Publish an app-specific privacy policy on a publicly accessible webpage. Link it in the app and in Play Console. Cover recipients, retention, deletion, and a privacy contact. [Play User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311) |
+
+## Data safety
+
+- **Core chat.** OpenRouter receives prompts and conversation context, and routes inputs to model providers. Include chat content under **Other in-app messages** and map any other transmitted user-generated content to the appropriate types. Verify actual provider routing and retention before classifying data as ephemeral. [Runtime request](Z:/Codezzz/android/AndroidOpenRouterAgent/agent-runtime/src/runtime.mjs:113) · [OpenRouter privacy policy](https://openrouter.ai/privacy) · [Play Data safety definitions](https://support.google.com/googleplay/android-developer/answer/10787469)
+- **Optional features.** Account for the user-selected content that reaches OpenRouter Files or hosted tools, repository content supplied to the model, tool data sent to enabled third-party endpoints, and prompt, response, and reason sent when a user reports content. A sharing exception may apply where the user reasonably expects a specific user-initiated transfer. Off-device collection still needs to be assessed for the form. [File and integration behavior](Z:/Codezzz/android/AndroidOpenRouterAgent/README.md:45) · [Report payload](Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ModerationReportClient.kt:39) · [Play Data safety definitions](https://support.google.com/googleplay/android-developer/answer/10787469)
+- **SDK telemetry.** When users enable moderation, the bundled model processes text on-device via LiteRT in Google Play services. Google documents separate device identifiers, API events, and performance and diagnostic metrics. Explain the telemetry next to the moderation setting and account for it in the Data safety form and privacy policy. [Moderation initialization](Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ContentModerator.kt:93) · [Google LiteRT data collection](https://developers.google.com/edge/litert/android/play_services#privacy_and_data_collection)
+
+## Reviewer access
+
+Core inference requires a valid OpenRouter API key. Play Console **App access** needs steps to enter a dedicated working reviewer key under **Settings → OpenRouter API key → Save**, select an available model, and send a test prompt. Keep the key reusable with sufficient quota throughout review. Provide test access for any gated integration reviewers need to exercise. The source shows OpenRouter browser authorization and API-key entry, with no separate Studio account system. Confirm the account-creation answer against Google’s definition of an app account and the live browser flow. [Sign-in and key entry](Z:/Codezzz/android/AndroidOpenRouterAgent/README.md:8) · [Play reviewer access](https://support.google.com/googleplay/android-developer/answer/15748846) · [Play account deletion FAQ](https://support.google.com/googleplay/android-developer/answer/13327111)
+
+## Restricted permissions and foreground service
+
+The inspected APK and existing packaged release manifest show internet access, notification permission, the foreground service permissions, and an AndroidX signature-level receiver permission. They show no microphone, camera, location, SMS, call log, or broad storage permissions. The Quick Settings tile uses a binding permission as a component guard. Declare `dataSync` in Play Console and provide a video that starts an inference run, backgrounds the app during streaming, and shows the ongoing notification and Stop action. [Source manifest](Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/AndroidManifest.xml:3) · [Background run behavior](Z:/Codezzz/android/AndroidOpenRouterAgent/README.md:17) · [Play foreground service requirements](https://support.google.com/googleplay/android-developer/answer/13392821)
+
+## Default AI safeguards
+
+The on-device moderation toggle is off by default. Verify the default release experience prevents prohibited output across supported providers and check that the reporting route remains usable when a response is flagged. [Moderation default](Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentModels.kt:24) · [Play AI-generated content policy](https://support.google.com/googleplay/android-developer/answer/13985936)
+
+## Verification scope
+
+This is a static audit of the checkout, existing local release artifacts, and the checked-in version 2.5.0 debug APK (`com.icalchemy.openrouteragent.studio`). The debug APK passed the SDK’s 16 KB ZIP alignment check and its 64-bit native libraries use 16 KB load-segment alignment. A signed release bundle, live moderation delivery, reviewer credentials, and private Play Console declarations were unavailable for verification. The public listing search returned no listing for the release package. The audit produced scratch artifacts and made no changes to the app source.
+
+## Detailed audit findings
+

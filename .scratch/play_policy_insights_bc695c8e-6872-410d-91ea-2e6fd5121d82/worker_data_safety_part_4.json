@@ -1,0 +1,74 @@
+{
+  "domain": "Data Safety and Privacy",
+  "findings": [
+    {
+      "psl_constant": "PERFORMANCE_DIAGNOSTICS",
+      "policy_id": "prominent_disclosure_policy",
+      "issue_summary": "Silent Background Transfer — Google Play services LiteRT metrics are absent from the moderation explanation.",
+      "severity": "CRITICAL",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:64",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ContentModerator.kt:93",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ContentModerator.kt:145",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ContentModerator.kt:160",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:137",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:654",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1602",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppActivity.kt:389",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js:44"
+      ],
+      "evidence": "Moderation is off by default. Once a user enables it, the app initializes Google Play services LiteRT when settings are saved and during later app startup with that preference. Google's SDK documentation states that the device identifier, device and app information, API events, error codes, and performance and utilization metrics are sent to Google. User prompts and responses processed by this SDK stay on device. The setting describes only local prompt and response checks, so selecting it gives no notice of the SDK's metrics transfer. The scanner's ActivityManager match uses TaskDescription to set a Recents label/icon on device. The bundled agent's trace match is an optional request schema property and the app does not populate it. AgentHttpTransport diagnostics are written to logcat.",
+      "recommendation": "Include optional Diagnostics and Device or other IDs in the Play Console Data safety review and describe the SDK's diagnostics and usage analytics in the app privacy policy. Explain Google's SDK metrics before enabling moderation or initializing the SDK and obtain informed opt-in if continuing to use this runtime. Verify the precise collection and sharing answers against the SDK's terms. See https://developers.google.com/edge/litert/android/play_services#privacy_and_data_collection and https://support.google.com/googleplay/android-developer/answer/10144311.",
+      "is_transferred": true,
+      "user_initiated": false,
+      "is_third_party": true,
+      "prominent_disclosure_status": "MISSING",
+      "purpose": "Analytics",
+      "linked_to_user": true
+    },
+    {
+      "psl_constant": "NAME",
+      "policy_id": "data_safety_section",
+      "issue_summary": "Data Safety Compliant (Local-Only) — The flagged GitHub field is a repository path.",
+      "severity": "SUGGESTION",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubClient.kt:54",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubClient.kt:59",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubClient.kt:171"
+      ],
+      "evidence": "GitHubClient reads full_name from the repository API response as its owner/repository path. It uses that path to address the selected repository on GitHub. The account API separately reads id and login. The scanner's full_name signal does not establish access to or transmission of someone's personal name.",
+      "recommendation": "Exclude the repository full_name field as evidence of the Name category. Evaluate actual account identifiers separately.",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "purpose": "App functionality",
+      "linked_to_user": false
+    },
+    {
+      "psl_constant": "PHOTOS",
+      "policy_id": "data_safety_section",
+      "issue_summary": "Manual Sharing — Gallery icon photos stay on device until export or share, and photos can be selected for OpenRouter upload.",
+      "severity": "SUGGESTION",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppsUi.kt:1000",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppsUi.kt:1331",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppRepository.kt:288",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppRepository.kt:538",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppRepository.kt:661",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppActivity.kt:494",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ProjectFilesUi.kt:260",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/ProjectFilesUi.kt:277",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterAgentClient.kt:134"
+      ],
+      "evidence": "Android's photo picker grants access to a chosen icon photo, which is resized and saved to the app's private mini app folder. The gallery picker and icon save do not upload it. An explicit mini app export or share includes the icon PNG in the archive and writes it to the user's chosen document provider or grants the chosen Sharesheet app temporary read access. Separately, the generic file picker accepts any file type. If the user later selects Upload to OpenRouter for a photo file in that workspace, the app sends it as multipart content via the OpenRouter Files API.",
+      "recommendation": "Call out the bundled icon photo in the share or export UI. Treat reasonably expected, user-initiated transfers using the applicable sharing exception. Account for optional Photos collection when user-selected photo files are sent to OpenRouter. The sharing exemption does not remove the off-device collection analysis. See https://support.google.com/googleplay/android-developer/answer/10787469.",
+      "is_transferred": true,
+      "user_initiated": true,
+      "is_third_party": true,
+      "prominent_disclosure_status": "EXEMPT",
+      "purpose": "App functionality",
+      "linked_to_user": true
+    }
+  ]
+}

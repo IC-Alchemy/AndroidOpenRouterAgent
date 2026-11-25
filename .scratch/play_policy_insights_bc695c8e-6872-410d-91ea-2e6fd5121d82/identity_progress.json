@@ -1,0 +1,18 @@
+{
+  "domain": "User Account and Identity",
+  "findings": [
+    {
+      "policy_id": "login_credentials",
+      "issue_summary": "Core chat requires an OpenRouter credential; verify reviewer access in Play Console",
+      "severity": "IMPORTANT",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:295",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1538",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1587",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubUi.kt:311"
+      ],
+      "evidence": "The app can open without a credential, but AgentViewModel.send returns before starting a run when no OpenRouter API key is stored. Settings accepts a pasted key or starts the OpenRouter browser flow. Optional GitHub integration requires a fine-grained token. Play Console App access instructions and reviewer credentials were unavailable for verification.",
+      "recommendation": "In Play Console under App content > App access, provide a dedicated reusable, non-expiring reviewer OpenRouter key with a working model and sufficient quota. Include English instructions to paste the key in Settings, save it, choose a model and send a test prompt. Supply a disposable test repository and suitable credentials for any gated GitHub feature included in review. Verify all reviewer steps on a fresh install. See https://support.google.com/googleplay/android-developer/answer/15748846."
+    }
+  ]
+}

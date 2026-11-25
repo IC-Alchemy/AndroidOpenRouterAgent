@@ -1,0 +1,47 @@
+{
+  "domain": "Data Safety and Privacy",
+  "findings": [
+    {
+      "psl_constant": "USER_ACCOUNT",
+      "policy_id": "data_safety_section",
+      "issue_summary": "Data Safety Compliant (Local-Only): account ID and login from the GitHub connection",
+      "severity": "SUGGESTION",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentCustomization.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentCustomizationUi.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubClient.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubProjects.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentHttpTransport.kt"
+      ],
+      "evidence": "agent.js:38 matches a localized schema validation message. AgentCustomization.kt:31–34 rejects webhook URLs containing credentials. AgentCustomizationUi.kt matches the text 'guide', not a UID variable. In the actual GitHub connection, GitHubClient.kt:54–55 receives an account ID and login from GitHub after the user initiates connection. GitHubProjects.kt:49–55 keeps these identifiers in the local project state, and :66–72 compares the returned numeric ID when replacing credentials. GitHubClient.kt:182–185 sends the supplied bearer token to GitHub via HTTPS. AgentHttpTransport.kt:70,109–113 uses a separately supplied OpenRouter bearer key. These authentication credentials are distinct from the retrieved GitHub ID and login, and the traced flows do not send those returned identifiers off-device.",
+      "recommendation": "Review the disclosure for the optional GitHub integration and OpenRouter authentication to ensure it describes the destination and use of the credentials. Document the actual flows and independently verify the User IDs category in Play Console if another release path transmits an account identifier. https://support.google.com/googleplay/android-developer/answer/10787469",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "purpose": "Local functionality only",
+      "linked_to_user": true
+    },
+    {
+      "psl_constant": "WEB_BROWSING_HISTORY",
+      "policy_id": "data_safety_section",
+      "issue_summary": "Data Safety Compliant (Local-Only): no web browsing history in the traced runtime",
+      "severity": "SUGGESTION",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentCustomizationUi.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentSdkRuntime.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentHttpTransport.kt"
+      ],
+      "evidence": "agent.js:44 matches downloadUrl schema metadata, not WebView navigation. AgentCustomizationUi.kt:421 opens a user-selected skills listing in an external browser and :452 mentions the runtime origin in webhook configuration. AgentSdkRuntime.kt:187–200 blocks navigation and serves its entry and JavaScript from packaged assets. The permitted HTTPS origin requests in :193–196 are tool requests, and :219 only loads the synthetic entry URL. The history in :376–392 is an agent conversation transcript, which can reach OpenRouter through :236–247 and AgentHttpTransport.kt:109–127. No collection or transmission of a visited-sites list was found in the traced code.",
+      "recommendation": "Document chat history and optional web tool queries under their applicable data types. The inspected paths do not substantiate a Web browsing history declaration.",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "purpose": "Local functionality only",
+      "linked_to_user": false
+    }
+  ]
+}

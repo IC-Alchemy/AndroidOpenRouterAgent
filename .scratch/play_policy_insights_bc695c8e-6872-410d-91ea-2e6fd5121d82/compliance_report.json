@@ -1,0 +1,89 @@
+{
+    "data_safety_mismatches": [],
+    "findings": [
+        {
+            "evidence": "Settings links to OpenRouter key management and starts browser authorization at OpenRouter. The exchange obtains a user-controlled OpenRouter API key and the app stores that key locally with Android Keystore. The optional GitHub connection also uses an externally issued credential. The audited app paths exposed no developer-managed app-account creation flow. Play also considers creation of an app-specific identity through an external signup flow to be account creation.\n\n**Critic Verification**: Automatically verified (bypassed critic review). (Confidence: High)",
+            "files_involved": [
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentStorage.kt:67",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/GitHubClient.kt:54",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MainActivity.kt:1550",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterSignIn.kt:114",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/OpenRouterSignIn.kt:49"
+            ],
+            "finding_id": "15",
+            "issue_summary": "Confirm Data safety account-creation answers for the OpenRouter connection",
+            "policy_id": "account_deletion",
+            "recommendation": "Complete the Data safety deletion questions using the actual production sign-up flow. If the release provisions an app-specific account through OpenRouter or any other service, provide a discoverable in-app path and a public web resource for requesting deletion of the app account and associated data. Document which data users can delete locally and how they can manage retained OpenRouter files and account data. See https://support.google.com/googleplay/android-developer/answer/13327111 and https://openrouter.ai/privacy.",
+            "severity": "SUGGESTION"
+        },
+        {
+            "evidence": "AgentRunService declares dataSync with the required permission. Starting a user-requested agent run starts the service, which preserves the active network response stream while the app is backgrounded. The ongoing notification shows progress and includes Stop. Run completion stops the service. This fits the stated server-side processing example. Play Console declaration status remains unverified.\n\n**Critic Verification**: Automatically verified (bypassed critic review). (Confidence: High)",
+            "files_involved": [
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/AndroidManifest.xml:32",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:238",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentViewModel.kt:289",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/BackgroundRuns.kt:109",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/BackgroundRuns.kt:278"
+            ],
+            "finding_id": "13",
+            "issue_summary": "Verify the Play Console declaration for the dataSync foreground service",
+            "policy_id": "foreground_services_policy",
+            "recommendation": "Declare dataSync under App content, describe how deferring or interrupting the stream affects the user, and attach a video showing the user starting a run, backgrounding the app, and stopping it from the ongoing notification. [Google Play foreground service requirements](https://support.google.com/googleplay/android-developer/answer/13392821)",
+            "severity": "SUGGESTION"
+        },
+        {
+            "evidence": "The default configuration sets targetSdk to 35 and compileSdk to 35. The checked-in debug APK also reports target API 35. Google Play requires API 36 or later for new mobile apps and updates starting August 31, 2026. The announced extension ended November 1, 2026.\n\n**Critic Verification**: app/build.gradle.kts:16 sets targetSdk to 35 in the mobile application's default configuration. Google Play requires target API 36 or later for new mobile app submissions and updates beginning August 31, 2026. The published extension deadline was November 1, 2026. [Google Play target API level requirements](https://support.google.com/googleplay/android-developer/answer/11926878) (Confidence: High)",
+            "files_involved": [
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:10",
+                "Z:/Codezzz/android/AndroidOpenRouterAgent/app/build.gradle.kts:16"
+            ],
+            "finding_id": "12",
+            "issue_summary": "The mobile app targets API 35 and cannot meet the API 36 submission requirement",
+            "policy_id": "target_api_level",
+            "recommendation": "Raise compileSdk and targetSdk to at least 36, test the Android 16 behavior changes, and confirm the target SDK in the release artifact before submission. [Google Play target API level requirements](https://support.google.com/googleplay/android-developer/answer/11926878)",
+            "severity": "CRITICAL"
+        }
+    ],
+    "manual_review": [
+        {
+            "issue_summary": "Core chat requires an OpenRouter credential; verify reviewer access in Play Console"
+        },
+        {
+            "issue_summary": "Review disclosure of Google Play services LiteRT diagnostics and device identifiers"
+        }
+    ],
+    "metadata": {
+        "app_id": "com.icalchemy.openrouteragent",
+        "overall_compliance": "Non-compliant",
+        "scan_date": "2026-11-23T03:18:33.751312"
+    },
+    "suggested_declaration": {
+        "collected_data": [
+            {
+                "data_type": "Voice or sound recordings",
+                "linked_to_user": true,
+                "purpose": "App functionality"
+            },
+            {
+                "data_type": "Files and docs",
+                "linked_to_user": true,
+                "purpose": "App functionality"
+            },
+            {
+                "data_type": "Music files",
+                "linked_to_user": true,
+                "purpose": "App functionality"
+            },
+            {
+                "data_type": "Diagnostics",
+                "linked_to_user": true,
+                "purpose": "Analytics"
+            },
+            {
+                "data_type": "Photos",
+                "linked_to_user": true,
+                "purpose": "App functionality"
+            }
+        ]
+    }
+}

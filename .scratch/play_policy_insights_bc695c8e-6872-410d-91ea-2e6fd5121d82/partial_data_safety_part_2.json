@@ -1,0 +1,60 @@
+{
+  "domain": "Data Safety and Privacy",
+  "findings": [
+    {
+      "policy_id": "data_safety_section",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "severity": "SUGGESTION",
+      "purpose": "Local functionality only",
+      "linked_to_user": false,
+      "psl_constant": "OTHER_APP_PERFORMANCE",
+      "issue_summary": "Data Safety Compliant (Local-Only): App performance telemetry export was not observed",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentCustomizationUi.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/AgentHttpTransport.kt",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/SkillsDirectoryClient.kt"
+      ],
+      "evidence": "agent.js:44 defines status_code in OpenRouter Fusion error schemas, and agent.js:91 renders the returned HTTP status in run progress. AgentHttpTransport.kt:84,126,142 and 185 log local Android diagnostics. AgentCustomizationUi.kt:239–247 and 360–371 trigger a typed skills.sh search on user action. SkillsDirectoryClient.kt:106–117,300–304 sends the search query, limit and DNT header via HTTPS using OkHttp, with no performance metrics in the observed request. The telemetry label at AgentCustomizationUi.kt:371 describes a CLI flag rather than a telemetry API.",
+      "recommendation": "Assess the user-entered skills.sh search query separately as optional in-app search data under Google Play Data safety. Keep the discovery UI description aligned with the HTTPS request in SkillsDirectoryClient."
+    },
+    {
+      "policy_id": "data_safety_section",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "severity": "SUGGESTION",
+      "purpose": "Local functionality only",
+      "linked_to_user": false,
+      "psl_constant": "RACE_ETHNICITY",
+      "issue_summary": "Data Safety Compliant (Local-Only): No dedicated race or ethnicity collection observed",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js",
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/java/com/example/openrouteragent/MiniAppGenerator.kt"
+      ],
+      "evidence": "The race matches in agent.js:55 and 63 use Promise.race to resolve competing operations. The MiniAppGenerator.kt:36 match comes from the word gracefully in bundled rendering instructions. The inference path at MiniAppGenerator.kt:262–271 sends the system instructions and the user prompt, with no race or ethnicity field in the observed request.",
+      "recommendation": "Cover open-ended user prompts in the appropriate chat or user-generated-content Data safety category. The traced code provides no basis for a dedicated race or ethnicity declaration."
+    },
+    {
+      "policy_id": "data_safety_section",
+      "is_transferred": false,
+      "user_initiated": false,
+      "is_third_party": false,
+      "prominent_disclosure_status": "EXEMPT",
+      "severity": "SUGGESTION",
+      "purpose": "Local functionality only",
+      "linked_to_user": false,
+      "psl_constant": "PERSONAL_INFO_OTHER",
+      "issue_summary": "Data Safety Compliant (Local-Only): No dedicated date-of-birth or other-profile collection observed",
+      "files_involved": [
+        "Z:/Codezzz/android/AndroidOpenRouterAgent/app/src/main/assets/agent/agent.js"
+      ],
+      "evidence": "The dob substring matches in agent.js:4, 38, 40 and 79 are Zod object identifiers or the Czech localization text for duration. There is no literal dob field or date-of-birth source in the matched code.",
+      "recommendation": "Cover open-ended prompts and documents under their applicable Data safety categories. The traced patterns provide no evidence of a dedicated personal profile payload."
+    }
+  ]
+}
