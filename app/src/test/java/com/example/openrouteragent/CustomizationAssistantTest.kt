@@ -55,6 +55,7 @@ class CustomizationAssistantTest {
         assertEquals("/api/v1/chat/completions", request.path)
         assertEquals("Bearer sk-or-secret", request.getHeader("Authorization"))
         assertEquals("OpenRouter Sandbox Agent", request.getHeader("X-OpenRouter-Title"))
+        assertEquals("https://icalchemy.com", request.getHeader("HTTP-Referer"))
 
         val payload = JSONObject(request.body.readUtf8())
         assertEquals("openai/gpt-5", payload.getString("model"))

@@ -292,7 +292,7 @@ internal class MiniAppGenerator(
         val requestBuilder = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $apiKey")
-            .header("X-OpenRouter-Title", "OpenRouter Sandbox Agent")
+            .openRouterAttribution()
             .header("Accept", "application/json")
 
         val request = requestBuilder.post(body.toString().toRequestBody(JSON_MEDIA_TYPE)).build()

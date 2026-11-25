@@ -27,6 +27,8 @@ class AgentHttpTransportTest {
         assertEquals("/api/v1/chat/completions", request.path)
         assertEquals("application/json", request.getHeader("Accept"))
         assertEquals("Bearer $FAKE_KEY", request.getHeader("Authorization"))
+        assertEquals(OpenRouterAttribution.REFERER, request.getHeader("HTTP-Referer"))
+        assertEquals(OpenRouterAttribution.TITLE, request.getHeader("X-OpenRouter-Title"))
         assertTrue(run.retries.isEmpty())
     }
 

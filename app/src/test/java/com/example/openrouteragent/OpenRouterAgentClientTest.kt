@@ -30,6 +30,8 @@ class OpenRouterAgentClientTest {
         assertEquals("GET", request.method)
         assertEquals("/api/v1/models/user", request.path)
         assertEquals("Bearer fake-key", request.getHeader("Authorization"))
+        assertEquals(OpenRouterAttribution.REFERER, request.getHeader("HTTP-Referer"))
+        assertEquals(OpenRouterAttribution.TITLE, request.getHeader("X-OpenRouter-Title"))
         assertEquals(2, models.size)
         assertEquals("mock/tools", selectModel(AgentConfig(model = "mock/plain"), models)?.id)
         val plain = AgentConfig(model = "mock/plain", enableShellSandbox = false,
