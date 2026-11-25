@@ -311,7 +311,31 @@ internal fun TokenUsage.display(): String = buildString {
     if (reasoningTokens > 0) append(" · $reasoningTokens reasoning")
     cost?.let { value ->
         append(" · ")
-        append(NumberFormat.getCurrencyInstance(Locale.US).apply { maximumFractionDigits = 5 }.format(value))
+        append(formatCost(value))
+    }
+}
+
+internal fun formatCost(value: Double): String =
+    NumberFormat.getCurrencyInstance(Locale.US).apply { maximumFractionDigits = 5 }.format(value)
+
+/**
+ * The one short line shown under a reply: its cost, or its token total when the
+ * provider reported no cost, or a dash when there is no usage at all.
+ */
+internal fun replyUsageSummary(usage: TokenUsage?): String = when {
+    usage == null -> "–"
+    usage.cost != null -> formatCost(usage.cost)
+    else -> "${usage.totalTokens} tokens"
+}
+
+/** The full details shown when the reply's usage line is expanded, one fact per line. */
+internal fun replyUsageDetails(model: String?, usage: TokenUsage?): List<String> = buildList {
+    model?.takeIf { it.isNotBlank() }?.let { add("Model: $it") }
+    usage?.let {
+        add("Tokens: ${it.totalTokens} total · ${it.inputTokens} in / ${it.outputTokens} out")
+        if (it.cachedTokens > 0) add("Cached: ${it.cachedTokens} tokens")
+        if (it.reasoningTokens > 0) add("Reasoning: ${it.reasoningTokens} tokens")
+        it.cost?.let { value -> add("Cost: ${formatCost(value)}") }
     }
 }
 
