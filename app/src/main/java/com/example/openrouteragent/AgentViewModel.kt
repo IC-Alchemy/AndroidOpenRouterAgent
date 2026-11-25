@@ -967,8 +967,9 @@ class AgentViewModel internal constructor(
             partial.tools.isNotEmpty()) || parts.isNotEmpty() || continues > 0
         val base = workspace.copy(interruptedTurn = null)
         if (!didWork) {
-            promptText = prompt
-            pendingMedia = media
+            // Anything typed into the composer since the message was sent stays.
+            if (promptText.isBlank()) promptText = prompt
+            if (pendingMedia.isEmpty()) pendingMedia = media
             workspace = scopedWorkspace(base)
             withContext(NonCancellable) {
                 try {
