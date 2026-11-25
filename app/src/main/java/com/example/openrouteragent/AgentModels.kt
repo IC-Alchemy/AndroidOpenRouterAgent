@@ -39,6 +39,10 @@ data class AgentConfig(
     val fusionTool: Boolean = false,
     /** Adds openrouter:experimental__search_models, so the agent can search OpenRouter's model list. */
     val modelSearchTool: Boolean = false,
+    /** Adds the openrouter_decide tool, so the agent can ask an OpenRouter decision model for a typed decision. */
+    val decisionsTool: Boolean = false,
+    /** The decision model for that tool and the Decisions screen. Empty uses [DEFAULT_DECISION_MODEL]. */
+    val decisionModel: String = "",
     /** Sends OpenRouter's response-healing plugin, which repairs malformed JSON replies. */
     val responseHealing: Boolean = false,
     /** Sends OpenRouter's context-compression plugin, which trims the middle of chats too long for the model. */
@@ -216,7 +220,7 @@ data class Workspace(
 /** The settings for a message sent in chat mode, or retried without tools: every tool and tool source is off. */
 fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, enableWebSearch = false, imageGeneration = false,
     enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false,
-    advisorTool = false, fusionTool = false, modelSearchTool = false, miniApps = false, mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
+    advisorTool = false, fusionTool = false, modelSearchTool = false, decisionsTool = false, miniApps = false, mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
     sdk = sdk.copy(discoverSkills = false, toolChoice = "none"))
 
 @Serializable
@@ -227,6 +231,6 @@ data class InterruptedTurn(
 
 fun AgentConfig.agentToolsEnabled(): Boolean =
     sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||
-        imageGeneration || advisorTool || fusionTool || modelSearchTool ||
+        imageGeneration || advisorTool || fusionTool || modelSearchTool || decisionsTool ||
         enableWorkspaceFiles || customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
         (extraToolsJson.isNotBlank() && extraToolsJson.replace(Regex("\\s"), "") != "[]"))

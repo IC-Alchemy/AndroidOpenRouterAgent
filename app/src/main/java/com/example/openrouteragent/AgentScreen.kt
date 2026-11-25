@@ -100,6 +100,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var showWorkspaces by rememberSaveable { mutableStateOf(false) }
     var showGuide by rememberSaveable { mutableStateOf(false) }
     var showMiniApps by rememberSaveable { mutableStateOf(false) }
+    var showDecisions by rememberSaveable { mutableStateOf(false) }
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val heard = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
         if (!heard.isNullOrEmpty()) {
@@ -352,6 +353,11 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showConfigure = false
                                         showMiniApps = true
                                     })
+                                    DropdownMenuItem(text = { Text("Decisions") },
+                                        leadingIcon = { Icon(StudioSymbols.Decisions, null) }, onClick = {
+                                        showConfigure = false
+                                        showDecisions = true
+                                    })
                                     DropdownMenuItem(text = { Text("App guide") }, onClick = {
                                         showConfigure = false
                                         showGuide = true
@@ -509,6 +515,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     }
     if (showWorkspaces) {
         WorkspacesSheet(agent) { showWorkspaces = false }
+    }
+    if (showDecisions) {
+        DecisionsSheet(agent) { showDecisions = false }
     }
     if (showGuide) {
         AppGuideSheet(agent.builtInGuide) { showGuide = false }

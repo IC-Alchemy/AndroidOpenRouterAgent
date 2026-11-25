@@ -44,6 +44,8 @@ class AgentViewModel internal constructor(
     ) : this(application, textModerator, reportClient, OpenRouterAgentClient())
 
     internal val files = OpenRouterFiles(application, client)
+    /** OpenRouter's decision models, for the Decisions pane. */
+    internal val decisions = OpenRouterDecisionsClient()
     private val mediaStore = chatMediaStore(application)
     private val importer = AttachmentImporter(application.contentResolver, mediaStore)
 
@@ -770,6 +772,25 @@ class AgentViewModel internal constructor(
                     throw e
                 } catch (_: Exception) {
                     storageError = "Android could not save the reasoning setting."
+                }
+            }
+        }
+    }
+
+    /** Remembers the decision model last used in the Decisions pane, so the agent's decision tool uses it too. */
+    fun setDecisionModel(id: String) {
+        val model = id.trim().takeUnless { it == DEFAULT_DECISION_MODEL }.orEmpty()
+        if (config.decisionModel == model) return
+        viewModelScope.launch {
+            settingsMutex.withLock {
+                val next = config.copy(decisionModel = model)
+                config = next
+                try {
+                    withContext(Dispatchers.IO) { storage.saveConfig(next) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    storageError = "Android could not save the decision model."
                 }
             }
         }

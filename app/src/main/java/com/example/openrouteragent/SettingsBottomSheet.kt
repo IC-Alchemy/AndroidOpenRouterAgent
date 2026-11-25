@@ -83,6 +83,8 @@ internal fun SettingsBottomSheet(
     var advisorTool by remember { mutableStateOf(initialConfig.advisorTool) }
     var fusionTool by remember { mutableStateOf(initialConfig.fusionTool) }
     var modelSearchTool by remember { mutableStateOf(initialConfig.modelSearchTool) }
+    var decisionsTool by remember { mutableStateOf(initialConfig.decisionsTool) }
+    var decisionModel by remember { mutableStateOf(initialConfig.decisionModel) }
     var responseHealing by remember { mutableStateOf(initialConfig.responseHealing) }
     var contextCompression by remember { mutableStateOf(initialConfig.contextCompression) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
@@ -104,7 +106,8 @@ internal fun SettingsBottomSheet(
         enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
         imageGeneration = imageGeneration, imageModel = imageModel.trim(), imageAspect = imageAspect,
         imageQuality = imageQuality, advisorTool = advisorTool, fusionTool = fusionTool,
-        modelSearchTool = modelSearchTool, responseHealing = responseHealing, contextCompression = contextCompression,
+        modelSearchTool = modelSearchTool, decisionsTool = decisionsTool, decisionModel = decisionModel.trim(),
+        responseHealing = responseHealing, contextCompression = contextCompression,
         deviceTools = deviceTools, miniApps = miniApps, enableModeration = enableModeration, allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
@@ -257,6 +260,16 @@ internal fun SettingsBottomSheet(
                         fusionTool, { fusionTool = it })
                     SettingsToggleRow("Model search (openrouter:experimental__search_models)",
                         "Lets the agent search OpenRouter's model list. Experimental.", modelSearchTool, { modelSearchTool = it })
+                    SettingsToggleRow("Decisions (openrouter_decide)", "Lets the agent ask a decision model to pick an " +
+                        "option, answer yes or no, or score something, including photos and recordings in the message. " +
+                        "Each decision is billed by OpenRouter.", decisionsTool, { decisionsTool = it })
+                    if (decisionsTool) {
+                        CopyableOutlinedTextField(decisionModel, { decisionModel = it },
+                            label = { Text("Decision model") },
+                            supportingText = { Text("Blank uses $DEFAULT_DECISION_MODEL. Audio and video need a model " +
+                                "that reads them, like cloudflare/clef-omni.") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    }
                     SettingsToggleRow("Workspace files tool", "Lets unfiled chats work with files in your OpenRouter workspace.",
                         workspaceFiles, { workspaceFiles = it })
                     SubagentsSettings(

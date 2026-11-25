@@ -44,6 +44,14 @@ Tap the paperclip in the composer to attach photos from your gallery, take a pho
 
 Turn on **Image generation** in settings to let the agent draw pictures with OpenRouter's `openrouter:image_generation` tool. You can name an image model, or leave it blank for OpenRouter's default, and pick an aspect ratio and quality. Each image is billed by OpenRouter. Pictures appear full width under the reply; tap one to see it full screen, share it or save it to Photos. Models that make images themselves, marked **Makes images** in the picker, are asked for images and text, and their pictures show the same way. Generated images are kept on the phone with the chat, like attachments.
 
+## Decisions
+
+Open **Configure → Decisions** to ask one of OpenRouter's decision models a single typed question. Pick **Pick one**, **Yes or no**, or **Score**, then fill the round windows on the left: tap a window to type text, choose a photo, take one with the camera, or pick a video or audio clip. A pick-one decision takes two to four options. Tap **Decide** and the chosen option flies into the large window on the right, with each option's probability around its window and a breakdown with confidence and cost below.
+
+The model menu lists OpenRouter's decision models with what each one reads. Photos are sent as JPEG between 256 and 1,024 pixels. Video and audio go up to 16 MB, and only a few models read them (for example `cloudflare/clef-omni` or `google/gemini-decision-1`); the app says so before sending when the catalog shows a model can't read an input, and explains OpenRouter's 400 reply if a model or provider refuses it.
+
+In Settings, **Decisions (openrouter_decide)** gives the agent a tool for the same decisions. The agent can pass text options, a yes-or-no check, or score levels, and can include the photos and recordings attached to the current message. The decision model field sets the tool's model; it is blank by default, which uses `typesafe/jev-1.13`. Each decision is billed by OpenRouter.
+
 ## Voice
 
 Tap the microphone in the composer to dictate a message. Android's speech recognizer is used, preferring on-device recognition. Add the **Ask agent** tile from Quick Settings to open the app straight into voice input.
