@@ -111,7 +111,8 @@ internal fun WorkspacesSheet(agent: AgentViewModel, onDismiss: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text("Workspaces", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                         modifier = Modifier.semantics { heading() })
-                    Text("Provider and model choices are saved on OpenRouter for the whole workspace.",
+                    Text("Provider and model choices are saved on OpenRouter for the whole workspace. " +
+                        "They don't apply to OpenAI (direct) models.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

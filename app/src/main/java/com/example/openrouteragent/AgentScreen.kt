@@ -312,7 +312,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showConfigure = false
                                         deviceFilesTarget = "all"
                                     })
-                                    if (agent.chatProject != null && agent.providerReady) {
+                                    if (agent.chatProject != null && agent.openRouterReady) {
                                         DropdownMenuItem(text = { Text("All workspace files") },
                                             leadingIcon = { Icon(StudioSymbols.Workspace, null) }, onClick = {
                                             showConfigure = false
@@ -406,7 +406,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         config = if (agent.chatMode) config.withoutTools() else config, activeContainerId = activeContainerId, canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
                         inProject = agent.chatProject != null, attachmentCount = agent.attachedFiles.size,
                         onOpenProjectFiles = { deviceFilesTarget = "current" },
-                        onOpenWorkspaceFiles = if (agent.providerReady) ({ workspaceFilesTarget = "current" }) else null,
+                        onOpenWorkspaceFiles = if (agent.openRouterReady) ({ workspaceFilesTarget = "current" }) else null,
                         onClearAttachments = agent::clearWorkspaceAttachments,
                         onOpenFiles = { browserContainer = activeContainerId },
                         onResetContainer = agent::detachSandbox
@@ -496,7 +496,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     if (showMiniApps) {
         MiniAppsSheet(
             onDismiss = { showMiniApps = false },
-            providerReady = agent.providerReady,
+            // Creating with AI calls OpenRouter, so it needs an OpenRouter key and an OpenRouter model.
+            providerReady = agent.openRouterReady && !agent.usingOpenAiDirect,
             selectedModelName = model?.name,
             onCreateWithAi = agent::createMiniAppWithModel,
             onEditWithAi = agent::editMiniAppWithModel,
@@ -528,7 +529,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             initialTab = tab,
             availableModels = agent.availableModels,
             selectedModel = model,
-            providerReady = agent.providerReady,
+            // Creating with AI calls OpenRouter, so it needs an OpenRouter key and an OpenRouter model.
+            providerReady = agent.openRouterReady && !agent.usingOpenAiDirect,
             catalogLoading = agent.catalogLoading,
             catalogError = agent.catalogError,
             onRefreshModels = { agent.refreshModels() },
@@ -614,7 +616,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         }) { deviceFilesTarget = null }
     }
     val cloudTarget = workspaceFilesTarget
-    if (!agent.isLoading && agent.providerReady && cloudTarget != null) {
+    if (!agent.isLoading && agent.openRouterReady && cloudTarget != null) {
         val apiKey = config.apiKey
         val prefix = if (cloudTarget == "all") "" else currentArea.remotePrefix
         WorkspaceFilesDialog(

@@ -861,7 +861,7 @@ private fun MiniAppAiBuilderDialog(
                 )
 
                 val modelCaption = when {
-                    !providerReady -> "Connect your provider API key in Settings or Providers first."
+                    !providerReady -> "Creating with AI uses OpenRouter. Connect OpenRouter in Settings and choose an OpenRouter model."
                     selectedModelName.isNullOrBlank() -> "Choose a model first."
                     else -> "Using $selectedModelName"
                 }

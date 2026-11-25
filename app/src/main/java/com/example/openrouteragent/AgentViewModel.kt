@@ -14,6 +14,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,6 +46,8 @@ class AgentViewModel internal constructor(
     ) : this(application, textModerator, reportClient, OpenRouterAgentClient())
 
     internal val files = OpenRouterFiles(application, client)
+    /** OpenAI's model list, for OpenAI models used directly with the user's own OpenAI key. */
+    internal val openAi = OpenAiClient()
     /** OpenRouter's decision models, for the Decisions pane. */
     internal val decisions = OpenRouterDecisionsClient()
     private val mediaStore = chatMediaStore(application)
@@ -90,7 +94,7 @@ class AgentViewModel internal constructor(
     private var attachmentSelection by mutableStateOf<AttachmentSelection?>(null)
     internal val attachedFiles: List<WorkspaceFileRef> get() = attachmentSelection
         ?.takeIf { it.area == fileArea() && it.account == workspaceTag(config) }?.files.orEmpty()
-    internal val canAttachWorkspaceFiles: Boolean get() = providerReady && activePrompt == null &&
+    internal val canAttachWorkspaceFiles: Boolean get() = openRouterReady && !usingOpenAiDirect && activePrompt == null &&
         config.enableShellSandbox && config.sdk.toolChoice != "none" && !chatMode
     val chatMode: Boolean get() = workspace.chatMode
     var promptText by mutableStateOf("")
@@ -120,9 +124,11 @@ class AgentViewModel internal constructor(
     private var catalogModels by mutableStateOf<List<CatalogModel>>(emptyList())
     /** Models hosted by the providers the selected workspace shows, or null when providers aren't restricted. */
     private var hostedModelIds by mutableStateOf<Set<String>?>(null)
-    /** The models the selected workspace shows. */
+    /** OpenAI models for the OpenAI key, listed as "openai-direct/…". Workspace rules don't apply to them. */
+    private var openAiModels by mutableStateOf<List<CatalogModel>>(emptyList())
+    /** The models the selected workspace shows, then the OpenAI (direct) models. */
     val availableModels: List<CatalogModel>
-        get() = filterModelsForWorkspace(catalogModels, workspaceRules, hostedModelIds)
+        get() = filterModelsForWorkspace(catalogModels, workspaceRules, hostedModelIds) + openAiModels
 
     var workspaces by mutableStateOf<List<OpenRouterWorkspace>>(emptyList())
         private set
@@ -151,7 +157,12 @@ class AgentViewModel internal constructor(
         private set
     var catalogError by mutableStateOf<String?>(null)
         private set
-    val providerReady: Boolean get() = config.apiKey.isNotBlank()
+    /** True when chats can run: with an OpenRouter key, an OpenAI key, or both. */
+    val providerReady: Boolean get() = config.apiKey.isNotBlank() || config.openAiKey.isNotBlank()
+    /** True when OpenRouter-only features (workspace files, creating with AI, Decisions…) can run. */
+    val openRouterReady: Boolean get() = config.apiKey.isNotBlank()
+    /** True when the chosen model runs on OpenAI directly, so OpenRouter-only settings don't apply to it. */
+    val usingOpenAiDirect: Boolean get() = isOpenAiModel(selectedModel?.id)
     val selectedModel: CatalogModel? get() = selectModel(config, availableModels)
 
     internal var progress by mutableStateOf<AgentProgress?>(null)
@@ -369,6 +380,7 @@ class AgentViewModel internal constructor(
      * provider rules count only when chats run in that workspace.
      */
     suspend fun routedPriceFor(modelId: String, sdk: SdkSettings): String {
+        if (isOpenAiModel(modelId)) return "Billed by OpenAI at OpenAI's prices. OpenRouter routing doesn't apply."
         val endpoints = modelEndpoints(modelId)
         val rules = workspaceRules?.takeIf { keyWorkspaceId == null || keyWorkspaceId == activeWorkspaceId }
         val price = routedPrice(endpoints, sdk, rules)
@@ -387,20 +399,48 @@ class AgentViewModel internal constructor(
     fun refreshModels(clear: Boolean = false) {
         catalogJob?.cancel()
         val key = config.apiKey
-        if (clear || !providerReady) catalogModels = emptyList()
+        val openAiKey = config.openAiKey
+        if (clear || key.isBlank()) catalogModels = emptyList()
+        if (clear || openAiKey.isBlank()) openAiModels = emptyList()
         catalogError = null
         catalogLoading = providerReady
         if (!providerReady) return
         catalogJob = viewModelScope.launch {
             try {
-                catalogModels = client.availableModels(key)
+                // OpenRouter and OpenAI lists load side by side. One failing still shows the other.
+                val (openRouter, direct) = coroutineScope {
+                    val first = async { if (key.isBlank()) null else runCatching { client.availableModels(key) } }
+                    val second = async { if (openAiKey.isBlank()) null else runCatching { openAi.models(openAiKey) } }
+                    first.await() to second.await()
+                }
+                val errors = mutableListOf<String>()
+                openRouter?.onSuccess { catalogModels = it }?.onFailure {
+                    if (it is CancellationException) throw it
+                    errors += it.userMessage(key)
+                }
+                direct?.onSuccess { openAiModels = it }?.onFailure {
+                    if (it is CancellationException) throw it
+                    errors += "OpenAI models couldn't load. " + it.userMessage(openAiKey).redact(openAiKey)
+                }
+                catalogError = errors.joinToString(" ").ifBlank { null }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                catalogError = e.userMessage(key)
+                catalogError = e.userMessage(key).redact(openAiKey)
             } finally {
                 if (kotlin.coroutines.coroutineContext[Job]?.isCancelled != true) catalogLoading = false
             }
+        }
+    }
+
+    /** Checks an OpenAI key by reading OpenAI's model list with it. */
+    suspend fun validateOpenAiKey(key: String) {
+        try {
+            openAi.validateKey(key)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException(e.userMessage(key).redact(key))
         }
     }
 
@@ -565,7 +605,7 @@ class AgentViewModel internal constructor(
         if (isLoading || isSavingSettings || isWorkingChat || isModerating || isImporting || activePrompt != null ||
             (prompt.isBlank() && sentMedia.isEmpty())) return
         if (!providerReady) {
-            turnError = "Add your OpenRouter API key in Settings before sending."
+            turnError = "Add your OpenRouter API key or OpenAI API key in Settings before sending."
             return
         }
         // Reject impossible requests before any network call, keeping the prompt in the composer.
@@ -722,7 +762,7 @@ class AgentViewModel internal constructor(
                 if (turnError != null) keepInterrupted(prompt, turnError)
                 throw e
             } catch (e: Exception) {
-                turnError = e.userMessage(currentConfig.apiKey)
+                turnError = e.userMessage(currentConfig.apiKey).redact(currentConfig.openAiKey)
                 finishedTitle = "The agent could not finish"
                 finishedText = turnError ?: "The run failed."
                 keepInterrupted(prompt, turnError)
@@ -1022,12 +1062,21 @@ class AgentViewModel internal constructor(
         }
     }
 
+    /** Creating with AI calls OpenRouter, so it needs an OpenRouter key and an OpenRouter model. */
+    private fun openRouterAssistantModel(): CatalogModel {
+        require(openRouterReady) { "Connect OpenRouter in Settings first. Creating with AI uses OpenRouter." }
+        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        require(!isOpenAiModel(model.id)) {
+            "Creating with AI uses OpenRouter. Choose an OpenRouter model in Models first."
+        }
+        return model
+    }
+
     internal suspend fun createCustomizationWithModel(kind: CustomizationKind, prompt: String): String {
         check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating) {
             "Wait for the current task to finish before updating settings."
         }
-        require(providerReady) { "Connect OpenRouter in Settings first." }
-        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        val model = openRouterAssistantModel()
         val update = customizationAssistant.create(config, model, kind, prompt)
         saveSettings(update.config)
         return update.summary
@@ -1037,22 +1086,19 @@ class AgentViewModel internal constructor(
         check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating) {
             "Wait for the current task to finish before updating settings."
         }
-        require(providerReady) { "Connect OpenRouter in Settings first." }
-        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        val model = openRouterAssistantModel()
         val update = customizationAssistant.improve(config, model, target, prompt)
         saveSettings(update.config)
         return update.summary
     }
 
     internal suspend fun createMiniAppWithModel(prompt: String): MiniApp {
-        require(providerReady) { "Connect OpenRouter in Settings first." }
-        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        val model = openRouterAssistantModel()
         return miniAppGenerator.createMiniApp(config, model, miniAppRepository(app), prompt)
     }
 
     internal suspend fun editMiniAppWithModel(id: String, changeRequest: String): MiniApp {
-        require(providerReady) { "Connect OpenRouter in Settings first." }
-        val model = selectedModel ?: throw IllegalStateException("Choose a model first.")
+        val model = openRouterAssistantModel()
         return miniAppGenerator.editMiniApp(config, model, miniAppRepository(app), id, changeRequest)
     }
 
@@ -1065,7 +1111,7 @@ class AgentViewModel internal constructor(
     suspend fun saveSettings(updated: AgentConfig) = settingsMutex.withLock {
         check(activePrompt == null && !isLoading && !isWorkingChat && !isExporting && !isModerating)
         updated.settingsError()?.let { throw IllegalArgumentException(it) }
-        val clean = updated.copy(apiKey = updated.apiKey.trim(),
+        val clean = updated.copy(apiKey = updated.apiKey.trim(), openAiKey = updated.openAiKey.trim(),
             model = updated.model.trim(),
             mcpUrl = updated.mcpUrl.trim(),
             mcpToken = updated.mcpToken.trim(),
@@ -1105,6 +1151,7 @@ class AgentViewModel internal constructor(
                     library = index
                     refreshModels(clear = true)
                 }
+                if (next == null && previous.openAiKey != clean.openAiKey) refreshModels()
                 if (resetSandbox) {
                     workspace = scopedWorkspace(workspace.copy(sessionId = UUID.randomUUID().toString(),
                         containerId = null, sdkHistory = null, sdkState = null))
