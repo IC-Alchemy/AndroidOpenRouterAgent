@@ -157,8 +157,12 @@ Run the `assembleDebug` Gradle task to compile the app and package the signed de
   ```powershell
   .\gradlew.bat :app:assembleDebug
   ```
+- **Windows build script:**
+  ```powershell
+  .\scripts\build.ps1
+  ```
 
-Optional Gradle properties supported by `app/build.gradle.kts`:
+The script builds the debug APK and verifies it was created. Optional Gradle properties supported by `app/build.gradle.kts`:
 - `-PagentDebugKeystore=/path/to/debug.keystore` — sign the debug build with a specific debug keystore so upgrading an existing installation preserves local app data.
 
 **APK output locations:**
