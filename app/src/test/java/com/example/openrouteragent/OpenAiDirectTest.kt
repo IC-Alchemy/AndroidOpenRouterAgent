@@ -87,7 +87,7 @@ class OpenAiDirectTest {
         }
         val tools = body.getJSONArray("tools")
         assertEquals(listOf("function", "web_search", "code_interpreter", "file_search", "image_generation"), types(tools))
-        assertFalse(tools.getJSONObject(0).has("strict"))
+        assertFalse(tools.getJSONObject(0).getBoolean("strict"))
         assertEquals("auto", tools.getJSONObject(2).getJSONObject("container").getString("type"))
         assertEquals("vs_abc", tools.getJSONObject(3).getJSONArray("vector_store_ids").getString(0))
         assertEquals("1536x1024", tools.getJSONObject(4).getString("size"))

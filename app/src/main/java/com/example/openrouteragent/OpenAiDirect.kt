@@ -266,7 +266,9 @@ private fun functionTool(tool: JSONObject): JSONObject {
     tool.text("description").takeIf(String::isNotEmpty)?.let { clean.put("description", it) }
     clean.put("parameters", tool.optJSONObject("parameters") ?: JSONObject().put("type", "object")
         .put("properties", JSONObject()))
-    if (tool.has("strict") && !tool.isNull("strict")) clean.put("strict", tool.optBoolean("strict"))
+    // OpenAI's Responses API makes function tools strict unless told otherwise, and strict schemas reject optional
+    // fields, which most app tools have. Only a tool that asks for strict gets it.
+    clean.put("strict", tool.optBoolean("strict", false))
     return clean
 }
 

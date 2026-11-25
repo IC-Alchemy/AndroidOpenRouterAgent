@@ -8,7 +8,7 @@ server-tool docs, November 2026.
 
 | | OpenRouter | OpenAI |
 |---|---|---|
-| Function tools | `{type: "function", name, description, parameters, strict}` on `/api/v1/responses` | Same shape on `/v1/responses` |
+| Function tools | `{type: "function", name, description, parameters, strict}` on `/api/v1/responses` | Same shape on `/v1/responses`, but `strict` defaults to true, which rejects optional fields; the app sends `strict: false` unless a tool asks for it |
 | Tool calls and results | `function_call` items, answered with `function_call_output` | Same |
 | Tool choice | `auto`, `none`, `required`, `{type:"function", name}` | Same |
 | Parallel tool calls | `parallel_tool_calls` | Same |
