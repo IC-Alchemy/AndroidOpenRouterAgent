@@ -436,12 +436,14 @@ internal fun runtimeOptions(
                 .put("mimeType", item.mimeType).put("text", text)
         }))
         .put("miniApps", config.miniApps)
-        .put("extraTools", JSONArray(config.extraToolsJson.ifBlank { "[]" }))
+        .put("extraTools", runExtraTools(config.extraToolsJson, config.toggledServerTools(), config.sdk.toolChoice == "none"))
         .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)
         .put("maxSteps", config.maxSteps).put("maxCost", config.maxCost)
         .put("temperature", config.temperature.takeIf { "temperature" in model.parameters })
         .put("baseTemperature", config.temperature)
-        .put("sdk", JSONObject(Json.encodeToString(SdkSettings.serializer(), config.sdk))
+        .put("sdk", JSONObject(Json.encodeToString(SdkSettings.serializer(), config.sdk.copy(advancedJson =
+            advancedJsonWithPlugins(config.sdk.advancedJson, config.toggledPlugins(), needsPdfParser =
+                files.media.any { it.media.kind == MEDIA_FILE } && "file" !in model.inputModalities))))
             // The runtime uses this flag to request automatic reasoning summaries.
             .put("showReasoning", config.sdk.showReasoning || config.sdk.saveReasoning))
         .put("modelDetails", modelDetails)

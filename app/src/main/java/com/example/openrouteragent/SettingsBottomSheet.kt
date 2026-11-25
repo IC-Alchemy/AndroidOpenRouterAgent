@@ -80,6 +80,11 @@ internal fun SettingsBottomSheet(
     var imageAspect by remember { mutableStateOf(initialConfig.imageAspect) }
     var imageQuality by remember { mutableStateOf(initialConfig.imageQuality) }
     var workspaceFiles by remember { mutableStateOf(initialConfig.enableWorkspaceFiles) }
+    var advisorTool by remember { mutableStateOf(initialConfig.advisorTool) }
+    var fusionTool by remember { mutableStateOf(initialConfig.fusionTool) }
+    var modelSearchTool by remember { mutableStateOf(initialConfig.modelSearchTool) }
+    var responseHealing by remember { mutableStateOf(initialConfig.responseHealing) }
+    var contextCompression by remember { mutableStateOf(initialConfig.contextCompression) }
     var deviceTools by remember { mutableStateOf(initialConfig.deviceTools) }
     var miniApps by remember { mutableStateOf(initialConfig.miniApps) }
     var enableModeration by remember { mutableStateOf(initialConfig.enableModeration) }
@@ -98,7 +103,8 @@ internal fun SettingsBottomSheet(
     val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
         enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
         imageGeneration = imageGeneration, imageModel = imageModel.trim(), imageAspect = imageAspect,
-        imageQuality = imageQuality,
+        imageQuality = imageQuality, advisorTool = advisorTool, fusionTool = fusionTool,
+        modelSearchTool = modelSearchTool, responseHealing = responseHealing, contextCompression = contextCompression,
         deviceTools = deviceTools, miniApps = miniApps, enableModeration = enableModeration, allowSandboxNetwork = allowNetwork,
         allowedDomainsCsv = allowedDomains, systemInstructions = instructions, maxSteps = maxSteps.toIntOrNull() ?: 0,
         maxCost = maxCost.toDoubleOrNull(), temperature = temperature.toDoubleOrNull(), mcpUrl = mcpUrl.trim(),
@@ -205,6 +211,15 @@ internal fun SettingsBottomSheet(
                     )
                 }
 
+                OutlinedSection(title = "OpenRouter plugins") {
+                    SettingsToggleRow("Response healing (response-healing)", "Repairs malformed JSON replies. OpenRouter " +
+                        "applies it only to replies that aren't streamed and use a JSON response format.",
+                        responseHealing, { responseHealing = it })
+                    SettingsToggleRow("Context compression (context-compression)", "Trims the middle of a chat that is too " +
+                        "long for the model. OpenRouter already does this for models with 8K context or less.",
+                        contextCompression, { contextCompression = it })
+                }
+
                 OutlinedSection(title = "Agent tools") {
                     SettingsToggleRow(
                         title = "Hosted Linux Sandbox (openrouter:shell)",
@@ -234,6 +249,14 @@ internal fun SettingsBottomSheet(
                         ImageGenerationSettings(imageModel, { imageModel = it }, imageAspect, { imageAspect = it },
                             imageQuality, { imageQuality = it })
                     }
+                    SettingsToggleRow("Advisor (openrouter:advisor)", "Lets the model ask an advisor model for advice " +
+                        "mid-answer. The advisor's tokens are billed.",
+                        advisorTool, { advisorTool = it })
+                    SettingsToggleRow("Fusion (openrouter:fusion)", "Asks a panel of models in parallel, with web search, " +
+                        "and compares their answers. Each call runs several models, so it costs more.",
+                        fusionTool, { fusionTool = it })
+                    SettingsToggleRow("Model search (openrouter:experimental__search_models)",
+                        "Lets the agent search OpenRouter's model list. Experimental.", modelSearchTool, { modelSearchTool = it })
                     SettingsToggleRow("Workspace files tool", "Lets unfiled chats work with files in your OpenRouter workspace.",
                         workspaceFiles, { workspaceFiles = it })
                     SubagentsSettings(

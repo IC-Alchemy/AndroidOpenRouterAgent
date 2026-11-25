@@ -33,6 +33,16 @@ data class AgentConfig(
     val imageAspect: String = "",
     /** low, medium or high. Empty lets the model choose. */
     val imageQuality: String = "",
+    /** Adds openrouter:advisor, so the model can ask a stronger model for advice mid-answer. */
+    val advisorTool: Boolean = false,
+    /** Adds openrouter:fusion, which asks a panel of models in parallel and compares their answers. */
+    val fusionTool: Boolean = false,
+    /** Adds openrouter:experimental__search_models, so the agent can search OpenRouter's model list. */
+    val modelSearchTool: Boolean = false,
+    /** Sends OpenRouter's response-healing plugin, which repairs malformed JSON replies. */
+    val responseHealing: Boolean = false,
+    /** Sends OpenRouter's context-compression plugin, which trims the middle of chats too long for the model. */
+    val contextCompression: Boolean = false,
     val deviceTools: Boolean = false,
     val miniApps: Boolean = true,
     val enableModeration: Boolean = false,
@@ -206,7 +216,7 @@ data class Workspace(
 /** The settings for a message sent in chat mode, or retried without tools: every tool and tool source is off. */
 fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, enableWebSearch = false, imageGeneration = false,
     enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false,
-    miniApps = false, mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
+    advisorTool = false, fusionTool = false, modelSearchTool = false, miniApps = false, mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
     sdk = sdk.copy(discoverSkills = false, toolChoice = "none"))
 
 @Serializable
@@ -217,6 +227,6 @@ data class InterruptedTurn(
 
 fun AgentConfig.agentToolsEnabled(): Boolean =
     sdk.toolChoice != "none" && (enableShellSandbox || enableWebSearch || enableDateTime || webFetch || deviceTools ||
-        imageGeneration ||
+        imageGeneration || advisorTool || fusionTool || modelSearchTool ||
         enableWorkspaceFiles || customTools.any { it.enabled } || mcpUrl.isNotBlank() ||
         (extraToolsJson.isNotBlank() && extraToolsJson.replace(Regex("\\s"), "") != "[]"))
