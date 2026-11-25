@@ -223,7 +223,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         }
     }
 
-    val count = messages.size + (if (isRunning) 2 else 0) + (if (interrupted != null) 1 else 0)
+    val stoppedTurn = agent.workspace.interruptedTurn?.takeIf { interrupted != null && !isRunning }
+    val count = messages.size + (if (isRunning) 2 else 0) + (if (interrupted != null) 1 else 0) +
+        (if (stoppedTurn != null) 1 else 0)
     LaunchedEffect(agent.workspace.id, count, runProgress?.answer?.length, runProgress?.summary?.length, following) {
         if (following && count > 0) listState.requestScrollToItem(count)
     }
@@ -458,6 +460,14 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         renderMarkdown = config.sdk.renderMarkdown)
                                 }
                             }
+                            if (stoppedTurn != null) {
+                                // The message of a reply that stopped stays in the chat, above what the agent did.
+                                item("stopped_prompt") {
+                                    UserMessageBubble(stoppedTurn.prompt, stoppedTurn.media, agent::mediaFile) {
+                                        viewingMedia = it
+                                    }
+                                }
+                            }
                             if (interrupted != null) {
                                 item("interrupted") {
                                     LiveAgentReply(interrupted, interrupted = true,
@@ -467,7 +477,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         onRetryWithoutTools = if (!agent.chatMode && config.agentToolsEnabled()) {
                                             { following = true; agent.retryTurn(toolsOff = true) }
                                         } else null,
-                                        onActivity = { showRunActivity = true })
+                                        onActivity = { showRunActivity = true },
+                                        onContinue = if (agent.canContinue) {
+                                            { following = true; agent.continueTurn() }
+                                        } else null)
                                 }
                             }
                             item("latest") { Spacer(Modifier.size(1.dp)) }
