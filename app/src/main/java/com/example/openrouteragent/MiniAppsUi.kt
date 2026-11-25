@@ -65,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -84,9 +85,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -152,6 +155,7 @@ internal fun MiniAppsSheet(
     onAskInChat: () -> Unit,
     repository: MiniAppRepository? = null,
     onOpenApp: ((MiniApp) -> Unit)? = null,
+    builds: MiniAppBuildTracker? = null,
 ) {
     val context = LocalContext.current
     val repo = remember(repository, context) { repository ?: miniAppRepository(context) }
@@ -177,6 +181,34 @@ internal fun MiniAppsSheet(
 
     LaunchedEffect(refresh) {
         apps = withContext(Dispatchers.IO) { runCatching { repo.list() }.getOrDefault(emptyList()) }
+    }
+
+    // Builds run outside this sheet (in the view model) so they keep going when the user leaves.
+    val tracker = builds ?: remember { MiniAppBuildTracker(scope) }
+    val pendingBuilds by tracker.pending.collectAsState()
+    val buildOutcomes by tracker.outcomes.collectAsState()
+    val openedAt = remember(tracker) { tracker.clock() }
+    LaunchedEffect(buildOutcomes) {
+        if (buildOutcomes.isEmpty()) return@LaunchedEffect
+        val batch = buildOutcomes
+        tracker.take(batch)
+        batch.forEach { outcome ->
+            when (outcome) {
+                is MiniAppBuildOutcome.Done -> {
+                    val editing = outcome.build.editing
+                    statusMessage = if (editing != null) {
+                        "Updated ${outcome.app.name} (saved data kept)."
+                    } else {
+                        "Created ${outcome.app.name}."
+                    }
+                    errorMessage = null
+                    // Open a new app only when it finished while the user was here, not on coming back later.
+                    if (editing == null && outcome.finishedAt >= openedAt) openApp(outcome.app)
+                }
+                is MiniAppBuildOutcome.Failed -> errorMessage = outcome.message
+            }
+        }
+        refresh++
     }
 
     val exportDocument = rememberLauncherForActivityResult(
@@ -287,6 +319,11 @@ internal fun MiniAppsSheet(
                 Text(err, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
 
+            pendingBuilds.forEach { build ->
+                Spacer(Modifier.height(10.dp))
+                PendingMiniAppBuildCard(build)
+            }
+
             val list = apps
             when {
                 list == null -> {
@@ -297,6 +334,7 @@ internal fun MiniAppsSheet(
                         Text("Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                list.isEmpty() && pendingBuilds.isNotEmpty() -> Spacer(Modifier.weight(1f))
                 list.isEmpty() -> {
                     Column(
                         modifier = Modifier
@@ -543,21 +581,20 @@ internal fun MiniAppsSheet(
             selectedModelName = selectedModelName,
             onDismiss = { aiDialogMode = null },
             onSubmit = { prompt ->
-                val result = when (mode) {
-                    AiMiniAppDialogMode.Create -> onCreateWithAi(prompt)
-                    is AiMiniAppDialogMode.Edit -> onEditWithAi(mode.app.id, prompt)
-                }
-                if (mode is AiMiniAppDialogMode.Edit) {
-                    withContext(Dispatchers.IO) { MiniAppActivity.updatePinnedShortcut(context, result) }
+                val appContext = context.applicationContext
+                tracker.start(prompt, editing = (mode as? AiMiniAppDialogMode.Edit)?.app) {
+                    when (mode) {
+                        AiMiniAppDialogMode.Create -> onCreateWithAi(prompt)
+                        is AiMiniAppDialogMode.Edit -> {
+                            val result = onEditWithAi(mode.app.id, prompt)
+                            withContext(Dispatchers.IO) { MiniAppActivity.updatePinnedShortcut(appContext, result) }
+                            result
+                        }
+                    }
                 }
                 aiDialogMode = null
-                statusMessage = when (mode) {
-                    AiMiniAppDialogMode.Create -> "Created ${result.name}."
-                    is AiMiniAppDialogMode.Edit -> "Updated ${result.name} (saved data kept)."
-                }
+                statusMessage = null
                 errorMessage = null
-                refresh++
-                if (mode is AiMiniAppDialogMode.Create) openApp(result)
             },
         )
     }
@@ -786,6 +823,46 @@ private fun ContextMenuRow(
     }
 }
 
+/** A build in progress: says the user can leave and that mini apps can also be asked for in the main chat. */
+@Composable
+private fun PendingMiniAppBuildCard(build: PendingMiniAppBuild) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = build.editing?.let { "Updating ${it.name}…" } ?: "Building your mini app…",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                text = build.prompt,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text(
+                text = MINI_APP_BUILD_LEAVE_NOTE,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                text = MINI_APP_BUILD_CHAT_TIP,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MiniAppAiBuilderDialog(
@@ -794,18 +871,15 @@ private fun MiniAppAiBuilderDialog(
     providerReady: Boolean,
     selectedModelName: String?,
     onDismiss: () -> Unit,
-    onSubmit: suspend (String) -> Unit,
+    onSubmit: (String) -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     var prompt by remember(mode) { mutableStateOf("") }
-    var working by remember(mode) { mutableStateOf(false) }
-    var error by remember(mode) { mutableStateOf<String?>(null) }
 
     val isEdit = mode is AiMiniAppDialogMode.Edit
     val title = if (isEdit) "Edit ${(mode as AiMiniAppDialogMode.Edit).app.name} with AI" else "Create Mini App with AI"
 
     AlertDialog(
-        onDismissRequest = { if (!working) onDismiss() },
+        onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (mode is AiMiniAppDialogMode.Edit) {
@@ -837,7 +911,7 @@ private fun MiniAppAiBuilderDialog(
                     ) {
                         MINI_APP_IDEAS.forEach { idea ->
                             AssistChip(
-                                onClick = { if (!working) prompt = "Make me a $idea" },
+                                onClick = { prompt = "Make me a $idea" },
                                 label = { Text(idea, style = MaterialTheme.typography.labelSmall) },
                             )
                         }
@@ -847,7 +921,6 @@ private fun MiniAppAiBuilderDialog(
                 OutlinedTextField(
                     value = prompt,
                     onValueChange = { prompt = it },
-                    enabled = !working,
                     label = { Text(if (isEdit) "What should change?" else "Describe your Mini App") },
                     placeholder = {
                         Text(
@@ -875,43 +948,18 @@ private fun MiniAppAiBuilderDialog(
                     },
                 )
 
-                if (working) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Text(
-                        text = if (isEdit) "Updating your Mini App…" else "Building your Mini App…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-
-                error?.let { msg ->
-                    Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                }
             }
         },
         confirmButton = {
             Button(
-                enabled = !working && providerReady && !selectedModelName.isNullOrBlank() && prompt.trim().isNotEmpty(),
-                onClick = {
-                    working = true
-                    error = null
-                    scope.launch {
-                        try {
-                            onSubmit(prompt.trim())
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            error = e.message ?: "Could not build the mini app."
-                            working = false
-                        }
-                    }
-                },
+                enabled = providerReady && !selectedModelName.isNullOrBlank() && prompt.trim().isNotEmpty(),
+                onClick = { onSubmit(prompt.trim()) },
             ) {
                 Text(if (isEdit) "Apply changes" else "Build app")
             }
         },
         dismissButton = {
-            TextButton(enabled = !working, onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
 }

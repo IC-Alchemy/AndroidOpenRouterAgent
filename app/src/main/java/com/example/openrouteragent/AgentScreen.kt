@@ -535,6 +535,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             selectedModelName = model?.name,
             onCreateWithAi = agent::createMiniAppWithModel,
             onEditWithAi = agent::editMiniAppWithModel,
+            builds = agent.miniAppBuilds,
             onAskInChat = {
                 showMiniApps = false
                 if (agent.activePrompt == null) agent.promptText = "Build me a mini app that "
