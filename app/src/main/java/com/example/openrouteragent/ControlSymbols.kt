@@ -145,6 +145,9 @@ internal object StudioSymbols {
     val Models = symbol("Models", "M12 3 L21 8 L12 13 L3 8 Z M3 12 L12 17 L21 12 M3 16 L12 21 L21 16")
     val Chat = symbol("Chat", "M3 5 H21 V16 H10 L5 20 V16 H3 Z M7 9 H17 M7 12 H13")
     val Chats = symbol("Chats", "M3 4 H17 V14 H9 L5 18 V14 H3 Z M20 8 H22 V18 H18 V21 L14 18 H11")
+    /** A chat panel over a page: the side conversation. */
+    val SideConversation = symbol("Side conversation", "M3 4 H21 V20 H3 Z M13 4 V20 M15.5 8.5 H19 M15.5 11.5 H19 " +
+        "M15.5 14.5 H17.5")
     val NewChat = symbol("New chat", "M3 5 H21 V16 H10 L5 20 V16 H3 Z M9 10.5 H15 M12 7.5 V13.5")
     val Labels = symbol("Labels", "M3 17 L7 7 L11 17 M4.5 14 H9.5 M14 11 H18 Q21 11 21 14 V17 H16 " +
         "Q14 17 14 15 Q14 14 16 14 H21")

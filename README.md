@@ -69,6 +69,15 @@ The model menu lists OpenRouter's decision models with what each one reads. Phot
 
 In Settings, **Decisions (openrouter_decide)** gives the agent a tool for the same decisions. The agent can pass text options, a yes-or-no check, or score levels, and can include the photos and recordings attached to the current message. The decision model field sets the tool's model; it is blank by default, which uses `typesafe/jev-1.13`. Each decision is billed by OpenRouter.
 
+## Side conversation
+
+Tap the small **side conversation** button beside the message box, or type **/side** or **/btw** there, to open a panel that slides in over the main chat. **/btw your question** (or **/side your question**) opens the panel and sends the question there at once; nothing is sent to the main chat. It is a separate conversation: the main chat keeps running underneath, and a side message never waits for, stops, or writes to the main chat. While the main chat is running, the message box still takes **/btw** and **/side**; other text waits there until the run ends.
+
+- **Include main chat context** is on by default. Each side message then carries a read-only copy of the open main chat, including a main chat message still waiting for its reply (newest messages first, up to about 60,000 characters). Turn it off to ask without it.
+- Side messages use the model chosen for the main chat, as plain chat without tools. OpenRouter models go to OpenRouter with the OpenRouter key; `openai-direct/` models go to api.openai.com with the OpenAI key. On-device moderation applies when it is on.
+- Close the panel by tapping outside it, with ✕, or with Back. Its messages stay until **New side conversation**, which also turns the context toggle back on. Side conversations are not saved to the chat library.
+- A dot on the button means a side reply is in progress or arrived while the panel was closed.
+
 ## Voice
 
 Tap the microphone in the composer to dictate a message. Android's speech recognizer is used, preferring on-device recognition. Add the **Ask agent** tile from Quick Settings to open the app straight into voice input.
@@ -157,8 +166,12 @@ Run the `assembleDebug` Gradle task to compile the app and package the signed de
   ```powershell
   .\gradlew.bat :app:assembleDebug
   ```
+- **Windows build script:**
+  ```powershell
+  .\scripts\build.ps1
+  ```
 
-Optional Gradle properties supported by `app/build.gradle.kts`:
+The script builds the debug APK and verifies it was created. Optional Gradle properties supported by `app/build.gradle.kts`:
 - `-PagentDebugKeystore=/path/to/debug.keystore` — sign the debug build with a specific debug keystore so upgrading an existing installation preserves local app data.
 
 **APK output locations:**
