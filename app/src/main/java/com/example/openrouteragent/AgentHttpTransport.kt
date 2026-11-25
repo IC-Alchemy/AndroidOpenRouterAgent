@@ -31,6 +31,9 @@ private val requestIdHeaders = listOf("x-request-id", "x-generation-id", "openro
 
 internal enum class AgentEndpoint { Responses, ChatCompletions }
 
+/** Where an agent request goes: OpenRouter, or OpenAI directly with the user's own OpenAI key. */
+internal enum class AgentTarget(val label: String) { OpenRouter("OpenRouter"), OpenAi("OpenAI") }
+
 /** Timeouts and retry limits for one OpenRouter Responses stream. */
 internal data class StreamPolicy(
     val connectTimeoutSeconds: Long = 10,
@@ -70,6 +73,8 @@ internal fun retryDelayMillis(
  */
 internal class AgentHttpTransport(
     private val endpoint: HttpUrl = "https://openrouter.ai/api/v1/responses".toHttpUrl(),
+    /** OpenAI's Responses endpoint, for runs with OpenAI (direct) models. Only the OpenAI key is sent here. */
+    private val openAiEndpoint: HttpUrl = OPENAI_RESPONSES_URL.toHttpUrl(),
     private val policy: StreamPolicy = StreamPolicy(),
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(policy.connectTimeoutSeconds, TimeUnit.SECONDS)
@@ -90,6 +95,7 @@ internal class AgentHttpTransport(
     private class Exchange(
         val key: Key, val request: Request, val client: OkHttpClient, val diagnostics: StreamDiagnostics,
         val route: AgentEndpoint,
+        val target: AgentTarget,
         val emit: (String, Any) -> Unit,
     ) {
         @Volatile var call: Call? = null
@@ -106,23 +112,27 @@ internal class AgentHttpTransport(
     fun start(
         runId: String, requestId: String, apiKey: String, body: String,
         model: String? = null, idleSeconds: Long? = null, route: AgentEndpoint = AgentEndpoint.Responses,
+        target: AgentTarget = AgentTarget.OpenRouter,
         emit: (String, Any) -> Unit,
     ) {
         val key = Key(runId, requestId)
         val idle = (idleSeconds ?: policy.idleTimeoutSeconds).coerceAtLeast(1)
-        val url = when (route) {
-            AgentEndpoint.Responses -> endpoint
-            AgentEndpoint.ChatCompletions -> endpoint.newBuilder().encodedPath("/api/v1/chat/completions").build()
+        // OpenAI runs only use the Responses API: the runtime's Chat Completions calls are OpenRouter features.
+        require(target == AgentTarget.OpenRouter || route == AgentEndpoint.Responses)
+        val url = when {
+            target == AgentTarget.OpenAi -> openAiEndpoint
+            route == AgentEndpoint.Responses -> endpoint
+            else -> endpoint.newBuilder().encodedPath("/api/v1/chat/completions").build()
         }
         val request = Request.Builder().url(url)
             .header("Authorization", "Bearer $apiKey")
-            .openRouterAttribution()
+            .apply { if (target == AgentTarget.OpenRouter) openRouterAttribution() }
             .header("Accept", if (route == AgentEndpoint.Responses) "text/event-stream, application/json" else "application/json")
             .post(body.toRequestBody(jsonType))
             .build()
         val perRequest = if (idle == policy.idleTimeoutSeconds) client
             else client.newBuilder().readTimeout(idle, TimeUnit.SECONDS).build()
-        val exchange = Exchange(key, request, perRequest, StreamDiagnostics("$runId/$requestId", model, idle), route, emit)
+        val exchange = Exchange(key, request, perRequest, StreamDiagnostics("$runId/$requestId", model, idle), route, target, emit)
         if (active.putIfAbsent(key, exchange) != null) return
         attempt(exchange)
     }
@@ -226,19 +236,20 @@ internal class AgentHttpTransport(
 
     private fun failure(exchange: Exchange, error: IOException, beforeHeaders: Boolean): String {
         val diagnostics = exchange.diagnostics
+        val host = exchange.target.label
         val retried = if (diagnostics.retries > 0) " after ${diagnostics.retries} retries" else ""
         val message = when {
             error is SocketTimeoutException && beforeHeaders ->
-                "OpenRouter did not answer within ${diagnostics.idleSeconds} s$retried."
+                "$host did not answer within ${diagnostics.idleSeconds} s$retried."
             error is SocketTimeoutException ->
-                "OpenRouter sent no data for ${diagnostics.idleSeconds} s, so the app stopped waiting. The model " +
+                "$host sent no data for ${diagnostics.idleSeconds} s, so the app stopped waiting. The model " +
                     "or a hosted tool may still be working. Retry, raise the stream idle timeout in SDK settings, " +
                     "or retry without tools."
             error is java.net.UnknownHostException ->
-                "Android could not reach OpenRouter$retried. Check your network connection."
-            error is javax.net.ssl.SSLException -> "Android could not establish a secure connection to OpenRouter."
-            beforeHeaders -> "The OpenRouter connection failed$retried (${error.describe()})."
-            else -> "The OpenRouter stream closed unexpectedly (${error.describe()}). It was not retried " +
+                "Android could not reach $host$retried. Check your network connection."
+            error is javax.net.ssl.SSLException -> "Android could not establish a secure connection to $host."
+            beforeHeaders -> "The $host connection failed$retried (${error.describe()})."
+            else -> "The $host stream closed unexpectedly (${error.describe()}). It was not retried " +
                 "automatically because hosted tools may already have run. Retry when ready."
         }
         val tag = if (error is SocketTimeoutException && !beforeHeaders) "idle-timeout" else "failure"
@@ -249,7 +260,7 @@ internal class AgentHttpTransport(
     private fun httpFailure(exchange: Exchange, code: Int, retryAfter: String?, detail: String?): String {
         val diagnostics = exchange.diagnostics
         val model = diagnostics.model ?: "the selected model"
-        val advice = when (code) {
+        val advice = if (exchange.target == AgentTarget.OpenAi) openAiAdvice(code, model, retryAfter) else when (code) {
             400 -> "OpenRouter rejected the request. Check that $model is a valid model ID in Models and that " +
                 "it supports the enabled tools."
             401 -> "OpenRouter rejected the API key. Enter a valid key in Settings."
@@ -266,7 +277,20 @@ internal class AgentHttpTransport(
         }
         val retried = if (diagnostics.retries > 0) " Gave up after ${diagnostics.retries} retries." else ""
         log("http-error ${diagnostics.describe()}")
-        return "OpenRouter HTTP $code. $advice${detail?.let { " Detail: ${it.trimEnd('.')}." }.orEmpty()}$retried ${diagnostics.describe()}"
+        return "${exchange.target.label} HTTP $code. $advice${detail?.let { " Detail: ${it.trimEnd('.')}." }.orEmpty()}$retried ${diagnostics.describe()}"
+    }
+
+    private fun openAiAdvice(code: Int, model: String, retryAfter: String?): String = when (code) {
+        400 -> "OpenAI rejected the request. Check that $model supports the enabled tools, or turn some off in Settings."
+        401 -> "OpenAI rejected the API key. Check the OpenAI key in Settings."
+        403 -> "OpenAI refused this request for the key, project, model or region."
+        404 -> "OpenAI has no model $model for this key. Choose another model in Models."
+        408 -> "OpenAI timed out waiting for the request."
+        413 -> "The conversation is too large for $model. Start a new chat."
+        429 -> retryAfter?.let { "OpenAI rate-limited this key and asked to wait ${it.trim()} s." }
+            ?: "OpenAI rate-limited this key, or the account is out of quota. Check billing on OpenAI."
+        in 500..599 -> "OpenAI failed."
+        else -> "OpenAI returned an unexpected status."
     }
 
     private fun errorDetail(response: Response): String? {

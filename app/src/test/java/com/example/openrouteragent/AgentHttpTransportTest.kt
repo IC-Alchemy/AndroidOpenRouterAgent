@@ -33,6 +33,21 @@ class AgentHttpTransportTest {
     }
 
     @Test
+    fun openAiRunsGoToOpenAiWithoutOpenRouterHeaders() = withTransport { server, run ->
+        server.enqueue(MockResponse().setResponseCode(401))
+        val outcome = run.start(target = AgentTarget.OpenAi)
+        assertEquals("error", outcome.kind)
+        val request = server.takeRequest()
+        assertEquals("/v1/responses", request.path)
+        assertEquals("Bearer $FAKE_KEY", request.getHeader("Authorization"))
+        assertNull(request.getHeader("HTTP-Referer"))
+        assertNull(request.getHeader("X-OpenRouter-Title"))
+        val message = outcome.value as String
+        assertTrue(message, "OpenAI HTTP 401" in message)
+        assertFalse(message, FAKE_KEY in message)
+    }
+
+    @Test
     fun keepaliveCommentsCountAsActivityAndTheStreamFinishes() = withTransport(idleSeconds = 1) { server, run ->
         val comments = ": OPENROUTER PROCESSING\n\n".repeat(6)
         val payload = "event: response.completed\ndata: {\"type\":\"response.completed\"}\n\ndata: [DONE]\n\n"
@@ -196,9 +211,9 @@ class AgentHttpTransportTest {
         val body = StringBuilder()
         private val outcomes = LinkedBlockingQueue<Outcome>()
 
-        fun start(route: AgentEndpoint = AgentEndpoint.Responses): Outcome {
+        fun start(route: AgentEndpoint = AgentEndpoint.Responses, target: AgentTarget = AgentTarget.OpenRouter): Outcome {
             transport.start("run", "1", FAKE_KEY, """{"model":"mock/model","input":[]}""", model = "mock/model",
-                idleSeconds = idleSeconds, route = route) { kind, value ->
+                idleSeconds = idleSeconds, route = route, target = target) { kind, value ->
                 when (kind) {
                     // The WebView pulls the next chunk after each delivery, exactly like this.
                     "headers" -> transport.read("run", "1")
@@ -223,6 +238,7 @@ class AgentHttpTransportTest {
         val logs = Collections.synchronizedList(mutableListOf<String>())
         val transport = AgentHttpTransport(
             endpoint = server.url("/api/v1/responses").newBuilder().host(loopback.hostAddress).build(),
+            openAiEndpoint = server.url("/v1/responses").newBuilder().host(loopback.hostAddress).build(),
             policy = StreamPolicy(connectTimeoutSeconds = 5, baseDelayMillis = 20, maxDelayMillis = 100),
             encode = { bytes, size -> Base64.getEncoder().encodeToString(bytes.copyOf(size)) },
             log = { logs += it },

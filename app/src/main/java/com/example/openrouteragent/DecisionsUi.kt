@@ -287,7 +287,8 @@ internal fun DecisionsSheet(agent: AgentViewModel, onDismiss: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Decisions", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Put the options on the left and let a decision model pick.",
+                    Text("Put the options on the left and let a decision model pick. Runs on OpenRouter with your " +
+                        "OpenRouter key, even when you chat with an OpenAI (direct) model.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TextButton(onClick = { busy?.cancel(); onDismiss() }) { Text("Close") }

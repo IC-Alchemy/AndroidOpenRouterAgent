@@ -68,6 +68,13 @@ internal fun SettingsBottomSheet(
         agent.takeSignInKey()?.let { apiKey = it; signedIn = true }
     }
     var showApiKey by remember { mutableStateOf(false) }
+    var openAiKey by remember { mutableStateOf(initialConfig.openAiKey) }
+    var showOpenAiKey by remember { mutableStateOf(false) }
+    var openAiTestResult by remember { mutableStateOf<String?>(null) }
+    var openAiWebSearch by remember { mutableStateOf(initialConfig.openAiWebSearch) }
+    var openAiImageGeneration by remember { mutableStateOf(initialConfig.openAiImageGeneration) }
+    var openAiCodeInterpreter by remember { mutableStateOf(initialConfig.openAiCodeInterpreter) }
+    var openAiFileSearchStores by remember { mutableStateOf(initialConfig.openAiFileSearchStores) }
     var enableShell by remember { mutableStateOf(initialConfig.enableShellSandbox) }
     var enableWeb by remember { mutableStateOf(initialConfig.enableWebSearch) }
     var enableDateTime by remember { mutableStateOf(initialConfig.enableDateTime) }
@@ -102,7 +109,9 @@ internal fun SettingsBottomSheet(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
-    val updated = initialConfig.copy(apiKey = apiKey, enableShellSandbox = enableShell, enableWebSearch = enableWeb,
+    val updated = initialConfig.copy(apiKey = apiKey, openAiKey = openAiKey, openAiWebSearch = openAiWebSearch,
+        openAiImageGeneration = openAiImageGeneration, openAiCodeInterpreter = openAiCodeInterpreter,
+        openAiFileSearchStores = openAiFileSearchStores.trim(), enableShellSandbox = enableShell, enableWebSearch = enableWeb,
         enableDateTime = enableDateTime, webFetch = webFetch, enableWorkspaceFiles = workspaceFiles,
         imageGeneration = imageGeneration, imageModel = imageModel.trim(), imageAspect = imageAspect,
         imageQuality = imageQuality, advisorTool = advisorTool, fusionTool = fusionTool,
@@ -200,6 +209,75 @@ internal fun SettingsBottomSheet(
                     }
                 }
 
+                OutlinedSection(title = "OpenAI (direct)") {
+                    Text("Optional. Add your own OpenAI key to use OpenAI models directly. They show in Models as " +
+                        "openai-direct/… and are billed by OpenAI, not OpenRouter. The key goes only to api.openai.com.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = openAiKey,
+                        onValueChange = { openAiKey = it; openAiTestResult = null; error = null },
+                        label = { Text("OpenAI API key") },
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                        singleLine = true,
+                        visualTransformation = if (showOpenAiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { showOpenAiKey = !showOpenAiKey }) {
+                                Text(if (showOpenAiKey) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { runCatching { uriHandler.openUri(OPENAI_KEYS_PAGE) } }) {
+                            Text("Get an OpenAI key")
+                        }
+                        TextButton(enabled = !working && openAiKey.isNotBlank(), onClick = {
+                            val keyToTest = openAiKey.trim()
+                            error = AgentConfig(openAiKey = keyToTest).settingsError()
+                            if (error == null) {
+                                working = true
+                                scope.launch {
+                                    try {
+                                        agent.validateOpenAiKey(keyToTest)
+                                        if (openAiKey.trim() == keyToTest) openAiTestResult = "OpenAI accepted the key."
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        if (openAiKey.trim() == keyToTest) error = e.userMessage(keyToTest).redact(keyToTest)
+                                    } finally {
+                                        working = false
+                                    }
+                                }
+                            }
+                        }) { Text("Test OpenAI key") }
+                    }
+                    openAiTestResult?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                    if (openAiKey.isNotBlank()) {
+                        Text("OpenAI's own tools for OpenAI models. The app's tools (time zone, mini apps, skills, " +
+                            "subagents, remote MCP) work with OpenAI too.", style = MaterialTheme.typography.labelMedium)
+                        SettingsToggleRow("OpenAI web search (web_search)", "OpenAI searches the web and cites sources. " +
+                            "OpenAI bills each search.", openAiWebSearch, { openAiWebSearch = it })
+                        SettingsToggleRow("OpenAI image generation (image_generation)", "OpenAI's image model draws " +
+                            "pictures in the chat. Uses the aspect ratio and quality below. OpenAI bills each image.",
+                            openAiImageGeneration, { openAiImageGeneration = it })
+                        if (openAiImageGeneration) {
+                            ImageGenerationSettings(imageModel, { imageModel = it }, imageAspect, { imageAspect = it },
+                                imageQuality, { imageQuality = it }, showModel = false)
+                        }
+                        SettingsToggleRow("OpenAI code interpreter (code_interpreter)", "Runs Python in an OpenAI " +
+                            "container. OpenAI bills each container session.", openAiCodeInterpreter,
+                            { openAiCodeInterpreter = it })
+                        CopyableOutlinedTextField(openAiFileSearchStores, { openAiFileSearchStores = it; error = null },
+                            label = { Text("OpenAI file search vector store IDs (optional)") },
+                            supportingText = { Text("Up to 10 IDs like vs_abc123, separated by commas. Turns on " +
+                                "file_search over files you uploaded to OpenAI.") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    }
+                    if (initialConfig.openAiKey.isNotBlank() && openAiKey.isBlank()) {
+                        Text("Removing the key hides OpenAI (direct) models.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
                 OutlinedSection(title = "Appearance") {
                     val labels = LocalControlLabels.current
                     SettingsToggleRow("Show control labels", "Show names beside symbols.", labels.visible, labels.setVisible)
@@ -215,6 +293,7 @@ internal fun SettingsBottomSheet(
                 }
 
                 OutlinedSection(title = "OpenRouter plugins") {
+                    OpenRouterOnlyNote()
                     SettingsToggleRow("Response healing (response-healing)", "Repairs malformed JSON replies. OpenRouter " +
                         "applies it only to replies that aren't streamed and use a JSON response format.",
                         responseHealing, { responseHealing = it })
@@ -224,6 +303,10 @@ internal fun SettingsBottomSheet(
                 }
 
                 OutlinedSection(title = "Agent tools") {
+                    Text("Tools named openrouter:…, image generation and workspace files run on OpenRouter. With an " +
+                        "OpenAI (direct) model they're skipped; use the OpenAI tools above instead. Decisions still " +
+                        "works with an OpenAI model when an OpenRouter key is saved.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SettingsToggleRow(
                         title = "Hosted Linux Sandbox (openrouter:shell)",
                         subtitle = "Runs commands in a hosted Linux container",
@@ -415,11 +498,14 @@ private fun ImageGenerationSettings(
     onAspect: (String) -> Unit,
     quality: String,
     onQuality: (String) -> Unit,
+    showModel: Boolean = true,
 ) {
     Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CopyableOutlinedTextField(model, onModel, label = { Text("Image model (optional)") },
-            supportingText = { Text("Blank uses OpenRouter's default image model.") },
-            modifier = Modifier.fillMaxWidth(), singleLine = true)
+        if (showModel) {
+            CopyableOutlinedTextField(model, onModel, label = { Text("Image model (optional)") },
+                supportingText = { Text("Blank uses OpenRouter's default image model.") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true)
+        }
         Text("Aspect ratio", style = MaterialTheme.typography.labelMedium)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             IMAGE_ASPECTS.forEach { option ->
@@ -434,4 +520,11 @@ private fun ImageGenerationSettings(
             }
         }
     }
+}
+
+/** Says a setting only applies to OpenRouter models, so OpenAI (direct) chats skip it. */
+@Composable
+internal fun OpenRouterOnlyNote(modifier: Modifier = Modifier) {
+    Text(OPENROUTER_ONLY_NOTE, modifier = modifier, style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

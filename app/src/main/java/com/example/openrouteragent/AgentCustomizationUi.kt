@@ -280,7 +280,11 @@ internal fun CustomizationSheet(
                     )
                     if (!inSubScreen) {
                         Text(
-                            text = if (canUseModel) "AI actions use ${selectedModel!!.name}" else "Select a model to enable AI actions",
+                            text = when {
+                                canUseModel -> "AI actions use ${selectedModel!!.name}"
+                                isOpenAiModel(selectedModel?.id) -> "AI actions use OpenRouter. Choose an OpenRouter model to enable them."
+                                else -> "Select a model to enable AI actions"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
