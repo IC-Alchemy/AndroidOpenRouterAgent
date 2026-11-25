@@ -104,8 +104,12 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val heard = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
         if (!heard.isNullOrEmpty()) {
-            agent.promptText = listOf(agent.promptText.trim(), heard).filter { it.isNotEmpty() }.joinToString(" ")
-            agent.promptFromVoice = true
+            if (agent.side.isOpen) {
+                agent.side.prompt = listOf(agent.side.prompt.trim(), heard).filter { it.isNotEmpty() }.joinToString(" ")
+            } else {
+                agent.promptText = listOf(agent.promptText.trim(), heard).filter { it.isNotEmpty() }.joinToString(" ")
+                agent.promptFromVoice = true
+            }
         }
     }
     val speaker = rememberReplySpeaker()
@@ -286,6 +290,18 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 )
                                 Spacer(Modifier.width(4.dp))
                             }
+                            // The side conversation stays available while the main chat runs.
+                            ControlTooltip("Side conversation") {
+                                IconButton(enabled = !agent.isLoading, onClick = agent.side::open) {
+                                    Box {
+                                        Icon(StudioSymbols.SideConversation, contentDescription = "Side conversation")
+                                        if (agent.side.isRunning || agent.side.unread) {
+                                            StudioStatusDot(color = MaterialTheme.colorScheme.primary, size = 6.dp,
+                                                modifier = Modifier.align(Alignment.TopEnd))
+                                        }
+                                    }
+                                }
+                            }
                             SymbolAction(
                                 label = "Chats", icon = StudioSymbols.Chats,
                                 enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
@@ -352,6 +368,11 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         leadingIcon = { Icon(StudioSymbols.MiniApps, null) }, onClick = {
                                         showConfigure = false
                                         showMiniApps = true
+                                    })
+                                    DropdownMenuItem(text = { Text("Side conversation") },
+                                        leadingIcon = { Icon(StudioSymbols.SideConversation, null) }, onClick = {
+                                        showConfigure = false
+                                        agent.side.open()
                                     })
                                     DropdownMenuItem(text = { Text("Decisions") },
                                         leadingIcon = { Icon(StudioSymbols.Decisions, null) }, onClick = {
@@ -476,6 +497,15 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 }
             }
         }
+
+        SideConversationPanel(
+            agent = agent,
+            onVoice = listen,
+            onCopyText = clipboard::copy,
+            onReport = { prompt, response -> reportTarget = ReportTarget(prompt = prompt, response = response) },
+            showReasoning = config.sdk.showReasoning,
+            renderMarkdown = config.sdk.renderMarkdown,
+        )
     }
 
     viewingMedia?.let { item ->

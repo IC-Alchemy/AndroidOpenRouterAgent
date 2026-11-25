@@ -50,6 +50,10 @@ Tap the microphone in the composer to dictate. The Ask agent Quick Settings tile
 
 Open Configure → Decisions to have an OpenRouter decision model pick one of two to four options, answer yes or no, or score something on levels you list. Tap a round window to add text, a photo, a camera photo, a video, or audio; the chosen option moves to the large window on the right with its probabilities. Video and audio need a model that reads them, such as cloudflare/clef-omni. Settings → Decisions (openrouter_decide) lets the agent call the same decisions as a tool, including photos and recordings attached to the message. Each decision is billed.
 
+## Side conversation
+
+Tap the side conversation button in the top bar (a panel icon, also in Configure → Side conversation) to open a panel over the main chat and ask something separately. The main chat keeps running underneath: a side message never waits for, stops or changes a main chat run. "Include main chat context" is on by default and sends a read-only copy of the open main chat (with a message still waiting for its reply) along with each side message; turn it off to ask without it. Side messages use the model chosen for the main chat, without tools, and nothing in the side conversation is added to the main chat. Close the panel by tapping outside it, with the close button or with Back; it keeps its messages until you tap New side conversation, which also turns the context toggle back on. The side conversation isn't saved with your chats. A dot on the button means a side reply is on its way or arrived while the panel was closed.
+
 ## Organize chats and projects
 
 Tap Chats to open saved conversations for your OpenRouter credential. Use New project to make a group, then select it and tap New chat. Use a chat's menu to rename it, move it, or delete it. Removing a project moves its chats to Unfiled. An OpenRouter chat restores its tool history and sandbox reference when reopened. A stopped turn keeps its partial reply and can be retried.

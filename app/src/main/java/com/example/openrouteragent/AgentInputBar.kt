@@ -64,6 +64,8 @@ internal fun AgentInputBar(
     /** False when the chosen model can't read images, so photo choices are off. */
     canAttachImages: Boolean = true,
     importing: Boolean = false,
+    /** Text shown in the empty field. Null picks one from [chatMode]. */
+    placeholder: String? = null,
 ) {
     val showLabels = LocalControlLabels.current.visible
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
@@ -157,7 +159,7 @@ internal fun AgentInputBar(
                 CopyableOutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
-                    placeholder = { Text(if (chatMode == true) "Message" else "Message the agent") },
+                    placeholder = { Text(placeholder ?: if (chatMode == true) "Message" else "Message the agent") },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
                     shape = RoundedCornerShape(16.dp),

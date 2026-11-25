@@ -178,6 +178,31 @@ class AgentViewModel internal constructor(
     private var catalogJob: Job? = null
     private var running: Job? = null
 
+    /** The side conversation in the panel over the main chat. Its requests run beside main chat runs. */
+    internal val side = SideConversationModel(viewModelScope)
+
+    /** The open main chat as read-only context for the side conversation, including a message still waiting for its reply. */
+    internal fun mainChatContextForSide(): MainChatContext? =
+        mainChatContext(workspace.messages.mapNotNull { it.asSideContext() }, activePrompt)
+
+    /** Sends the side conversation's message with the chosen model. It doesn't wait for or stop a main chat run. */
+    fun sendSide() {
+        if (isLoading || side.prompt.isBlank()) return
+        val model = selectedModel ?: run {
+            side.fail(if (catalogLoading) "Loading models…" else "Open Models to choose a model.")
+            return
+        }
+        val target = if (isOpenAiModel(model.id)) SideTarget.openAi(config.openAiKey, openAiModelId(model.id))
+            else SideTarget.openRouter(config.apiKey, model.id)
+        if (target.apiKey.isBlank()) {
+            side.fail(if (target.openRouter) "Add your OpenRouter API key in Settings first."
+                else "Add your OpenAI API key in Settings first.")
+            return
+        }
+        side.send(target, if (side.includeMainContext) mainChatContextForSide() else null,
+            textModerator?.takeIf { config.enableModeration })
+    }
+
     init {
         viewModelScope.launch {
             val (savedConfig, savedWorkspace, guide) = withContext(Dispatchers.IO) {
