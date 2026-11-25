@@ -178,6 +178,52 @@ class AgentViewModel internal constructor(
     private var catalogJob: Job? = null
     private var running: Job? = null
 
+    /** The side conversation in the panel over the main chat. Its requests run beside main chat runs. */
+    internal val side = SideConversationModel(viewModelScope)
+
+    /** The open main chat as read-only context for the side conversation, including a message still waiting for its reply. */
+    internal fun mainChatContextForSide(): MainChatContext? =
+        mainChatContext(workspace.messages.mapNotNull { it.asSideContext() }, activePrompt)
+
+    /**
+     * Sends a side conversation message with the chosen model: [text], or the side composer's text when it is null. It
+     * doesn't wait for or stop a main chat run. Text that can't be sent yet is left in the side composer.
+     */
+    fun sendSide(text: String? = null) {
+        if ((text ?: side.prompt).isBlank()) return
+        fun fail(message: String?) {
+            text?.let(side::keepPrompt)
+            message?.let(side::fail)
+        }
+        if (isLoading) return fail(null)
+        val model = selectedModel ?: return fail(if (catalogLoading) "Loading models…" else "Open Models to choose a model.")
+        val target = if (isOpenAiModel(model.id)) SideTarget.openAi(config.openAiKey, openAiModelId(model.id))
+            else SideTarget.openRouter(config.apiKey, model.id)
+        if (target.apiKey.isBlank()) {
+            return fail(if (target.openRouter) "Add your OpenRouter API key in Settings first."
+                else "Add your OpenAI API key in Settings first.")
+        }
+        side.send(target, if (side.includeMainContext) mainChatContextForSide() else null,
+            textModerator?.takeIf { config.enableModeration }, text)
+    }
+
+    /**
+     * Runs a slash command typed in the main composer and clears it. Returns false when [text] isn't a command, so it
+     * goes to the main chat as usual. A command never sends anything to the main chat.
+     */
+    fun runSlashCommand(text: String): Boolean {
+        val typed = SlashCommands.parse(text) ?: return false
+        when (typed.command) {
+            SlashCommands.Side -> {
+                promptText = ""
+                side.open()
+                if (typed.argument.isNotEmpty()) sendSide(typed.argument)
+            }
+            else -> return false
+        }
+        return true
+    }
+
     init {
         viewModelScope.launch {
             val (savedConfig, savedWorkspace, guide) = withContext(Dispatchers.IO) {
@@ -878,7 +924,8 @@ class AgentViewModel internal constructor(
     }
 
     private suspend fun keepInterrupted(prompt: String, error: String?) {
-        promptText = prompt
+        // The composer stays editable during a run (for /btw), so keep anything typed there since.
+        if (promptText.isBlank()) promptText = prompt
         retryPrompt = prompt
         val media = activeMedia
         pendingMedia = media

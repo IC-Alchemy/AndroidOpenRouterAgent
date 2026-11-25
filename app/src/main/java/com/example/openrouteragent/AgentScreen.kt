@@ -104,8 +104,12 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val heard = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
         if (!heard.isNullOrEmpty()) {
-            agent.promptText = listOf(agent.promptText.trim(), heard).filter { it.isNotEmpty() }.joinToString(" ")
-            agent.promptFromVoice = true
+            if (agent.side.isOpen) {
+                agent.side.prompt = listOf(agent.side.prompt.trim(), heard).filter { it.isNotEmpty() }.joinToString(" ")
+            } else {
+                agent.promptText = listOf(agent.promptText.trim(), heard).filter { it.isNotEmpty() }.joinToString(" ")
+                agent.promptFromVoice = true
+            }
         }
     }
     val speaker = rememberReplySpeaker()
@@ -213,6 +217,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     }
 
     fun send(text: String) {
+        // Slash commands such as /btw are handled here and never reach the main chat.
+        if (agent.runSlashCommand(text)) return
         when {
             !agent.providerReady -> showSettings = true
             model == null -> showModels = true
@@ -395,6 +401,12 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         onAttach = attach,
                         canAttachImages = model?.accepts("image") != false,
                         importing = agent.isImporting,
+                        placeholder = if (isRunning) "Type /btw to ask on the side" else null,
+                        onSideConversation = agent.side::open,
+                        sideConversationBusy = agent.side.isRunning || agent.side.unread,
+                        // During a main run the field takes only slash commands, so /btw works while the chat continues.
+                        acceptsInputWhileRunning = true,
+                        sendWhileRunning = isRunning && SlashCommands.parse(agent.promptText) != null,
                     )
                 }
             }
@@ -476,6 +488,15 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 }
             }
         }
+
+        SideConversationPanel(
+            agent = agent,
+            onVoice = listen,
+            onCopyText = clipboard::copy,
+            onReport = { prompt, response -> reportTarget = ReportTarget(prompt = prompt, response = response) },
+            showReasoning = config.sdk.showReasoning,
+            renderMarkdown = config.sdk.renderMarkdown,
+        )
     }
 
     viewingMedia?.let { item ->

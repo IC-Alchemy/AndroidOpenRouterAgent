@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -64,6 +65,18 @@ internal fun AgentInputBar(
     /** False when the chosen model can't read images, so photo choices are off. */
     canAttachImages: Boolean = true,
     importing: Boolean = false,
+    /** Text shown in the empty field. Null picks one from [chatMode]. */
+    placeholder: String? = null,
+    /** Opens the side conversation from a small button beside the field; null hides the button. */
+    onSideConversation: (() -> Unit)? = null,
+    /** Shows a dot on the side conversation button: a side reply is running or unread. */
+    sideConversationBusy: Boolean = false,
+    /**
+     * Keeps the field editable while [isRunning], so a slash command such as /btw can be typed during a run. The send
+     * button and the keyboard's send key only act then when [sendWhileRunning] is true; otherwise the button stops.
+     */
+    acceptsInputWhileRunning: Boolean = false,
+    sendWhileRunning: Boolean = false,
 ) {
     val showLabels = LocalControlLabels.current.visible
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
@@ -154,16 +167,32 @@ internal fun AgentInputBar(
                         }
                     }
                 }
+                if (onSideConversation != null) {
+                    // Stays usable while the main chat runs: the side conversation is separate from it.
+                    ControlTooltip("Side conversation") {
+                        IconButton(onClick = onSideConversation, enabled = !isLoading, modifier = Modifier.size(48.dp)) {
+                            Box {
+                                Icon(StudioSymbols.SideConversation, contentDescription = "Side conversation",
+                                    modifier = Modifier.size(20.dp))
+                                if (sideConversationBusy) {
+                                    StudioStatusDot(color = MaterialTheme.colorScheme.primary, size = 6.dp,
+                                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 5.dp, y = (-5).dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                val sends = !isRunning || sendWhileRunning
                 CopyableOutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
-                    placeholder = { Text(if (chatMode == true) "Message" else "Message the agent") },
+                    placeholder = { Text(placeholder ?: if (chatMode == true) "Message" else "Message the agent") },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
                     shape = RoundedCornerShape(16.dp),
-                    enabled = !isRunning && !isLoading,
+                    enabled = (!isRunning || acceptsInputWhileRunning) && !isLoading,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { onSend() }),
+                    keyboardActions = KeyboardActions(onSend = { if (sends) onSend() }),
                 )
                 if (!isRunning) {
                     ControlTooltip("Speak a message") {
@@ -172,15 +201,16 @@ internal fun AgentInputBar(
                         }
                     }
                 }
-                val action = if (isRunning) "Stop waiting" else "Send prompt"
+                val action = if (sends) "Send prompt" else "Stop waiting"
                 ControlTooltip(action) {
                     FilledIconButton(
-                        onClick = if (isRunning) onStop else onSend,
-                        enabled = isRunning || (!isLoading && !importing && (value.isNotBlank() || attachments.isNotEmpty())),
+                        onClick = if (sends) onSend else onStop,
+                        enabled = !sends || (!isLoading && !importing &&
+                            (value.isNotBlank() || (!isRunning && attachments.isNotEmpty()))),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.size(48.dp),
                     ) {
-                        Icon(if (isRunning) StudioSymbols.Stop else Icons.AutoMirrored.Filled.Send, action)
+                        Icon(if (sends) Icons.AutoMirrored.Filled.Send else StudioSymbols.Stop, action)
                     }
                 }
             }
