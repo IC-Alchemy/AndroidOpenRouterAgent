@@ -244,7 +244,29 @@ Each tool call gets a row with a spinner while it runs. Input streams into the r
 
 The stream connects within 10 seconds and fails after 90 seconds without any bytes. SSE keepalive comments count as activity. Change the idle limit (30–600 s) under **SDK settings → Stream idle timeout**. Connection failures and HTTP 408, 429 and 5xx responses that arrive before the stream starts are retried up to three times with exponential backoff and jitter. Retry-After is honoured up to 60 seconds. A stream that drops midway is not retried, because hosted tools may already have run. Errors include the request, model, HTTP status, OpenRouter request ID, bytes received and the last SSE event. The same line is logged under the `AgentHttp` logcat tag. The API key is never logged. Requests that ask OpenRouter itself to download or generate video are rejected before any network call. OpenRouter routes LLM requests, so name a video provider or a direct URL for that step.
 
-The transcript follows the newest answer until you scroll back. Tap the down arrow to resume following. If you stop a run or the provider disconnects, the app keeps the partial reply in view. You can retry normally or retry with tools disabled for that request. Tool settings remain available for your next run.
+The transcript follows the newest answer until you scroll back. Tap the down arrow to resume following.
+
+### Long runs
+
+A run has no fixed time limit. It keeps going while the agent or the network shows activity. Waiting for you to approve a tool or answer a question doesn't count against it.
+
+- **Quiet runs:** if nothing happens for 10 minutes, the app ends that request.
+- **Backstop:** any run stops after 2 hours.
+- **Checkpoints:** while the agent works, the runtime saves the conversation so far about every 20 seconds and again when a request fails. Each checkpoint includes the finished tool calls and the streamed text.
+- **Automatic continue:** when a request fails in a way a fresh request can fix, the app continues from the last checkpoint in a new request, with the same sandbox. Such failures include a stream that went quiet or closed, a 5xx or 408 response, a connection failure, and a restarted runtime. This happens up to 3 times, and the reply notes it. A rejected key, missing credits, a rate limit, a bad request or Stop ends the turn instead.
+- **Small steps:** in agent mode, the system instructions ask the agent to plan big jobs as short steps, keep tool calls short, and save its work and a `PROGRESS.md` in the sandbox, so a continued run picks up where it stopped.
+
+### When a run stops
+
+A run that fails, is stopped, or is cut off when the app closes never removes the chat. The app saves your message with the chat as soon as you send it.
+
+- **What stays:** your message stays in the chat. Under it, the reply shows what the agent had done: text, reasoning, tool calls, searches and the reason it stopped. It stays there after you leave the chat or restart the app.
+- **Continue:** asks the agent to carry on from its saved progress.
+- **Retry:** sends the same message again.
+- **Retry without tools:** sends it again with tools off for that request.
+- **Next message:** anything you send next keeps the stopped reply in the chat history, and the model sees what it had done.
+
+A run that fails before anything happens, such as a rejected key, puts your message back in the composer instead.
 
 Touch and hold to select text in chat messages, tool output, file previews, or the message you’re composing. Adjust the Android selection handles and the selected text copies automatically. Use **Copy reply** to copy the entire response at once.
 

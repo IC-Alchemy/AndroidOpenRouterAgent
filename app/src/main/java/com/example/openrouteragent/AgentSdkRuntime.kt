@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
@@ -21,6 +22,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -37,7 +40,7 @@ import kotlin.coroutines.cancellation.CancellationException
 private const val ORIGIN = "https://agent-runtime.invalid"
 private const val ENTRY_URL = "$ORIGIN/index.html"
 private const val MAX_HISTORY_BYTES = 6_000_000
-private const val RUN_TIMEOUT_MILLIS = 15 * 60_000L
+private const val WATCHDOG_TICK_MILLIS = 15_000L
 
 data class ToolApproval(
     val decision: String, val name: String, val arguments: String, val url: String, val asksUser: Boolean = false,
@@ -65,7 +68,16 @@ internal open class AgentSdkRuntime(private val context: Context) {
         val openRouterKey: String = apiKey,
         /** Set on OpenAI (direct) runs: OpenAI's hosted tools to add to each request. */
         val openAi: OpenAiHostedTools? = null,
-    )
+        /** Receives the runtime's checkpoints, so a failed or stopped run can keep and continue its work. */
+        val onCheckpoint: (RunCheckpoint) -> Unit = {},
+    ) {
+        /** When the runtime or the network last showed the run was alive. Read and written on the main thread. */
+        var lastActivity: Long = SystemClock.elapsedRealtime()
+        /** Approvals, questions and app actions still open. The idle limit doesn't count while any are. */
+        var waitingForUser: Int = 0
+
+        fun alive() { lastActivity = SystemClock.elapsedRealtime() }
+    }
 
     private data class DecisionToolRun(val model: String, val chatId: String, val media: List<ChatMedia>)
 
@@ -95,6 +107,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
         onApproval: (ToolApproval) -> Unit,
         files: OpenRouterRunFiles = OpenRouterRunFiles(),
         onAppAction: (suspend (String, JSONObject) -> JSONObject)? = null,
+        onCheckpoint: (RunCheckpoint) -> Unit = {},
     ): SdkRunResult = withContext(Dispatchers.Main.immediate) {
         check(activeRun == null)
         val direct = isOpenAiModel(model.id)
@@ -121,7 +134,8 @@ internal open class AgentSdkRuntime(private val context: Context) {
                 settings.decisionModel.ifBlank { DEFAULT_DECISION_MODEL }, workspace.id, files.media.map { it.media },
             ) else null,
             openRouterKey = settings.apiKey,
-            openAi = if (direct) settings.openAiHostedTools() else null)
+            openAi = if (direct) settings.openAiHostedTools() else null,
+            onCheckpoint = onCheckpoint)
         try {
             val runtime = view ?: createWebView()
             try {
@@ -145,12 +159,25 @@ internal open class AgentSdkRuntime(private val context: Context) {
                 if (accepted != "true") run.completion.completeExceptionally(
                     IOException("Android could not start the Agent SDK request."))
             }
+            // No fixed time limit: a run that keeps making progress keeps going. The watchdog ends one that has gone
+            // quiet, which the app then continues from its last checkpoint, and stops one at the long backstop.
+            run.alive()
+            val started = SystemClock.elapsedRealtime()
+            val watchdog = run.actions.launch {
+                while (isActive && !run.completion.isCompleted) {
+                    delay(WATCHDOG_TICK_MILLIS)
+                    val now = SystemClock.elapsedRealtime()
+                    val problem = runStallProblem(now - started, now - run.lastActivity, run.waitingForUser > 0)
+                    if (problem != null) {
+                        runCatching { android.util.Log.w("AgentHttp", "run-stalled id=${run.id} model=${run.model}") }
+                        run.completion.completeExceptionally(problem)
+                    }
+                }
+            }
             try {
-                withTimeout(RUN_TIMEOUT_MILLIS) { run.completion.await() }
-            } catch (e: TimeoutCancellationException) {
-                runCatching { android.util.Log.w("AgentHttp", "run-timeout id=${run.id} model=${run.model}") }
-                throw IOException("The agent run timed out after 15 minutes. Long hosted tool work can " +
-                    "exceed this limit; split the task into smaller steps.", e)
+                run.completion.await()
+            } finally {
+                watchdog.cancel()
             }
         } finally {
             if (!run.completion.isCompleted) view?.let { dispatch(it, "stop", run.id) }
@@ -191,6 +218,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
             val run = activeRun ?: return@post
             if (runtime !== view || run.id != runId || run.completion.isCompleted) return@post
             val setup = run.decisions
+            run.waitingForUser++
             run.localScope.launch {
                 val reply = try {
                     if (setup == null) throw IOException("The decision tool is turned off in Settings.")
@@ -205,6 +233,8 @@ internal open class AgentSdkRuntime(private val context: Context) {
                     decisionToolError(error.userMessage(run.openRouterKey).redact(run.apiKey))
                 }
                 main.post {
+                    run.waitingForUser = (run.waitingForUser - 1).coerceAtLeast(0)
+                    run.alive()
                     if (runtime === view && activeRun?.id == run.id) dispatch(runtime, "decide", run.id, decision, true, reply)
                 }
             }
@@ -213,6 +243,8 @@ internal open class AgentSdkRuntime(private val context: Context) {
 
     fun decide(decision: String, accept: Boolean, answer: String) {
         val run = activeRun ?: return
+        run.waitingForUser = (run.waitingForUser - 1).coerceAtLeast(0)
+        run.alive()
         view?.let { dispatch(it, "decide", run.id, decision, accept, answer) }
     }
 
@@ -264,7 +296,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
 
             override fun onRenderProcessGone(webView: WebView, detail: RenderProcessGoneDetail): Boolean {
                 if (webView === view) {
-                    val error = IOException("Android restarted the Agent SDK runtime. Try the run again.")
+                    val error = IOException("Android restarted the Agent SDK runtime.")
                     activeRun?.completion?.completeExceptionally(error)
                     ready.completeExceptionally(error)
                     view = null
@@ -331,6 +363,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
                     if (hosted == null) AgentTarget.OpenRouter else AgentTarget.OpenAi) { kind, value ->
                     main.post {
                         if (runtime === view && activeRun?.id == runId) {
+                            activeRun?.alive()
                             dispatch(runtime, "http", runId, requestId, kind, value)
                         }
                     }
@@ -414,7 +447,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
                         val approval = ToolApproval(value.getString("decision"), value.getString("name"),
                             value.getJSONObject("args").toString(2), value.optString("url"), value.optBoolean("asksUser"),
                             value.optBoolean("savesSettings"))
-                        ({ run: ActiveRun -> run.onApproval(approval) })
+                        ({ run: ActiveRun -> run.waitingForUser++; run.onApproval(approval) })
                     }
                     "app_request" -> {
                         val value = event.getJSONObject("value")
@@ -422,6 +455,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
                         val action = value.getString("name")
                         val args = value.getJSONObject("args")
                         ({ run: ActiveRun ->
+                            run.waitingForUser++
                             run.actions.launch {
                                 try {
                                     val callback = run.onAppAction ?: throw IOException("App tools are unavailable.")
@@ -436,10 +470,17 @@ internal open class AgentSdkRuntime(private val context: Context) {
                                         dispatch(runtime, "appResult", run.id, request, false,
                                             error.userMessage(run.apiKey).redact(run.openRouterKey))
                                     }
+                                } finally {
+                                    run.waitingForUser = (run.waitingForUser - 1).coerceAtLeast(0)
+                                    run.alive()
                                 }
                             }
                             Unit
                         })
+                    }
+                    "checkpoint" -> {
+                        val checkpoint = parseRunCheckpoint(event.getJSONObject("value"), MAX_HISTORY_BYTES)
+                        ({ run: ActiveRun -> run.onCheckpoint(checkpoint) })
                     }
                     "done" -> {
                         val value = event.getJSONObject("value")
@@ -456,7 +497,10 @@ internal open class AgentSdkRuntime(private val context: Context) {
                 }
                 main.post {
                     val run = activeRun ?: return@post
-                    if (runtime === view && run.id == id && !run.completion.isCompleted) handler(run)
+                    if (runtime === view && run.id == id && !run.completion.isCompleted) {
+                        run.alive()
+                        handler(run)
+                    }
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -495,7 +539,7 @@ internal fun runtimeOptions(
     val effectiveTools = config.customTools.filter { it.enabled && config.sdk.toolChoice != "none" }
     val skills = (listOfNotNull(guide) + config.savedSkills).filter { it.enabled }
     return JSONObject().put("apiKey", config.apiKey).put("model", model.id).put("history", history)
-        .put("prompt", prompt).put("instructions", config.systemInstructions)
+        .put("prompt", prompt).put("instructions", runInstructions(config))
         .put("sessionId", workspace.sessionId ?: workspace.id).put("state", workspace.sdkState)
         .put("shell", config.enableShellSandbox)
         .put("imageGeneration", if (config.imageGeneration && config.sdk.toolChoice != "none") JSONObject()

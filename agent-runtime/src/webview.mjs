@@ -6,6 +6,9 @@ import { attachmentParts, dehydrate, dehydrateState, hydrate, hydrateState } fro
 const bridge = globalThis.AndroidAgent;
 const runs = new Map();
 const emit = (id, type, value) => bridge.post(JSON.stringify({ id, type, value }));
+// How often a running agent sends Android what it has done so far, so a failure or a stop can keep it.
+const CHECKPOINT_INTERVAL_MS = 20_000;
+const MAX_CHECKPOINT_CHARS = 6_000_000;
 
 async function start(request) {
   let options = request;
@@ -67,6 +70,33 @@ async function start(request) {
     ? bridge.readMedia(options.id, kind, file) : '') || '';
   const storeMedia = (kind, value) => (typeof bridge.storeMedia === 'function'
     ? bridge.storeMedia(options.id, kind, value) : '') || '';
+  let readCheckpoint;
+  let checkpointTimer;
+  let lastCheckpoint = 0;
+  let checkpointDirty = false;
+  const sendCheckpoint = () => {
+    if (checkpointTimer !== undefined) clearTimeout(checkpointTimer);
+    checkpointTimer = undefined;
+    if (!readCheckpoint || !checkpointDirty || run.controller.signal.aborted) return;
+    checkpointDirty = false;
+    lastCheckpoint = Date.now();
+    try {
+      const checkpoint = readCheckpoint();
+      if (!checkpoint?.progressed) return;
+      const response = dehydrate(checkpoint.response, storeMedia, known);
+      const history = dehydrate(checkpoint.history, storeMedia, known);
+      const full = JSON.stringify({ response, history });
+      flush();
+      emit(options.id, 'checkpoint', full.length <= MAX_CHECKPOINT_CHARS ? { response, history } : { response });
+    } catch {
+      // A checkpoint is a convenience. The run carries on without it.
+    }
+  };
+  const progressed = () => {
+    checkpointDirty = true;
+    if (checkpointTimer !== undefined || run.controller.signal.aborted) return;
+    checkpointTimer = setTimeout(sendCheckpoint, Math.max(0, CHECKPOINT_INTERVAL_MS - (Date.now() - lastCheckpoint)));
+  };
   try {
     options = {
       ...options,
@@ -82,6 +112,8 @@ async function start(request) {
         update(event.detail ? { ...event, detail: sanitize(event.detail) } : event);
       },
       register: result => { run.result = result; },
+      checkpoint: read => { readCheckpoint = read; },
+      progressed,
       approval: (name, args, url, savesSettings) => askUser(name, args, url, false, savesSettings),
       ask: (name, args) => askUser(name, args, '', true),
       local: request => { flush(); return run.local.call(request); },
@@ -97,10 +129,14 @@ async function start(request) {
   } catch (error) {
     flush();
     if (!run.controller.signal.aborted) {
+      // Send what the run did before the error first, so Android can keep it with the failure.
+      checkpointDirty = true;
+      sendCheckpoint();
       const message = error?.body?.error?.message ?? error?.message ?? error;
       emit(options.id, 'error', sanitize(message).slice(0, 800));
     }
   } finally {
+    if (checkpointTimer !== undefined) clearTimeout(checkpointTimer);
     run.transport.abort();
     run.local.dispose();
     for (const { reject } of run.appRequests.values()) reject(new Error('The agent run ended.'));

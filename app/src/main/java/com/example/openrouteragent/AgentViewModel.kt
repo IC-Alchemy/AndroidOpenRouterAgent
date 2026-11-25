@@ -28,6 +28,7 @@ import java.security.MessageDigest
 import java.util.UUID
 
 internal const val POLICY_PROMPT_BLOCKED = "This prompt violates our content policy."
+internal const val APP_CLOSED_MID_RUN = "The app closed before this reply finished."
 internal const val POLICY_RESPONSE_WARNING = "This response was hidden because it violates our content policy."
 
 class AgentViewModel internal constructor(
@@ -170,6 +171,10 @@ class AgentViewModel internal constructor(
     internal var interrupted by mutableStateOf<AgentProgress?>(null)
         private set
     private var retryPrompt: String? = null
+    private var retryMedia: List<ChatMedia> = emptyList()
+    /** True when the stopped reply on screen has work to continue from. */
+    internal var canContinue by mutableStateOf(false)
+        private set
     internal var builtInGuide by mutableStateOf<SavedAgentSkill?>(null)
         private set
     private var approvals by mutableStateOf<List<ToolApproval>>(emptyList())
@@ -627,22 +632,59 @@ class AgentViewModel internal constructor(
         }
     }
 
+    /** Sends the stopped message again. The stopped reply stays in the chat, and the new run can build on it. */
     fun retryTurn(toolsOff: Boolean = false) {
         val prompt = retryPrompt ?: return
+        if (activePrompt != null) return
+        val composer = promptText to pendingMedia
+        pendingMedia = retryMedia
         send(prompt, toolsOff)
+        if (activePrompt == null && !isModerating) {
+            promptText = composer.first
+            pendingMedia = composer.second
+        }
     }
 
-    private fun beginTurn(prompt: String, media: List<ChatMedia>) {
+    /** Asks the agent to carry on after a stopped reply, from the work it had done. */
+    fun continueTurn() {
+        if (activePrompt != null || workspace.interruptedTurn == null) return
+        val composer = promptText to pendingMedia
+        pendingMedia = emptyList()
+        send(CONTINUE_MESSAGE)
+        if (activePrompt == null && !isModerating) {
+            promptText = composer.first
+            pendingMedia = composer.second
+        }
+    }
+
+    /**
+     * Shows the new turn and saves it with the chat straight away, marked as pending, so the message and the chat
+     * survive the app closing mid-run. A stopped turn shown before it has already moved into [base]'s messages.
+     */
+    private suspend fun beginTurn(prompt: String, media: List<ChatMedia>, base: Workspace) {
         activePrompt = prompt
         activeMedia = media
         pendingMedia = emptyList()
         promptText = ""
         interrupted = null
+        canContinue = false
         retryPrompt = null
+        retryMedia = emptyList()
         progress = AgentProgress(SystemClock.elapsedRealtime())
         RunNotifications.begin(app)
         notifyBackground()
         AgentRunService.start(app)
+        val pending = scopedWorkspace(base.copy(interruptedTurn = InterruptedTurn(prompt, "", "", null, media,
+            pending = true)))
+        workspace = pending
+        withContext(NonCancellable) {
+            try {
+                if (media.isNotEmpty()) withContext(Dispatchers.IO) { mediaStore.adopt(pending.id, media) }
+                saveWorkspace(pending)
+            } catch (_: Exception) {
+                storageError = "Android could not save this message yet. It is still open on this screen."
+            }
+        }
     }
 
     fun send(text: String, toolsOff: Boolean = false) {
@@ -669,7 +711,8 @@ class AgentViewModel internal constructor(
         }
         val spoken = promptFromVoice && config.sdk.readVoiceReplies
         promptFromVoice = false
-        val priorWorkspace = workspace
+        // A reply that stopped stays in the chat: it moves into the messages before the next one is sent.
+        val priorWorkspace = scopedWorkspace(workspace.withStoppedTurnKept())
         val area = fileArea()
         val noTools = toolsOff || chatMode
         val attachments = if (!noTools) attachedFiles else emptyList()
@@ -685,11 +728,7 @@ class AgentViewModel internal constructor(
         val currentConfig = if (noTools) config.withoutTools() else config
         val activeModerator = textModerator?.takeIf { currentConfig.enableModeration }
         turnError = null
-        if (activeModerator != null) {
-            isModerating = true
-        } else {
-            beginTurn(prompt, sentMedia)
-        }
+        if (activeModerator != null) isModerating = true else activePrompt = prompt
 
         running = viewModelScope.launch {
             if (activeModerator != null) {
@@ -708,11 +747,17 @@ class AgentViewModel internal constructor(
                     return@launch
                 }
                 if (activePrompt != null || isLoading || isSavingSettings || isWorkingChat) return@launch
-                beginTurn(prompt, sentMedia)
             }
+            val chatWasSaved = library.chats.any { it.id == priorWorkspace.id }
+            beginTurn(prompt, sentMedia, priorWorkspace)
 
             var finishedTitle = "Reply ready"
             var finishedText = "The agent finished."
+            // A run that fails for a reason a fresh request can get past continues from its last checkpoint.
+            var checkpoint: RunCheckpoint? = null
+            var runSpace = priorWorkspace
+            val earlier = mutableListOf<AgentRunResult>()
+            var continues = 0
             try {
                 val gitHubAccess = if (noTools || currentConfig.sdk.toolChoice == "none") null
                     else area.projectId?.let { github.session(it) }
@@ -724,13 +769,38 @@ class AgentViewModel internal constructor(
                         } else null)
                     }
                 }
-                val sdkResult = sdk.run(currentConfig, priorWorkspace, prompt, model, availableModels, builtInGuide,
-                    onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
-                    files = runFiles.copy(github = gitHubAccess != null, media = runMedia),
-                    onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
-                        executeAppAction(area, gitHubAccess, name, args)
-                    })
-                val result = sdkResult.result
+                var runPrompt = prompt
+                lateinit var sdkResult: SdkRunResult
+                while (true) {
+                    checkpoint = null
+                    try {
+                        sdkResult = sdk.run(currentConfig, runSpace, runPrompt, model, availableModels, builtInGuide,
+                            onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
+                            files = runFiles.copy(github = gitHubAccess != null,
+                                media = if (continues == 0) runMedia else emptyList()),
+                            onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
+                                executeAppAction(area, gitHubAccess, name, args)
+                            },
+                            onCheckpoint = { checkpoint = it })
+                        break
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        val saved = checkpoint?.takeIf { it.history != null }
+                        if (saved == null || continues >= MAX_AUTO_CONTINUES || !resumableFailure(e)) throw e
+                        continues++
+                        saved.partial?.let(earlier::add)
+                        runSpace = runSpace.copy(sdkHistory = saved.history, sdkState = null,
+                            containerId = if (area.projectId != null) runSpace.containerId
+                                else saved.partial?.discoveredContainerId ?: runSpace.containerId)
+                        val reason = e.userMessage(currentConfig.apiKey).redact(currentConfig.openAiKey)
+                        runPrompt = continuePrompt(reason)
+                        approvals = emptyList()
+                        progress = progress?.continuing(continues, MAX_AUTO_CONTINUES)
+                        notifyBackground()
+                    }
+                }
+                val result = mergeContinuedRun(earlier, sdkResult.result, continues)
                 val responseSafe = if (activeModerator != null) {
                     try {
                         activeModerator.isSafe(result.assistantText)
@@ -786,8 +856,8 @@ class AgentViewModel internal constructor(
                 val finished = scopedWorkspace(priorWorkspace.copy(
                     messages = messages,
                     containerId = if (area.projectId != null) priorWorkspace.containerId
-                        else if (responseSafe) result.discoveredContainerId ?: priorWorkspace.containerId
-                        else priorWorkspace.containerId,
+                        else if (responseSafe) result.discoveredContainerId ?: runSpace.containerId
+                        else runSpace.containerId,
                     sdkHistory = if (responseSafe) sdkResult.history else priorWorkspace.sdkHistory,
                     sdkState = if (responseSafe) sdkResult.state else priorWorkspace.sdkState,
                     interruptedTurn = null,
@@ -805,13 +875,16 @@ class AgentViewModel internal constructor(
             } catch (e: CancellationException) {
                 finishedTitle = "Run stopped"
                 finishedText = turnError ?: "The run was stopped."
-                if (turnError != null) keepInterrupted(prompt, turnError)
+                // Stopped by the user, or because the app closed: either way the work so far stays in the chat.
+                keepInterrupted(prompt, turnError ?: "The run stopped because the app closed.", checkpoint, earlier,
+                    runSpace, continues, keepContainer = area.projectId == null, chatWasSaved)
                 throw e
             } catch (e: Exception) {
                 turnError = e.userMessage(currentConfig.apiKey).redact(currentConfig.openAiKey)
                 finishedTitle = "The agent could not finish"
                 finishedText = turnError ?: "The run failed."
-                keepInterrupted(prompt, turnError)
+                keepInterrupted(prompt, turnError, checkpoint, earlier, runSpace, continues,
+                    keepContainer = area.projectId == null, chatWasSaved)
             } finally {
                 activePrompt = null
                 activeMedia = emptyList()
@@ -923,17 +996,64 @@ class AgentViewModel internal constructor(
         notifyBackground()
     }
 
-    private suspend fun keepInterrupted(prompt: String, error: String?) {
-        // The composer stays editable during a run (for /btw), so keep anything typed there since.
-        if (promptText.isBlank()) promptText = prompt
-        retryPrompt = prompt
+    /**
+     * Keeps a turn that failed or was stopped: the user's message, the text and tool work so far, and a checkpoint
+     * to continue from. It shows below the chat and moves into the messages when the next message is sent. A turn
+     * that failed before anything happened goes back to the composer instead, as if it was never sent.
+     */
+    private suspend fun keepInterrupted(
+        prompt: String, error: String?, checkpoint: RunCheckpoint?, earlier: List<AgentRunResult>,
+        runSpace: Workspace, continues: Int, keepContainer: Boolean, chatWasSaved: Boolean,
+    ) {
         val media = activeMedia
-        pendingMedia = media
-        val partial = progress ?: return
+        val partial = progress?.stopped()
+        val parts = earlier + listOfNotNull(checkpoint?.partial)
+        val history = checkpoint?.history ?: runSpace.sdkHistory.takeIf { continues > 0 }
+        val didWork = partial != null && (partial.answer.isNotBlank() || partial.summary.isNotBlank() ||
+            partial.tools.isNotEmpty()) || parts.isNotEmpty() || continues > 0
+        val base = workspace.copy(interruptedTurn = null)
+        if (!didWork) {
+            // Anything typed into the composer since the message was sent stays.
+            if (promptText.isBlank()) promptText = prompt
+            if (pendingMedia.isEmpty()) pendingMedia = media
+            workspace = scopedWorkspace(base)
+            withContext(NonCancellable) {
+                try {
+                    if (base.messages.isNotEmpty() || chatWasSaved) saveWorkspace(workspace) else {
+                        // A chat that only existed for this message, which failed at once, isn't kept empty.
+                        val scope = chatScope(config)
+                        library = withContext(Dispatchers.IO) {
+                            chats.deleteChat(scope, base.id)
+                            chats.library(scope)
+                        }
+                    }
+                } catch (_: Exception) {
+                    storageError = "Android could not save the chat."
+                }
+            }
+            return
+        }
+        retryPrompt = prompt
+        retryMedia = media
         interrupted = partial
-        val snapshot = scopedWorkspace(workspace.copy(
-            interruptedTurn = InterruptedTurn(prompt, partial.answer, partial.summary, error, media),
-        ))
+        canContinue = true
+        val turn = InterruptedTurn(
+            prompt = prompt,
+            reply = partial?.answer.orEmpty(),
+            reasoningSummary = if (config.sdk.saveReasoning) partial?.summary.orEmpty() else "",
+            error = error,
+            media = media,
+            history = history,
+            containerId = if (keepContainer) parts.lastOrNull { it.discoveredContainerId != null }?.discoveredContainerId
+                ?: runSpace.containerId.takeIf { continues > 0 } else null,
+            shellSteps = parts.flatMap { it.shellSteps },
+            searchQueries = parts.flatMap { it.searchQueries }.distinct(),
+            citations = (parts.flatMap { it.citations } + partial?.sources.orEmpty()).distinctBy { it.url },
+            toolActivity = partial?.tools.orEmpty().map { ToolActivity(it.name, it.status, it.detail) },
+            generated = parts.flatMap { it.media },
+            usage = partial?.usage,
+        )
+        val snapshot = scopedWorkspace(base.copy(interruptedTurn = turn))
         workspace = snapshot
         withContext(NonCancellable) {
             try {
@@ -1223,15 +1343,18 @@ class AgentViewModel internal constructor(
     }
 
     private fun showWorkspace(saved: Workspace) {
-        workspace = saved
-        val previous = saved.interruptedTurn
-        promptText = previous?.prompt.orEmpty()
-        pendingMedia = previous?.media.orEmpty()
-        turnError = previous?.error
-        interrupted = previous?.let {
-            AgentProgress(SystemClock.elapsedRealtime(), answer = it.reply, summary = it.reasoningSummary)
+        // A turn still marked pending was cut off when the app closed mid-run.
+        val previous = saved.interruptedTurn?.let {
+            if (it.pending) it.copy(pending = false, error = APP_CLOSED_MID_RUN) else it
         }
+        workspace = saved.copy(interruptedTurn = previous)
+        promptText = ""
+        pendingMedia = emptyList()
+        turnError = previous?.error
+        interrupted = previous?.let { stoppedProgress(it, SystemClock.elapsedRealtime()) }
+        canContinue = previous != null
         retryPrompt = previous?.prompt
+        retryMedia = previous?.media.orEmpty()
     }
 
     fun exportFile(uri: Uri, containerId: String, fileId: String) {

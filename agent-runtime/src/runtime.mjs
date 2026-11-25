@@ -11,6 +11,7 @@ import { githubToolNames, githubTools } from './github-tools.mjs';
 import { bodyBuilderName, bodyBuilderTool } from './body-builder.mjs';
 import { createMCPTools } from '@openrouter/mcp';
 import { promptContent } from './media.mjs';
+import { runCheckpoint } from './checkpoint.mjs';
 import { z } from 'zod';
 
 const allowedServerTools = new Set([
@@ -239,16 +240,33 @@ export async function runAgent(options, events, signal, createClient = opts => n
     let savedState = loadedState;
     const state = {
       load: async () => savedState,
-      save: async value => { savedState = value; },
+      save: async value => { savedState = value; events.progressed?.(); },
     };
+    const items = new Map();
+    let itemNumber = 0;
+    // What a failed or stopped run had done, so the app can keep it and continue from there in a fresh request.
+    events.checkpoint?.(() => {
+      const start = [...previousMessages,
+        { type: 'message', role: 'user', content: promptContent(options.prompt, options.promptParts) }];
+      const saved = savedState && savedState !== loadedState ? savedState.messages : undefined;
+      const { history, progressed } = runCheckpoint(start, saved, Array.from(items.values()));
+      return {
+        progressed,
+        history,
+        response: normalize({
+          status: 'incomplete',
+          model: options.model,
+          output: Array.from(items.values()),
+          usage: Object.keys(workerUsage).length ? workerUsage : undefined,
+        }),
+      };
+    });
     observe.phase('requesting');
     result = client.callModel({
       ...buildCall({ ...options, history: previousMessages }, tools, events.approval, signal, observe, workerUsage),
       state,
     }, { signal, retries: { strategy: 'none' } });
     events.register?.(result);
-    const items = new Map();
-    let itemNumber = 0;
     // Let the live consumers own the SDK run. Read the completed response after they drain.
     await Promise.all([
       (async () => {
@@ -257,6 +275,7 @@ export async function runAgent(options, events, signal, createClient = opts => n
       (async () => {
         for await (const item of result.getItemsStream()) {
           items.set(item.id ?? (item.callId ? item.type + ':' + item.callId : ++itemNumber), item);
+          events.progressed?.();
           const name = eventLabel(item);
           if (name) events.activity?.(name);
         }

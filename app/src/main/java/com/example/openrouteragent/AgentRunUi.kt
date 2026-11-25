@@ -118,7 +118,7 @@ internal fun AgentRunStatus(
 @Composable
 internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = false, showReasoning: Boolean = false,
     onShowReasoning: ((Boolean) -> Unit)? = null, renderMarkdown: Boolean = true, onRetry: (() -> Unit)? = null,
-    onRetryWithoutTools: (() -> Unit)? = null, onActivity: (() -> Unit)? = null) {
+    onRetryWithoutTools: (() -> Unit)? = null, onActivity: (() -> Unit)? = null, onContinue: (() -> Unit)? = null) {
     // Interrupted turns restored from storage have no timeline, only the joined text.
     val blocks = progress.timeline.ifEmpty {
         listOfNotNull(progress.summary.takeIf { it.isNotBlank() }?.let { LiveBlock.Thinking(it) },
@@ -151,6 +151,7 @@ internal fun LiveAgentReply(progress: AgentProgress, interrupted: Boolean = fals
         }
         if (interrupted) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                onContinue?.let { TextButton(onClick = it) { Text("Continue") } }
                 onRetry?.let { TextButton(onClick = it) { Text("Retry") } }
                 onRetryWithoutTools?.let { TextButton(onClick = it) { Text("Retry without tools") } }
             }
@@ -209,14 +210,15 @@ private fun ThinkingBlock(text: String, live: Boolean, show: Boolean, onShow: ((
     }
 }
 
-private val finishedToolStatuses = setOf("completed", "failed", "cancelled", "timed_out", "expired", "incomplete", "declined")
+private val finishedToolStatuses = setOf("completed", "failed", "cancelled", "timed_out", "expired", "incomplete", "declined",
+    "stopped")
 
 /** One tool call in the live timeline: a spinner while it runs, its streaming input or result underneath. */
 @Composable
 private fun LiveToolRow(tool: LiveTool) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val active = tool.status !in finishedToolStatuses
-    val failed = tool.status in setOf("failed", "cancelled", "timed_out", "expired", "declined")
+    val failed = tool.status in setOf("failed", "cancelled", "timed_out", "expired", "declined", "stopped")
     Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { expanded = !expanded }.padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.padding(top = 2.dp).size(16.dp), contentAlignment = Alignment.Center) {
@@ -354,6 +356,7 @@ internal fun AgentProgress.status(providerName: String = "OpenRouter"): String =
     }
     "answering" -> "Streaming reply"
     "finishing" -> "Saving reply"
+    "continuing" -> "Request stopped · continuing from saved progress" + detail?.let { " ($it)" }.orEmpty()
     "repetition" -> "Agent detected repeating steps"
     else -> "Waiting for updates"
 }

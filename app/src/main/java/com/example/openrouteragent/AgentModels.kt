@@ -240,10 +240,27 @@ fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, e
     openAiWebSearch = false, openAiImageGeneration = false, openAiCodeInterpreter = false, openAiFileSearchStores = "", mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
     sdk = sdk.copy(discoverSkills = false, toolChoice = "none"))
 
+/**
+ * A turn that failed or was stopped. It shows with the user's message and what the agent had done, and moves into
+ * [Workspace.messages] when the next message is sent, so a failed run never drops the chat.
+ */
 @Serializable
 data class InterruptedTurn(
     val prompt: String, val reply: String, val reasoningSummary: String, val error: String?,
     val media: List<ChatMedia> = emptyList(),
+    /** The conversation up to the stop as SDK history, so the next message continues from it. */
+    val history: String? = null,
+    /** The sandbox the run was using, so its files stay with the chat. */
+    val containerId: String? = null,
+    val shellSteps: List<ShellExecutionStep> = emptyList(),
+    val searchQueries: List<String> = emptyList(),
+    val citations: List<WebCitation> = emptyList(),
+    val toolActivity: List<ToolActivity> = emptyList(),
+    /** Images the run made before it stopped. */
+    val generated: List<ChatMedia> = emptyList(),
+    val usage: TokenUsage? = null,
+    /** True while the run is still going: the app saves the turn as it starts, so closing the app can't lose it. */
+    val pending: Boolean = false,
 )
 
 fun AgentConfig.agentToolsEnabled(): Boolean =

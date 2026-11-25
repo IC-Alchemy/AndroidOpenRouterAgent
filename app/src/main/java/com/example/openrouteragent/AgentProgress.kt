@@ -106,6 +106,30 @@ internal data class AgentProgress(
 
 private const val STREAM_GAP_MS = 2_000L
 
+private val runningToolStates = setOf("preparing", "in_progress", "searching", "running", "running in background",
+    "generating", "awaiting approval")
+
+/** The run is being continued in a fresh request; tools that were still running when it stopped are marked so. */
+internal fun AgentProgress.continuing(attempt: Int, limit: Int): AgentProgress = stopped().copy(
+    phase = "continuing", detail = "$attempt of $limit", revision = revision + 1)
+
+/** The progress of a run that ended early: tools still marked as running are shown as stopped. */
+internal fun AgentProgress.stopped(): AgentProgress =
+    copy(tools = tools.map { if (it.status in runningToolStates) it.copy(status = "stopped") else it })
+
+/** Rebuilds what a stopped reply showed from its saved turn, for when the chat is opened again. */
+internal fun stoppedProgress(turn: InterruptedTurn, now: Long): AgentProgress {
+    val tools = turn.toolActivity.mapIndexed { index, tool -> LiveTool("saved-$index", tool.name, tool.status, tool.detail) }
+    val timeline = buildList<LiveBlock> {
+        if (turn.reasoningSummary.isNotBlank()) add(LiveBlock.Thinking(turn.reasoningSummary.takeLast(MAX_BLOCK_TEXT)))
+        tools.forEach { add(LiveBlock.ToolCall(it.id)) }
+        if (turn.reply.isNotBlank()) add(LiveBlock.Answer(turn.reply.takeLast(MAX_BLOCK_TEXT)))
+    }
+    val dropped = (timeline.size - MAX_BLOCKS).coerceAtLeast(0)
+    return AgentProgress(now, answer = turn.reply, summary = turn.reasoningSummary, tools = tools.takeLast(MAX_BLOCKS),
+        sources = turn.citations, usage = turn.usage, timeline = timeline.drop(dropped), timelineOffset = dropped).stopped()
+}
+
 private fun AgentProgress.withTimeline(next: List<LiveBlock>): AgentProgress {
     val dropped = (next.size - MAX_BLOCKS).coerceAtLeast(0)
     return copy(timeline = next.drop(dropped), timelineOffset = timelineOffset + dropped)
