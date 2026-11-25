@@ -71,7 +71,7 @@ In Settings, **Decisions (openrouter_decide)** gives the agent a tool for the sa
 
 ## Side conversation
 
-Tap the **side conversation** button in the top bar (or **Configure → Side conversation**) to open a panel that slides in over the main chat. It is a separate conversation: the main chat keeps running underneath, and a side message never waits for, stops, or writes to the main chat.
+Tap the small **side conversation** button beside the message box, or type **/side** or **/btw** there, to open a panel that slides in over the main chat. **/btw your question** (or **/side your question**) opens the panel and sends the question there at once; nothing is sent to the main chat. It is a separate conversation: the main chat keeps running underneath, and a side message never waits for, stops, or writes to the main chat. While the main chat is running, the message box still takes **/btw** and **/side**; other text waits there until the run ends.
 
 - **Include main chat context** is on by default. Each side message then carries a read-only copy of the open main chat, including a main chat message still waiting for its reply (newest messages first, up to about 60,000 characters). Turn it off to ask without it.
 - Side messages use the model chosen for the main chat, as plain chat without tools. OpenRouter models go to OpenRouter with the OpenRouter key; `openai-direct/` models go to api.openai.com with the OpenAI key. On-device moderation applies when it is on.

@@ -217,6 +217,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     }
 
     fun send(text: String) {
+        // Slash commands such as /btw are handled here and never reach the main chat.
+        if (agent.runSlashCommand(text)) return
         when {
             !agent.providerReady -> showSettings = true
             model == null -> showModels = true
@@ -290,18 +292,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                 )
                                 Spacer(Modifier.width(4.dp))
                             }
-                            // The side conversation stays available while the main chat runs.
-                            ControlTooltip("Side conversation") {
-                                IconButton(enabled = !agent.isLoading, onClick = agent.side::open) {
-                                    Box {
-                                        Icon(StudioSymbols.SideConversation, contentDescription = "Side conversation")
-                                        if (agent.side.isRunning || agent.side.unread) {
-                                            StudioStatusDot(color = MaterialTheme.colorScheme.primary, size = 6.dp,
-                                                modifier = Modifier.align(Alignment.TopEnd))
-                                        }
-                                    }
-                                }
-                            }
                             SymbolAction(
                                 label = "Chats", icon = StudioSymbols.Chats,
                                 enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
@@ -369,11 +359,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                         showConfigure = false
                                         showMiniApps = true
                                     })
-                                    DropdownMenuItem(text = { Text("Side conversation") },
-                                        leadingIcon = { Icon(StudioSymbols.SideConversation, null) }, onClick = {
-                                        showConfigure = false
-                                        agent.side.open()
-                                    })
                                     DropdownMenuItem(text = { Text("Decisions") },
                                         leadingIcon = { Icon(StudioSymbols.Decisions, null) }, onClick = {
                                         showConfigure = false
@@ -416,6 +401,12 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                         onAttach = attach,
                         canAttachImages = model?.accepts("image") != false,
                         importing = agent.isImporting,
+                        placeholder = if (isRunning) "Type /btw to ask on the side" else null,
+                        onSideConversation = agent.side::open,
+                        sideConversationBusy = agent.side.isRunning || agent.side.unread,
+                        // During a main run the field takes only slash commands, so /btw works while the chat continues.
+                        acceptsInputWhileRunning = true,
+                        sendWhileRunning = isRunning && SlashCommands.parse(agent.promptText) != null,
                     )
                 }
             }

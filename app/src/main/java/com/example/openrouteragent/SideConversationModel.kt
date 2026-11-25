@@ -84,16 +84,30 @@ internal class SideConversationModel(
         includeMainContext = true
     }
 
-    /** Sends [prompt]. [context] is the main chat, or null when it isn't included. */
-    fun send(target: SideTarget, context: MainChatContext?, moderator: TextModerator?) {
-        val text = prompt.trim()
-        if (text.isEmpty() || isRunning) return
+    /** Puts [text] in the side composer after any draft there, so it isn't lost when it can't be sent now. */
+    fun keepPrompt(text: String) {
+        val typed = text.trim()
+        if (typed.isNotEmpty()) prompt = listOf(prompt.trim(), typed).filter(String::isNotEmpty).joinToString("\n")
+    }
+
+    /**
+     * Sends [typed], or the side composer's [prompt] when it is null. [context] is the main chat, or null when it isn't
+     * included. Text typed elsewhere (such as "/btw …" in the main composer) leaves the side composer's draft alone, and
+     * waits there when a side reply is still running.
+     */
+    fun send(target: SideTarget, context: MainChatContext?, moderator: TextModerator?, typed: String? = null) {
+        val text = (typed ?: prompt).trim()
+        if (text.isEmpty()) return
+        if (isRunning) {
+            if (typed != null) keepPrompt(typed)
+            return
+        }
         val history = messages.filter { !it.isError && !it.isModerated }.map { SideTextMessage(it.isUser, it.text) } +
             SideTextMessage(true, text)
         val run = generation
         val question = ChatEntry(isUser = true, text = text)
         error = null
-        prompt = ""
+        if (typed == null) prompt = ""
         liveText = ""
         startedAt = clock()
         pendingPrompt = text

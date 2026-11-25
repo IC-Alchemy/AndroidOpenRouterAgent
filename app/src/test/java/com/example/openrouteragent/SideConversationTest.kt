@@ -288,6 +288,38 @@ class SideConversationModelTest {
     }
 
     @Test
+    fun typedTextIsSentWithoutTouchingTheSideDraft() {
+        val scope = TestScope(StandardTestDispatcher())
+        val fake = FakeStream()
+        val side = SideConversationModel(scope, fake.streamer, clock = { 0L })
+        side.prompt = "draft"
+        side.send(openRouter, null, null, typed = "  from /btw  ")
+        assertEquals("draft", side.prompt)
+        assertEquals("from /btw", side.pendingPrompt)
+        scope.advanceUntilIdle()
+        assertEquals(listOf("from /btw", "Hi there"), side.messages.map { it.text })
+        assertEquals("draft", side.prompt)
+    }
+
+    @Test
+    fun typedTextWaitsInTheSideComposerWhileAReplyRuns() {
+        val scope = TestScope(StandardTestDispatcher())
+        val fake = FakeStream()
+        fake.reply = { awaitCancellation() }
+        val side = SideConversationModel(scope, fake.streamer, clock = { 0L })
+        side.prompt = "first"
+        side.send(openRouter, null, null)
+        scope.advanceUntilIdle()
+        side.send(openRouter, null, null, typed = "second")
+        assertEquals(1, fake.calls.size)
+        assertEquals("second", side.prompt)
+        side.keepPrompt("third")
+        assertEquals("second\nthird", side.prompt)
+        side.stop()
+        scope.advanceUntilIdle()
+    }
+
+    @Test
     fun stopKeepsThePartialReply() {
         val scope = TestScope(StandardTestDispatcher())
         val fake = FakeStream()
