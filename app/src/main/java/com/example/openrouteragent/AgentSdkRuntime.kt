@@ -58,7 +58,11 @@ internal open class AgentSdkRuntime(private val context: Context) {
         val onAppAction: (suspend (String, JSONObject) -> JSONObject)?,
         val miniApps: MiniAppTools?,
         val localScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        /** Set when the decision tool is on: the default model and the photos and recordings sent with the prompt. */
+        val decisions: DecisionToolRun? = null,
     )
+
+    private data class DecisionToolRun(val model: String, val chatId: String, val media: List<ChatMedia>)
 
     private val main = Handler(Looper.getMainLooper())
     private val transport = AgentHttpTransport()
@@ -72,6 +76,8 @@ internal open class AgentSdkRuntime(private val context: Context) {
     // The run and chat whose media the runtime may read and save. Read on the JavaScript bridge thread.
     @Volatile private var mediaRun: Pair<String, String>? = null
     private val media = chatMediaStore(context)
+    private val decisionsClient = OpenRouterDecisionsClient()
+    private val decisionReader = DecisionMediaReader(context.applicationContext)
 
     open suspend fun run(
         settings: AgentConfig,
@@ -97,6 +103,9 @@ internal open class AgentSdkRuntime(private val context: Context) {
                 repository = miniAppRepository(context),
                 libraries = MiniAppLibraries(File(context.applicationContext.cacheDir, "miniapp-libraries")),
                 renderIcon = { svg, color, name -> MiniAppIconRenderer.renderSvgToPng(svg, color, name) },
+            ) else null,
+            decisions = if (decisionToolEnabled(settings)) DecisionToolRun(
+                settings.decisionModel.ifBlank { DEFAULT_DECISION_MODEL }, workspace.id, files.media.map { it.media },
             ) else null)
         try {
             val runtime = view ?: createWebView()
@@ -152,6 +161,35 @@ internal open class AgentSdkRuntime(private val context: Context) {
         (runtime.parent as? ViewGroup)?.removeView(runtime)
         container.addView(runtime, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
+
+    /**
+     * Runs the agent's openrouter_decide tool. It is an "ask" tool in the runtime, so its answer goes back through
+     * decide(), here straight from the decision model, without a dialog.
+     */
+    private fun decisionToolCall(runtime: WebView, runId: String, decision: String, args: JSONObject) {
+        main.post {
+            val run = activeRun ?: return@post
+            if (runtime !== view || run.id != runId || run.completion.isCompleted) return@post
+            val setup = run.decisions
+            run.localScope.launch {
+                val reply = try {
+                    if (setup == null) throw IOException("The decision tool is turned off in Settings.")
+                    val attached = if (args.optBoolean("attached")) decisionReader.fromChat(media, setup.chatId, setup.media)
+                        else emptyList()
+                    val ask = decisionAskFromTool(args, setup.model, attached)
+                    ask.problem()?.let { throw IOException(it) }
+                    decisionToolReply(ask, decisionsClient.decide(run.apiKey, ask))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    decisionToolError(error.userMessage(run.apiKey))
+                }
+                main.post {
+                    if (runtime === view && activeRun?.id == run.id) dispatch(runtime, "decide", run.id, decision, true, reply)
+                }
+            }
+        }
     }
 
     fun decide(decision: String, accept: Boolean, answer: String) {
@@ -335,6 +373,11 @@ internal open class AgentSdkRuntime(private val context: Context) {
                     }
                     "approval" -> {
                         val value = event.getJSONObject("value")
+                        if (value.optBoolean("asksUser") && value.optString("name") == DECISION_TOOL_NAME) {
+                            val decision = value.getString("decision")
+                            val args = value.optJSONObject("args") ?: JSONObject()
+                            return@post decisionToolCall(runtime, id, decision, args)
+                        }
                         val approval = ToolApproval(value.getString("decision"), value.getString("name"),
                             value.getJSONObject("args").toString(2), value.optString("url"), value.optBoolean("asksUser"),
                             value.optBoolean("savesSettings"))
@@ -449,6 +492,6 @@ internal fun runtimeOptions(
         .put("modelDetails", modelDetails)
         .put("customTools", JSONArray(effectiveTools.map {
             JSONObject(Json.encodeToString(CustomAgentTool.serializer(), it))
-        }))
+        } + listOfNotNull(decisionToolSpec().takeIf { decisionToolEnabled(config) })))
         .put("skills", JSONArray(skills.map { JSONObject(Json.encodeToString(SavedAgentSkill.serializer(), it)) }))
 }

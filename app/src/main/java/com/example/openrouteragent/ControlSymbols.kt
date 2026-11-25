@@ -163,6 +163,11 @@ internal object StudioSymbols {
     val Export = symbol("Export", "M3 14 V20 H21 V14 M12 15 V4 M8 8 L12 4 L16 8")
     val Detach = symbol("Detach", "M4 12 H10 M14 12 H20 M9 8 L13 4 M11 20 L15 16")
     val MiniApps = symbol("Mini apps", "M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z")
+    val Decisions = symbol("Decisions", "M12 22 V14 M12 14 L7 9 M12 14 L17 9 M4 6.5 A3 3 0 1 0 10 6.5 " +
+        "A3 3 0 1 0 4 6.5 M14 6.5 A3 3 0 1 0 20 6.5 A3 3 0 1 0 14 6.5")
+    val Video = symbol("Video", "M3 6 H15 V18 H3 Z M15 10 L21 7 V17 L15 14")
+    val Audio = symbol("Audio", "M9 18 V5 L20 3 V16 M9 18 A3 3 0 1 1 3 18 A3 3 0 1 1 9 18 M20 16 A3 3 0 1 1 14 16 " +
+        "A3 3 0 1 1 20 16")
     val NewMiniApp = symbol("Create mini app", "M4 4 H10 V10 H4 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z M14 7 H20 M17 4 V10")
 
     val Attach = symbol("Attach", "M16 7 V16 A4 4 0 0 1 8 16 V6 A2.5 2.5 0 0 1 13 6 V15 A1 1 0 0 1 11 15 V8")

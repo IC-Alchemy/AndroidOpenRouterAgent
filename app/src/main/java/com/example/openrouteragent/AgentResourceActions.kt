@@ -7,7 +7,7 @@ import org.json.JSONObject
 internal data class ResourceChange(val config: AgentConfig, val result: JSONObject)
 
 internal val RESERVED_CUSTOM_TOOL_NAMES = setOf("shared", "task", "create_subagent", "create_custom_tool",
-    "create_skill", "enable_server_tool") + projectFileActions + githubActions
+    "create_skill", "enable_server_tool", DECISION_TOOL_NAME) + projectFileActions + githubActions
 
 internal fun prepareResourceAction(config: AgentConfig, name: String, args: JSONObject): ResourceChange {
     val change = when (name) {
