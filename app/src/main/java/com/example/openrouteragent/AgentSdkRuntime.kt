@@ -49,6 +49,7 @@ internal open class AgentSdkRuntime(private val context: Context) {
     private data class ActiveRun(
         val id: String,
         val completion: CompletableDeferred<SdkRunResult>,
+        /** The key sent with agent requests: the OpenRouter key, or the OpenAI key on OpenAI (direct) runs. */
         val apiKey: String,
         val model: String,
         val idleSeconds: Long,
@@ -60,6 +61,10 @@ internal open class AgentSdkRuntime(private val context: Context) {
         val localScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         /** Set when the decision tool is on: the default model and the photos and recordings sent with the prompt. */
         val decisions: DecisionToolRun? = null,
+        /** The OpenRouter key, for OpenRouter features such as the decision tool. Blank when none is saved. */
+        val openRouterKey: String = apiKey,
+        /** Set on OpenAI (direct) runs: OpenAI's hosted tools to add to each request. */
+        val openAi: OpenAiHostedTools? = null,
     )
 
     private data class DecisionToolRun(val model: String, val chatId: String, val media: List<ChatMedia>)
@@ -92,11 +97,19 @@ internal open class AgentSdkRuntime(private val context: Context) {
         onAppAction: (suspend (String, JSONObject) -> JSONObject)? = null,
     ): SdkRunResult = withContext(Dispatchers.Main.immediate) {
         check(activeRun == null)
+        val direct = isOpenAiModel(model.id)
+        if (direct && settings.openAiKey.isBlank()) {
+            throw IOException("Add your OpenAI API key in Settings to use ${model.name}.")
+        }
+        if (!direct && settings.apiKey.isBlank()) {
+            throw IOException("Add your OpenRouter API key in Settings to use ${model.name}, or choose an OpenAI (direct) model.")
+        }
         approvedToolOrigins = if (settings.sdk.toolChoice == "none") emptySet() else
             (listOf(settings.mcpUrl) + settings.customTools.filter { it.enabled && it.handler == "webhook" }
                 .map { it.value }).mapNotNull { it.toHttpUrlOrNull() }
                 .map { Triple(it.scheme, it.host, it.port) }.toSet()
-        val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(), settings.apiKey, model.id,
+        val run = ActiveRun(UUID.randomUUID().toString(), CompletableDeferred(),
+            if (direct) settings.openAiKey.trim() else settings.apiKey, model.id,
             settings.sdk.streamIdleSeconds?.toLong() ?: DEFAULT_STREAM_IDLE_SECONDS, onUpdate, onApproval,
             CoroutineScope(coroutineContext + SupervisorJob(coroutineContext[Job])), onAppAction,
             miniApps = if (settings.miniApps && settings.sdk.toolChoice != "none") MiniAppTools(
@@ -104,9 +117,11 @@ internal open class AgentSdkRuntime(private val context: Context) {
                 libraries = MiniAppLibraries(File(context.applicationContext.cacheDir, "miniapp-libraries")),
                 renderIcon = { svg, color, name -> MiniAppIconRenderer.renderSvgToPng(svg, color, name) },
             ) else null,
-            decisions = if (decisionToolEnabled(settings)) DecisionToolRun(
+            decisions = if (decisionToolEnabled(settings) && settings.apiKey.isNotBlank()) DecisionToolRun(
                 settings.decisionModel.ifBlank { DEFAULT_DECISION_MODEL }, workspace.id, files.media.map { it.media },
-            ) else null)
+            ) else null,
+            openRouterKey = settings.apiKey,
+            openAi = if (direct) settings.openAiHostedTools() else null)
         try {
             val runtime = view ?: createWebView()
             try {
@@ -117,7 +132,11 @@ internal open class AgentSdkRuntime(private val context: Context) {
             activeRun = run
             mediaRun = run.id to workspace.id
             val request = withContext(Dispatchers.Default) {
-                runtimeOptions(settings, workspace, prompt, model, catalog, guide, files, onAppAction != null).put("id", run.id)
+                // OpenAI runs get settings without OpenRouter-only tools, and a placeholder key: the WebView never
+                // holds the OpenAI key, Android adds it to each request.
+                val runSettings = if (direct) settings.forOpenAiRun().copy(
+                    decisionsTool = run.decisions != null && settings.decisionsTool) else settings
+                runtimeOptions(runSettings, workspace, prompt, model, catalog, guide, files, onAppAction != null).put("id", run.id)
             }
             runtime.evaluateJavascript(
                 "typeof globalThis.AgentRuntime?.start === 'function' && " +
@@ -179,11 +198,11 @@ internal open class AgentSdkRuntime(private val context: Context) {
                         else emptyList()
                     val ask = decisionAskFromTool(args, setup.model, attached)
                     ask.problem()?.let { throw IOException(it) }
-                    decisionToolReply(ask, decisionsClient.decide(run.apiKey, ask))
+                    decisionToolReply(ask, decisionsClient.decide(run.openRouterKey, ask))
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
-                    decisionToolError(error.userMessage(run.apiKey))
+                    decisionToolError(error.userMessage(run.openRouterKey).redact(run.apiKey))
                 }
                 main.post {
                     if (runtime === view && activeRun?.id == run.id) dispatch(runtime, "decide", run.id, decision, true, reply)
@@ -293,9 +312,23 @@ internal open class AgentSdkRuntime(private val context: Context) {
                     dispatch(runtime, "http", runId, requestId, "error", "The OpenRouter request is too large or invalid.")
                     return@post
                 }
+                val hosted = run.openAi
+                if (hosted != null && route != AgentEndpoint.Responses) {
+                    dispatch(runtime, "http", runId, requestId, "error",
+                        "This tool uses OpenRouter, so it isn't available with OpenAI (direct) models.")
+                    return@post
+                }
+                val sent = if (hosted == null) body else try {
+                    openAiRequestBody(body, hosted)
+                } catch (e: Exception) {
+                    dispatch(runtime, "http", runId, requestId, "error",
+                        "Android could not prepare the OpenAI request. ${e.message ?: ""}".trim())
+                    return@post
+                }
                 val model = if (route == AgentEndpoint.Responses) run.model else
                     runCatching { JSONObject(body).optString("model").takeIf(String::isNotBlank) }.getOrNull()
-                transport.start(runId, requestId, run.apiKey, body, model, run.idleSeconds, route) { kind, value ->
+                transport.start(runId, requestId, run.apiKey, sent, model, run.idleSeconds, route,
+                    if (hosted == null) AgentTarget.OpenRouter else AgentTarget.OpenAi) { kind, value ->
                     main.post {
                         if (runtime === view && activeRun?.id == runId) {
                             dispatch(runtime, "http", runId, requestId, kind, value)
@@ -400,7 +433,8 @@ internal open class AgentSdkRuntime(private val context: Context) {
                                     throw error
                                 } catch (error: Exception) {
                                     if (activeRun === run && runtime === view) {
-                                        dispatch(runtime, "appResult", run.id, request, false, error.userMessage(run.apiKey))
+                                        dispatch(runtime, "appResult", run.id, request, false,
+                                            error.userMessage(run.apiKey).redact(run.openRouterKey))
                                     }
                                 }
                             }
@@ -471,7 +505,9 @@ internal fun runtimeOptions(
         .put("dateTime", config.enableDateTime).put("webFetch", config.webFetch).put("deviceTools", config.deviceTools)
         .put("workspaceFiles", config.enableWorkspaceFiles).put("projectFolder", files.projectFolder)
         .put("appActions", appActions).put("github", appActions && files.github)
-        .put("bodyBuilderModels", JSONArray(if (appActions && model.supportsTools) catalog.map { it.id } else emptyList()))
+        // Body Builder runs OpenRouter models through OpenRouter, so it is left out of OpenAI (direct) runs.
+        .put("bodyBuilderModels", JSONArray(if (appActions && model.supportsTools && !isOpenAiModel(model.id))
+            catalog.map { it.id }.filterNot(::isOpenAiModel) else emptyList()))
         .put("fileIds", JSONArray(files.attachments.map { it.id }))
         .put("attachmentNames", JSONArray(files.attachments.map { it.id.takeLast(8) + "-" + it.filename.substringAfterLast('/') }))
         .put("attachments", JSONArray(files.media.map { (item, text) ->

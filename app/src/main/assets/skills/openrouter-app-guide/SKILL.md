@@ -9,7 +9,7 @@ Use these instructions to answer questions about the app's controls. Mention the
 
 ## Get started
 
-1. Open Settings and tap Sign in with OpenRouter, approve the key in the browser, return to the app, and tap Save. You can also paste a key.
+1. Open Settings and tap Sign in with OpenRouter, approve the key in the browser, return to the app, and tap Save. You can also paste a key. To use OpenAI models with your own OpenAI key, paste it under Settings → OpenAI (direct) and tap Save. You can use either key or both.
 2. Tap Models to find a model from the authenticated catalog. Switch off tools if you want to use a model that only supports text.
 3. Send a prompt. The status above the composer shows the current phase. The info icon opens run activity, including tools, sources, and reported usage. The down arrow jumps to the latest reply.
 
@@ -26,6 +26,15 @@ Use these instructions to answer questions about the app's controls. Mention the
 - When asked to create a subagent, custom tool, or skill, or enable a supported OpenRouter server tool, use the app's resource tools. After the user approves the change, check the tool result to confirm it was saved. The resource is available on the next message.
 - Keep the initial model and follow-up models compatible with the requested tools and structured output. Feature availability is drawn from OpenRouter's model metadata and affected by provider routing.
 - Cost and total-token thresholds are evaluated between steps. A step in flight can cross a threshold. The per-response output limit separately controls each model response.
+
+## OpenAI (direct) models
+
+- With an OpenAI key in Settings → OpenAI (direct), Models also lists OpenAI's models as openai-direct/… (for example openai-direct/gpt-5). These runs go straight to api.openai.com with the OpenAI key and are billed by OpenAI. The OpenRouter key is never sent to OpenAI, and the OpenAI key is never sent to OpenRouter.
+- The app's own tools work with OpenAI models: device time zone, mini apps, skills, custom tools, subagents, GitHub and project file functions, and remote MCP with approvals.
+- OpenAI's built-in tools are switched in Settings → OpenAI (direct): web search (web_search), image generation (image_generation, using the aspect ratio and quality there), code interpreter (code_interpreter) and file search (file_search, with up to 10 vector store IDs like vs_abc123).
+- These are OpenRouter only and are skipped for OpenAI models: the openrouter:… tools (hosted sandbox, web search, date and time, web fetch, advisor, fusion, model search), OpenRouter image generation, Workspace files, OpenRouter plugins, provider routing, fallback models, workspaces and guardrails. The Decisions tool and Configure → Decisions still work when an OpenRouter key is saved, and are billed by OpenRouter. Create with AI for skills, tools and mini apps needs an OpenRouter model.
+- OpenAI doesn't report cost, so the cost line shows tokens only and the USD stop threshold can't stop an OpenAI run. Use the step limit instead.
+- If OpenAI says the key is wrong, out of quota or not allowed a model, fix it on OpenAI's site. Test OpenAI key in Settings checks the key without spending anything.
 
 ## Work in the background
 

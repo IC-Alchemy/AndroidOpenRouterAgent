@@ -225,6 +225,7 @@ internal fun SdkSettingsSheet(
                         Field("stops", "Stop sequences", "Up to four sequences, one per line.", 3)
                     }
                     "routing" -> {
+                        OpenRouterOnlyNote()
                         Options("route", "Provider routing", ROUTING_OPTIONS, ROUTING_DESCRIPTIONS)
                         if (routedPrice != null) {
                             // The price follows the unsaved routing fields, so it changes as they are edited.

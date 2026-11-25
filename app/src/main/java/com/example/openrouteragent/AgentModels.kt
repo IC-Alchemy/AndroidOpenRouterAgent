@@ -16,6 +16,19 @@ data class AgentConfig(
     val workspaceId: String = "",
     /** API keys saved per workspace ID, so switching workspace also switches where chats are billed. */
     val workspaceKeys: Map<String, String> = emptyMap(),
+    /**
+     * The user's own OpenAI API key, for OpenAI models used directly (model IDs starting with "openai-direct/").
+     * Stored encrypted like [apiKey] and only ever sent to api.openai.com.
+     */
+    val openAiKey: String = "",
+    /** OpenAI's hosted web_search tool, on runs with OpenAI (direct) models. */
+    val openAiWebSearch: Boolean = true,
+    /** OpenAI's hosted image_generation tool, on runs with OpenAI (direct) models. Uses the image aspect and quality. */
+    val openAiImageGeneration: Boolean = false,
+    /** OpenAI's hosted code_interpreter tool (a Python sandbox OpenAI creates per chat), on OpenAI (direct) runs. */
+    val openAiCodeInterpreter: Boolean = false,
+    /** OpenAI vector store IDs (vs_…) for OpenAI's hosted file_search tool, separated by commas. Empty turns it off. */
+    val openAiFileSearchStores: String = "",
     val sdk: SdkSettings = SdkSettings(),
     val customTools: List<CustomAgentTool> = emptyList(),
     val savedSkills: List<SavedAgentSkill> = emptyList(),
@@ -190,6 +203,9 @@ fun AgentConfig.settingsError(): String? = when {
         it.password.isEmpty() && it.fragment == null } != true -> "Enter an HTTPS MCP endpoint without URL credentials."
     mcpToken.trim().any { it.code !in 33..126 } -> "Enter an MCP token without spaces."
     mcpToken.isNotBlank() && mcpToken.trim() == apiKey.trim() -> "Use a separate token for the MCP server."
+    openAiKey.trim().any { it.code !in 33..126 } -> "Enter an OpenAI API key without spaces."
+    openAiKey.isNotBlank() && openAiKey.trim() == apiKey.trim() -> "The OpenAI key and the OpenRouter key must be different."
+    vectorStoreIdsError(openAiFileSearchStores) != null -> vectorStoreIdsError(openAiFileSearchStores)
     managementKey.trim().any { it.code !in 33..126 } -> "Enter a management key without spaces."
     managementKey.isNotBlank() && managementKey.trim() == apiKey.trim() ->
         "A management key can't send chats. Use a regular API key for chats."
@@ -220,7 +236,8 @@ data class Workspace(
 /** The settings for a message sent in chat mode, or retried without tools: every tool and tool source is off. */
 fun AgentConfig.withoutTools(): AgentConfig = copy(enableShellSandbox = false, enableWebSearch = false, imageGeneration = false,
     enableDateTime = false, webFetch = false, deviceTools = false, enableWorkspaceFiles = false,
-    advisorTool = false, fusionTool = false, modelSearchTool = false, decisionsTool = false, miniApps = false, mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
+    advisorTool = false, fusionTool = false, modelSearchTool = false, decisionsTool = false, miniApps = false,
+    openAiWebSearch = false, openAiImageGeneration = false, openAiCodeInterpreter = false, openAiFileSearchStores = "", mcpUrl = "", mcpToken = "", extraToolsJson = "", customTools = emptyList(),
     sdk = sdk.copy(discoverSkills = false, toolChoice = "none"))
 
 @Serializable

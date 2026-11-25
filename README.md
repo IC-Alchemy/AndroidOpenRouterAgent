@@ -14,6 +14,23 @@ SQLite stores saved chats on the phone, including OpenRouter agent state and too
 
 **Sign in with OpenRouter** uses OpenRouter's [OAuth PKCE flow](https://openrouter.ai/docs/guides/overview/auth/oauth). The app opens the OpenRouter authorization page in your browser. After you approve, the browser returns to a one-time listener on `127.0.0.1`, which closes after one sign-in or 10 minutes. The app checks the random `state`, exchanges the code with its PKCE verifier, and fills in the new key. Tap **Return to the app** on the success page, then **Save**. The key is stored with Android Keystore like a pasted key. Manage or revoke it in your OpenRouter key settings.
 
+## Use OpenAI models with your own key
+
+Settings → **OpenAI (direct)** takes an OpenAI API key (stored encrypted with the Android Keystore,
+like the OpenRouter key). Its models appear in Models as `openai-direct/…` and run against
+`https://api.openai.com/v1/responses` with that key, billed by OpenAI. Each key only ever goes to its own host.
+
+- The app's function tools (time zone, mini apps, skills, custom tools, subagents, GitHub, project
+  files, remote MCP) work the same with OpenAI.
+- OpenAI's hosted tools can be switched on there: `web_search`, `image_generation`, `code_interpreter`
+  and `file_search` (vector store IDs).
+- OpenRouter-only features (`openrouter:*` server tools, routing, fallbacks, plugins, workspaces,
+  Workspace files) are marked in the UI and skipped on OpenAI runs. The Decisions tool still
+  works on OpenAI runs when an OpenRouter key is saved.
+- OpenAI returns no cost, so cost-based stop thresholds don't apply.
+
+See [docs/OPENAI_VS_OPENROUTER_TOOLS.md](docs/OPENAI_VS_OPENROUTER_TOOLS.md) for how the two tool sets differ.
+
 ## Background runs
 
 A run keeps going when you switch apps, lock the phone, or close the app from recents. While a run is active, a foreground service keeps the app from being frozen. The ongoing notification shows the current step and has a **Stop** button. When a tool needs approval, the notification offers **Allow once** and **Deny**. Questions from the agent open the app. When a run finishes while the app is not on screen, a notification shows the start of the reply, with a **Reply** box for a follow-up in the same chat. A reply is sent only when it would go exactly as if you typed it: the chat is still open, nothing is running and the app's message box is empty. Otherwise the notification says why, and you finish in the app. The app asks for notification permission when your first run starts.
