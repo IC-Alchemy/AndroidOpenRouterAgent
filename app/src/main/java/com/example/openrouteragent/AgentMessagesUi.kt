@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
@@ -221,29 +222,27 @@ internal fun AgentResponseCard(
                 thickness = StudioHairlineWidth,
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
+            val usageDetails = replyUsageDetails(entry.modelUsed, entry.usage)
+            var showUsageDetails by rememberSaveable(entry.id) { mutableStateOf(false) }
+            val footerTextColor = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(Modifier.weight(1f)) {
-                    entry.modelUsed?.takeIf { it.isNotBlank() }?.let {
-                        CopyableText(
-                            it,
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                            color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    entry.usage?.let {
-                        Text(
-                            it.display(),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                if (usageDetails.isNotEmpty()) {
+                    // Unweighted actions are measured first, so the cost line takes what's left
+                    // and never pushes the buttons off a narrow phone.
+                    ReplyUsageToggle(
+                        summary = replyUsageSummary(entry.usage),
+                        expanded = showUsageDetails,
+                        color = footerTextColor,
+                        onToggle = { showUsageDetails = !showUsageDetails },
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!isWarningCard) {
@@ -262,7 +261,67 @@ internal fun AgentResponseCard(
                     )
                 }
             }
+            AnimatedVisibility(visible = showUsageDetails && usageDetails.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    usageDetails.forEach { line ->
+                        CopyableText(
+                            line,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            color = footerTextColor,
+                        )
+                    }
+                }
+            }
         }
+    }
+}
+
+/**
+ * One line under a reply showing only what the turn cost. Tapping it shows or hides
+ * the model and token details below the footer.
+ */
+@Composable
+internal fun ReplyUsageToggle(
+    summary: String,
+    expanded: Boolean,
+    color: Color,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clickable(
+                role = Role.Button,
+                onClickLabel = if (expanded) "Hide usage details" else "Show usage details",
+                onClick = onToggle,
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Reply cost"
+                stateDescription = if (expanded) "Expanded" else "Collapsed"
+            }
+            .padding(end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = summary,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 

@@ -296,7 +296,11 @@ class PrecisionStudioUiTest {
 
         composeRule.onNodeWithText("Run simulation").assertIsDisplayed()
         composeRule.onNodeWithText("Simulation complete.").assertIsDisplayed()
-        composeRule.onNodeWithText("anthropic/claude-3.7-sonnet").performScrollTo().assertIsDisplayed()
+        // The footer shows only the cost until tapped, then the model and token details.
+        composeRule.onNodeWithText("$0.0042").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Model: anthropic/claude-3.7-sonnet").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Reply cost").performScrollTo().performClick()
+        composeRule.onNodeWithText("Model: anthropic/claude-3.7-sonnet").performScrollTo().assertIsDisplayed()
 
         // Expand reasoning rail
         composeRule.onNodeWithText("Reasoning").performScrollTo().performClick()
