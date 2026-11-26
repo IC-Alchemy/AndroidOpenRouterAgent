@@ -32,8 +32,15 @@ internal const val DEFAULT_STREAM_IDLE_SECONDS = 90L
  */
 internal const val STREAM_DROP_SAFE_TO_RESEND = "No hosted tool had started in this response"
 
-/** Output item types that only carry the model's own words. Any other item type is a tool call. */
+/** Output item types that only carry the model's own words. */
 private val wordsOnlyItems = setOf("reasoning", "message")
+
+/**
+ * The app's own tool calls. The SDK runs them only after the whole response has arrived, so one that was still
+ * streaming (or had finished streaming) when the connection dropped never ran, and the request is safe to send again.
+ * Every other item type is a hosted tool that may already have run on OpenRouter's or OpenAI's side.
+ */
+private val appCallItems = setOf("function_call", "custom_tool_call")
 private val jsonType = "application/json; charset=utf-8".toMediaType()
 private val retryableStatuses = setOf(408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524)
 private val requestIdHeaders = listOf("x-request-id", "x-generation-id", "openrouter-request-id", "cf-ray")
@@ -336,7 +343,7 @@ internal class StreamDiagnostics(val requestId: String, val model: String?, val 
     private var keepalives = 0
     private var lastEvent: String? = null
     private var lastItemType: String? = null
-    /** Whether any streamed output item was a tool call rather than reasoning or text. */
+    /** Whether any streamed output item was a hosted tool call, rather than reasoning, text or the app's own call. */
     @Volatile var toolStarted = false
         private set
     private var lastByteAt: Long? = null
@@ -375,12 +382,13 @@ internal class StreamDiagnostics(val requestId: String, val model: String?, val 
             value.startsWith("data:") -> {
                 TYPE.find(value)?.groupValues?.get(1)?.let {
                     if (lastEvent == null || it.startsWith("response.")) lastEvent = it
-                    // Events such as response.web_search_call.searching or response.function_call_arguments.delta.
-                    if (TOOL_EVENT.containsMatchIn(it)) toolStarted = true
+                    // Events such as response.web_search_call.searching. The app's own calls streaming their
+                    // arguments (response.function_call_arguments.delta) haven't run, so they don't count.
+                    if (TOOL_EVENT.containsMatchIn(it) && !APP_CALL_EVENT.containsMatchIn(it)) toolStarted = true
                 }
                 ITEM_TYPE.find(value)?.groupValues?.get(1)?.let {
                     lastItemType = it
-                    if (it !in wordsOnlyItems) toolStarted = true
+                    if (it !in wordsOnlyItems && it !in appCallItems) toolStarted = true
                 }
             }
         }
@@ -413,6 +421,7 @@ internal class StreamDiagnostics(val requestId: String, val model: String?, val 
     private companion object {
         val TYPE = Regex("^data:\\s*\\{\\s*\"type\"\\s*:\\s*\"([^\"]{1,80})\"")
         val TOOL_EVENT = Regex("""_call|tool|openrouter:|shell|image_generation|mcp_""")
+        val APP_CALL_EVENT = Regex("""^response\.(function_call_arguments|custom_tool_call_input)\.""")
         val ITEM_TYPE = Regex("\"item\"\\s*:\\s*\\{[^{}]*?\"type\"\\s*:\\s*\"([^\"]{1,80})\"")
     }
 }

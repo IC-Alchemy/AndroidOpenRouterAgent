@@ -814,6 +814,8 @@ class AgentViewModel internal constructor(
                         approvals = emptyList()
                         progress = progress?.continuing(continues, MAX_AUTO_CONTINUES)
                         notifyBackground()
+                        // After a switch from Wi-Fi to mobile data, wait for the new network before sending again.
+                        waitForNetwork(RunEnvironment::networkReady)
                     }
                 }
                 val result = mergeContinuedRun(earlier, sdkResult.result, continues)
