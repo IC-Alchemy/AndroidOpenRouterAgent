@@ -3,8 +3,9 @@ package com.example.openrouteragent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -37,7 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import java.io.File
@@ -45,6 +45,7 @@ import java.io.File
 /** Where a new attachment comes from. */
 internal enum class AttachSource { Photos, Camera, Files }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AgentInputBar(
     value: String,
@@ -82,39 +83,6 @@ internal fun AgentInputBar(
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             HorizontalDivider(thickness = StudioHairlineWidth, color = MaterialTheme.colorScheme.outlineVariant)
-            if (chatMode != null) {
-                Row(
-                    Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Agent mode can use tools over several steps. Chat mode only answers, which is cheaper and faster.
-                    listOf(false to "Agent", true to "Chat").forEach { (chat, label) ->
-                        val icon = if (chat) StudioSymbols.Chat else StudioSymbols.Agent
-                        ControlTooltip(label, enabled = !showLabels) {
-                            FilterChip(
-                                selected = chatMode == chat,
-                                onClick = { onChatMode(chat) },
-                                enabled = !isLoading && !isRunning,
-                                label = { SymbolLabel(label, icon) },
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            )
-                        }
-                    }
-                    if (showLabels) {
-                        Text(
-                            if (chatMode) "No tools · faster, cheaper" else "Tools on",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                    ControlLabelsToggle()
-                }
-            }
             if (error != null) {
                 CopyableText(
                     error,
@@ -130,13 +98,60 @@ internal fun AgentInputBar(
                     size = 56.dp, onRemove = if (isRunning) null else onRemoveAttachment)
             }
             Row(
-                modifier = Modifier
-                    .widthIn(max = 840.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.Bottom,
+                modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                val sends = !isRunning || sendWhileRunning
+                CopyableOutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    placeholder = { Text(placeholder ?: if (chatMode == false) "Message the agent" else "Message") },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 4,
+                    shape = RoundedCornerShape(16.dp),
+                    enabled = (!isRunning || acceptsInputWhileRunning) && !isLoading,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { if (sends) onSend() }),
+                )
+                val action = if (sends) "Send prompt" else "Stop waiting"
+                ControlTooltip(action) {
+                    FilledIconButton(
+                        onClick = if (sends) onSend else onStop,
+                        enabled = !sends || (!isLoading && !importing &&
+                            (value.isNotBlank() || (!isRunning && attachments.isNotEmpty()))),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(if (sends) Icons.AutoMirrored.Filled.Send else StudioSymbols.Stop, action)
+                    }
+                }
+            }
+            FlowRow(
+                modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (chatMode != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        listOf(false to "Agent", true to "Chat").forEach { (chat, label) ->
+                            val icon = if (chat) StudioSymbols.Chat else StudioSymbols.Agent
+                            ControlTooltip(label, enabled = !showLabels) {
+                                FilterChip(
+                                    selected = chatMode == chat,
+                                    onClick = { onChatMode(chat) },
+                                    enabled = !isLoading && !isRunning,
+                                    label = { SymbolLabel(label, icon) },
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                )
+                            }
+                        }
+                    }
+                }
                 if (onAttach != null && !isRunning) {
                     var menu by remember { mutableStateOf(false) }
                     Box {
@@ -182,35 +197,11 @@ internal fun AgentInputBar(
                         }
                     }
                 }
-                val sends = !isRunning || sendWhileRunning
-                CopyableOutlinedTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    placeholder = { Text(placeholder ?: if (chatMode == true) "Message" else "Message the agent") },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 4,
-                    shape = RoundedCornerShape(16.dp),
-                    enabled = (!isRunning || acceptsInputWhileRunning) && !isLoading,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { if (sends) onSend() }),
-                )
                 if (!isRunning) {
                     ControlTooltip("Speak a message") {
                         IconButton(onClick = onVoice, enabled = !isLoading, modifier = Modifier.size(48.dp)) {
                             Icon(painterResource(R.drawable.ic_mic), contentDescription = "Speak a message")
                         }
-                    }
-                }
-                val action = if (sends) "Send prompt" else "Stop waiting"
-                ControlTooltip(action) {
-                    FilledIconButton(
-                        onClick = if (sends) onSend else onStop,
-                        enabled = !sends || (!isLoading && !importing &&
-                            (value.isNotBlank() || (!isRunning && attachments.isNotEmpty()))),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(if (sends) Icons.AutoMirrored.Filled.Send else StudioSymbols.Stop, action)
                     }
                 }
             }

@@ -19,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
@@ -30,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,6 +65,37 @@ private val QUICK_PROMPTS = listOf(
         "Search the web for the latest OpenRouter server tools updates and summarize them.",
     ),
 )
+
+@Composable
+internal fun ChatToolsDisclosure(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    attachmentCount: Int,
+    content: @Composable () -> Unit,
+) {
+    Column(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                TextButton(
+                    onClick = onToggle,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
+                ) {
+                    Icon(StudioSymbols.Folder, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (attachmentCount > 0) "Files & tools · $attachmentCount attached" else "Files & tools")
+                    Spacer(Modifier.width(4.dp))
+                    Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null)
+                }
+            }
+            ControlLabelsToggle()
+            StudioInfoButton("Chat modes") {
+                Text("Agent can use tools and work through several steps. Chat gives a direct reply.")
+            }
+        }
+        if (expanded) content()
+    }
+}
 
 @Composable
 internal fun StatusCapabilitiesBar(
@@ -179,8 +214,20 @@ internal fun StatusPill(
 internal fun EmptyAgentState(
     hasApiKey: Boolean,
     onOpenSettings: () -> Unit,
+    tools: AgentConfig? = AgentConfig(enableShellSandbox = true, enableWebSearch = true),
     onSelectPrompt: (String) -> Unit,
 ) {
+    val starters = listOfNotNull(
+        QUICK_PROMPTS[0].takeIf { tools?.enableShellSandbox == true },
+        QUICK_PROMPTS[1].takeIf { tools?.enableShellSandbox == true },
+        QUICK_PROMPTS[2].takeIf { tools?.enableWebSearch == true },
+    ).ifEmpty {
+        listOf(
+            QuickPrompt(StudioSymbols.Agent, "Plan a project", "Help me turn a project idea into a realistic plan."),
+            QuickPrompt(StudioSymbols.Chat, "Rewrite a draft", "Ask me for a draft, then help me make it clearer."),
+            QuickPrompt(StudioSymbols.Models, "Learn something", "Help me learn a topic one short exercise at a time."),
+        )
+    }
     Column(
         modifier = Modifier
             .widthIn(max = 560.dp)
@@ -235,7 +282,7 @@ internal fun EmptyAgentState(
         Spacer(Modifier.height(8.dp))
 
         if (LocalControlLabels.current.visible) {
-            QUICK_PROMPTS.forEach { prompt ->
+            starters.forEach { prompt ->
                 QuickPromptCard(
                     prompt,
                     compact = false,
@@ -245,7 +292,7 @@ internal fun EmptyAgentState(
             }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QUICK_PROMPTS.forEach { prompt ->
+                starters.forEach { prompt ->
                     Box(Modifier.weight(1f)) {
                         ControlTooltip(prompt.message) {
                             QuickPromptCard(prompt, compact = true, onSelect = onSelectPrompt)

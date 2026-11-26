@@ -28,8 +28,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -180,12 +178,8 @@ internal fun SdkSettingsSheet(
     ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(.93f).imePadding().padding(horizontal = 20.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("SDK settings", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-                TextButton(onClick = onDismiss, enabled = !working) { Text("Close") }
-            }
-            ChoiceStrip(listOf("generation" to "Generation", "routing" to "Routing", "turn" to "Follow-up",
+            SettingsHeading("SDK settings", StudioSymbols.Models)
+            SettingsChoices(listOf("generation" to "Generation", "routing" to "Routing", "turn" to "Follow-up",
                 "advanced" to "Advanced", "display" to "Display"), section) { section = it }
             HorizontalDivider()
             val scroll = rememberScrollState()
@@ -200,7 +194,7 @@ internal fun SdkSettingsSheet(
                 fun Options(key: String, title: String, options: List<Pair<String, String>>,
                             descriptions: Map<String, String> = emptyMap()) {
                     OutlinedSection(title = title) {
-                        ChoiceStrip(options, value(key)) { state[key] = it }
+                        SettingsChoices(options, value(key)) { state[key] = it }
                         descriptions[value(key)]?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -320,9 +314,14 @@ internal fun SdkSettingsSheet(
                     }
                 }
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
-            Button(onClick = ::save, enabled = !working, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                Text(if (working) "Saving…" else "Save SDK settings")
+            HorizontalDivider()
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onDismiss, enabled = !working) { Text("Cancel") }
+                Button(onClick = ::save, enabled = !working, modifier = Modifier.weight(1f)) {
+                    Text(if (working) "Saving…" else "Save SDK settings")
+                }
             }
         }
     }

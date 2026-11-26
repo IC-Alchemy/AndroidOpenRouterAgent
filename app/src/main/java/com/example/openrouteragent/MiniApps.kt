@@ -604,7 +604,7 @@ class MiniAppTools(
             .apply { if (inlined.inlined.isNotEmpty()) put("inlined", JSONArray(inlined.inlined)) }
             .put(
                 "result",
-                "Saved. Tell the user to open it from Configure → Mini apps, where they can also add it " +
+                "Saved. Tell the user to open it from More options → Mini apps, where they can also add it " +
                     "to the home screen or share it.",
             )
     }

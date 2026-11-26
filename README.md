@@ -16,7 +16,7 @@ SQLite stores saved chats on the phone, including OpenRouter agent state and too
 
 ## Use OpenAI models with your own key
 
-Settings → **OpenAI (direct)** takes an OpenAI API key (stored encrypted with the Android Keystore,
+Settings → Connections → **OpenAI (direct)** takes an OpenAI API key (stored encrypted with the Android Keystore,
 like the OpenRouter key). Its models appear in Models as `openai-direct/…` and run against
 `https://api.openai.com/v1/responses` with that key, billed by OpenAI. Each key only ever goes to its own host.
 
@@ -41,7 +41,7 @@ A run still ends if Android stops the app, for example after a force stop or a r
 
 The switch above the message field picks how each chat works. **Agent** is the default: the model can use the tools you turned on in Settings, such as the hosted shell, web search, files, mini apps, MCP and custom tools, over several steps. **Chat** sends messages without tools. Replies start sooner and cost less, because tool definitions are not sent with every message, and models without tool calling work too. Reasoning and streaming work the same in both modes. The mode is saved with the chat, a new chat starts in the mode of the chat you were in, and you can switch at any time between messages.
 
-Tap **Aa** above the message field to switch between Symbols and Labels. You can also change it in **Settings → Appearance**. Labels show during the first day. An explicit choice stays saved. In Symbols mode, long-press a control to see its name.
+Tap **Aa** beside **Files & tools** to switch between Symbols and Labels. You can also change it in **Settings → Interface**. Labels show during the first day. An explicit choice stays saved. In Symbols mode, long-press a control to see its name.
 
 ## Mini apps
 
@@ -49,7 +49,7 @@ Ask for a small app, for example “make a habit tracker with a streak counter�
 
 To use a library, the agent adds an empty `<script src>` or stylesheet `<link>` with a pinned version on `cdn.jsdelivr.net`, `cdnjs.cloudflare.com` or `unpkg.com`. When the app is saved, the phone downloads the file once, checks its `integrity` hash if one is given, and writes it into the HTML. The app stays one file: it works offline, keeps working when shared, and its code can't change after saving. Scripts from other hosts, single-file libraries over 3 MB and saved apps over 6 MB are refused. ES modules that import other files, and fonts or images that a stylesheet links to, don't load, so the agent picks a single-file build. When the agent reads an app back, each inlined library is shown as its short tag again, and the download is cached for the next save. While an app runs, a Content Security Policy blocks scripts, styles, fonts and frames from anywhere else, including script tags the app adds at runtime.
 
-Open **Configure → Mini apps** to open, update, delete or share an app, or add it to your home screen. Each app runs in its own isolated WebView with no access to the agent, your files, the camera, the microphone or your location. It keeps its own data in `localStorage` and can call public HTTPS APIs. To change an app, ask the agent; it reads the app and saves a new version under the same id, so the app's data stays. Apps shared with you, opened from a `.html` file, are saved without internet access and cannot be changed by the agent. Switch the tools off under **Settings → Mini apps**. They are skipped for models without tool calling.
+Open **More options → Mini apps** to open, update, delete or share an app, or add it to your home screen. Each app runs in its own isolated WebView with no access to the agent, your files, the camera, the microphone or your location. It keeps its own data in `localStorage` and can call public HTTPS APIs. To change an app, ask the agent; it reads the app and saves a new version under the same id, so the app's data stays. Apps shared with you, opened from a `.html` file, are saved without internet access and cannot be changed by the agent. Switch the tools off under **Settings → Tools → Mini apps**. They are skipped for models without tool calling.
 
 ## Photos and files
 
@@ -63,7 +63,7 @@ Turn on **Image generation** in settings to let the agent draw pictures with Ope
 
 ## Decisions
 
-Open **Configure → Decisions** to ask one of OpenRouter's decision models a single typed question. Pick **Pick one**, **Yes or no**, or **Score**, then fill the round windows on the left: tap a window to type text, choose a photo, take one with the camera, or pick a video or audio clip. A pick-one decision takes two to four options. Tap **Decide** and the chosen option flies into the large window on the right, with each option's probability around its window and a breakdown with confidence and cost below.
+Open **More options → Decisions** to ask one of OpenRouter's decision models a single typed question. Pick **Pick one**, **Yes or no**, or **Score**, then fill the round windows on the left: tap a window to type text, choose a photo, take one with the camera, or pick a video or audio clip. A pick-one decision takes two to four options. Tap **Decide** and the chosen option flies into the large window on the right, with each option's probability around its window and a breakdown with confidence and cost below.
 
 The model menu lists OpenRouter's decision models with what each one reads. Photos are sent as JPEG between 256 and 1,024 pixels. Video and audio go up to 16 MB, and only a few models read them (for example `cloudflare/clef-omni` or `google/gemini-decision-1`); the app says so before sending when the catalog shows a model can't read an input, and explains OpenRouter's 400 reply if a model or provider refuses it.
 
@@ -92,9 +92,9 @@ Chats are scoped to your OpenRouter credential. Reopening an OpenRouter chat res
 
 ### Work with files
 
-- **Project files** opens an editable, app-private folder shared by the project's chats. You can also open it from the selected project in **Chats**. Create folders and text files, preview them, or use Android’s document picker to import a copy or choose an export destination. Unfiled chats have their own **Chat files** folder. **Configure → Device files** can reopen folders retained after a project or chat is removed.
+- **Project files** opens an editable, app-private folder shared by the project's chats. You can also open it from the selected project in **Chats**. Create folders and text files, preview them, or use Android’s document picker to import a copy or choose an export destination. Unfiled chats have their own **Chat files** folder. **More options → Device files** can reopen folders retained after a project or chat is removed.
 - Ask a tool-capable OpenRouter model to list, read, create, or edit files in the current folder. For example, “Create `notes/plan.md` with a three-step plan,” then “Change the deadline in `notes/plan.md` to Friday.” The app writes the file and confirms the path. Agent mode sends file names and text read by its tools to OpenRouter during the run. Text editing supports complete UTF-8 files up to 64 KiB.
-- **Upload to OpenRouter** publishes a device file through the Files API. Uploaded project files appear under `projects/<project-id>/` with their relative folders preserved. **Workspace files** lists those files within the project. **Configure → All workspace files** opens the account's full list from a project. Open a workspace file to preview, export, copy, delete, or edit it as a new revision. OpenRouter makes server-generated files downloadable. The app retains a local copy of each upload made from this device. [OpenRouter Files API](https://openrouter.ai/docs/guides/features/files-api)
+- **Upload to OpenRouter** publishes a device file through the Files API. Uploaded project files appear under `projects/<project-id>/` with their relative folders preserved. **Workspace files** lists those files within the project. **More options → All workspace files** opens the account's full list from a project. Open a workspace file to preview, export, copy, delete, or edit it as a new revision. OpenRouter makes server-generated files downloadable. The app retains a local copy of each upload made from this device. [OpenRouter Files API](https://openrouter.ai/docs/guides/features/files-api)
 - Use **Attach to chat** on a workspace file to give the hosted shell a writable copy on the next message. Up to 20 files may be attached per message. **Sandbox files** opens the hosted container. Each project has a separate sandbox shared by its chats. From a sandbox preview, use **Copy to device files** to edit a local copy, or **Save to Workspace** to keep it through the Files API. Ask in chat to edit the original sandbox file. [OpenRouter containers](https://openrouter.ai/docs/guides/features/containers)
 
 **Workspace files tool** in Settings gives unfiled OpenRouter chats the hosted `openrouter:files` tool. OpenRouter scopes that tool to the entire workspace. Project chats use app file functions scoped to their project folder. [OpenRouter Files server tool](https://openrouter.ai/docs/guides/features/server-tools/files)
@@ -118,7 +118,7 @@ Drafts and cached files are available offline. Use **Refresh** to check for upst
 
 ### Delegate work to subagents
 
-1. Open **Settings → OpenRouter Server Tools → Subagents → Add subagent**.
+1. Open **Settings → Tools → Subagents → Add subagent**.
 2. Enter an optional name, worker model ID, and instructions. You can add several uniquely named workers and one unnamed default worker. If you leave the model blank, OpenRouter uses the main model.
 3. Tap **Apply**, then **Save** in Settings. In chat, try asking the main model to delegate a focused task, such as extracting action items from meeting notes and returning them as a checklist. The model decides when to delegate. **Activity** shows each worker's task, status, result or error, and any inherited function calls.
 
@@ -234,9 +234,9 @@ API references [Agent SDK](https://openrouter.ai/docs/agent-sdk/call-model/overv
 
 The SDK reads the OpenRouter Responses stream through a native Android HTTP connection. The live status distinguishes connecting, waiting for the model, reasoning, tool execution, and streaming a reply, and counts output tokens and tokens per second as they arrive. Before the provider reports usage, the count is an estimate marked with `~`.
 
-The reply streams as a timeline in the order the model works. Replies render Markdown by default. To show the source, turn off **Render Markdown in replies** under **Configure → SDK settings → Display**. The copy icon copies the original reply, including its Markdown.
+The reply streams as a timeline in the order the model works. Replies render Markdown by default. To show the source, turn off **Render Markdown in replies** under **More options → SDK settings → Display**. The copy icon copies the original reply, including its Markdown.
 
-**Thinking** starts collapsed. Tap the row to read the reasoning the provider shares. To see a live preview, turn on **Show reasoning** in the Configure menu or **Show streamed reasoning** in SDK settings. **Save reasoning in chat history** is on by default and applies to new replies and interrupted replies. Saved replies show their reasoning in a collapsed section. The app saves up to 48,000 characters of streamed reasoning per reply.
+**Thinking** starts collapsed. Tap the row to read the reasoning the provider shares. To see a live preview, turn on **Show reasoning** in More options or **Show streamed reasoning** in SDK settings. **Save reasoning in chat history** is on by default and applies to new replies and interrupted replies. Saved replies show their reasoning in a collapsed section. The app saves up to 48,000 characters of streamed reasoning per reply.
 
 When the live preview or history setting is on, the app asks supported models for an automatic reasoning summary unless you choose a summary level or turn reasoning off. Choose a summary level under **SDK settings → Request reasoning summaries**, or set **Reasoning effort** to `off` to disable reasoning. Models that reason privately show *Thinking privately* and a reasoning token count. Fusion runs show one row per panel model, with that panel's streamed answer. OpenAI-compatible reasoning deltas appear in the same thinking rows.
 
@@ -274,13 +274,15 @@ Touch and hold to select text in chat messages, tool output, file previews, or t
 
 ## Customize your agent
 
-Open the **Configure** gear. **Custom tools** registers validated SDK functions with a JSON object schema. Supported handlers are templates, questions answered in the app, and HTTPS JSON webhooks. Webhooks ask for approval before a request and publish a live progress event. They need a CORS-enabled endpoint. Tool results become part of the agent conversation.
+Open **More options → Tools, subagents & skills**. **Tools** registers validated SDK functions with a JSON object schema. Supported handlers are templates, questions answered in the app, and HTTPS JSON webhooks. Webhooks ask for approval before a request and publish a live progress event. They need a CORS-enabled endpoint. Tool results become part of the agent conversation.
 
 **Skills & app guide** saves text instructions with a name and description. Import or export the Markdown `SKILL.md` form. The import uses the name, description, and Markdown body, and opens the skill disabled for review. A tool-capable model sees enabled skills by name and description and can load their full text on demand. Pin a skill to include its instructions on each run. The built-in app guide is readable offline.
 
 You can also ask in chat to create a subagent, custom tool, or skill, or to enable a supported OpenRouter server tool. For example, “Create a subagent named Editor to review Markdown for clarity.” Review the proposed settings and tap **Save change**. The app validates and saves the resource to the same settings used by the configuration screens. It becomes available on the next message. Custom tools can use templates, ask for an answer, or POST to a fixed HTTPS webhook that requires approval when called.
 
 **SDK settings** separates generation, routing, follow-up behavior, advanced fields, and display.
+
+Tap **Usage** beside the active model to see spending and limits for the current OpenRouter API key. **Activity** adds trends, a calendar, model and provider rankings, and daily endpoint records. It covers the last 30 completed UTC days visible to the management key. Use the management key saved in **Workspaces**, or enter a read-only key for the current visit. [OpenRouter activity API](https://openrouter.ai/docs/api/api-reference/analytics/get-user-activity)
 
 ### Provider routing
 
