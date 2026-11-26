@@ -25,6 +25,15 @@ import kotlin.math.min
 import kotlin.math.pow
 
 internal const val DEFAULT_STREAM_IDLE_SECONDS = 90L
+
+/**
+ * Said in a dropped-stream error when the response had only streamed reasoning and text. Nothing ran on
+ * OpenRouter's side, so the app may send the request again. [RunRecovery] looks for this exact phrase.
+ */
+internal const val STREAM_DROP_SAFE_TO_RESEND = "No hosted tool had started in this response"
+
+/** Output item types that only carry the model's own words. Any other item type is a tool call. */
+private val wordsOnlyItems = setOf("reasoning", "message")
 private val jsonType = "application/json; charset=utf-8".toMediaType()
 private val retryableStatuses = setOf(408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524)
 private val requestIdHeaders = listOf("x-request-id", "x-generation-id", "openrouter-request-id", "cf-ray")
@@ -69,7 +78,8 @@ internal fun retryDelayMillis(
  *
  * Failures before response headers (connection errors, 408/429/5xx) are retried here, because no
  * response bytes reached the SDK and OpenRouter has not started streaming. Failures after the
- * headers are never retried: hosted tools such as the shell may already have run and been billed.
+ * headers are never retried here, because the SDK has already read part of the stream. The error
+ * says whether a hosted tool had started, so the run can decide whether to send the turn again.
  */
 internal class AgentHttpTransport(
     private val endpoint: HttpUrl = "https://openrouter.ai/api/v1/responses".toHttpUrl(),
@@ -90,6 +100,8 @@ internal class AgentHttpTransport(
     /** Receives one diagnostic line per state change. Never passed the API key or request body. */
     private val log: (String) -> Unit = { runCatching { Log.i("AgentHttp", it) } },
     private val random: () -> Double = Math::random,
+    /** What the phone was doing when a stream dropped (screen, app in front, network changes), or null. */
+    private val environment: () -> String? = { RunEnvironment.describe() },
 ) {
     private data class Key(val run: String, val request: String)
     private class Exchange(
@@ -249,12 +261,15 @@ internal class AgentHttpTransport(
                 "Android could not reach $host$retried. Check your network connection."
             error is javax.net.ssl.SSLException -> "Android could not establish a secure connection to $host."
             beforeHeaders -> "The $host connection failed$retried (${error.describe()})."
-            else -> "The $host stream closed unexpectedly (${error.describe()}). It was not retried " +
-                "automatically because hosted tools may already have run. Retry when ready."
+            diagnostics.toolStarted -> "The $host stream closed unexpectedly (${error.describe()}). A hosted " +
+                "tool had started in this response, so it was not simply sent again."
+            else -> "The $host stream closed unexpectedly (${error.describe()}). $STREAM_DROP_SAFE_TO_RESEND, " +
+                "so it can be sent again."
         }
+        val phone = if (beforeHeaders) null else environment()?.takeIf { it.isNotBlank() }
         val tag = if (error is SocketTimeoutException && !beforeHeaders) "idle-timeout" else "failure"
-        log("$tag ${diagnostics.describe()} error=${error.describe()}")
-        return "$message ${diagnostics.describe()}"
+        log("$tag ${diagnostics.describe()} error=${error.describe()}${phone?.let { " phone=$it" }.orEmpty()}")
+        return listOfNotNull(message, phone?.let { "Phone: $it." }, diagnostics.describe()).joinToString(" ")
     }
 
     private fun httpFailure(exchange: Exchange, code: Int, retryAfter: String?, detail: String?): String {
@@ -321,6 +336,9 @@ internal class StreamDiagnostics(val requestId: String, val model: String?, val 
     private var keepalives = 0
     private var lastEvent: String? = null
     private var lastItemType: String? = null
+    /** Whether any streamed output item was a tool call rather than reasoning or text. */
+    @Volatile var toolStarted = false
+        private set
     private var lastByteAt: Long? = null
     private val line = StringBuilder()
 
@@ -355,8 +373,15 @@ internal class StreamDiagnostics(val requestId: String, val model: String?, val 
             value.startsWith(":") -> keepalives++
             value.startsWith("event:") -> lastEvent = value.substring(6).trim()
             value.startsWith("data:") -> {
-                TYPE.find(value)?.groupValues?.get(1)?.let { if (lastEvent == null || it.startsWith("response.")) lastEvent = it }
-                ITEM_TYPE.find(value)?.groupValues?.get(1)?.let { lastItemType = it }
+                TYPE.find(value)?.groupValues?.get(1)?.let {
+                    if (lastEvent == null || it.startsWith("response.")) lastEvent = it
+                    // Events such as response.web_search_call.searching or response.function_call_arguments.delta.
+                    if (TOOL_EVENT.containsMatchIn(it)) toolStarted = true
+                }
+                ITEM_TYPE.find(value)?.groupValues?.get(1)?.let {
+                    lastItemType = it
+                    if (it !in wordsOnlyItems) toolStarted = true
+                }
             }
         }
     }
@@ -387,6 +412,7 @@ internal class StreamDiagnostics(val requestId: String, val model: String?, val 
 
     private companion object {
         val TYPE = Regex("^data:\\s*\\{\\s*\"type\"\\s*:\\s*\"([^\"]{1,80})\"")
+        val TOOL_EVENT = Regex("""_call|tool|openrouter:|shell|image_generation|mcp_""")
         val ITEM_TYPE = Regex("\"item\"\\s*:\\s*\\{[^{}]*?\"type\"\\s*:\\s*\"([^\"]{1,80})\"")
     }
 }

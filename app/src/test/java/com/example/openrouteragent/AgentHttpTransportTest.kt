@@ -133,16 +133,45 @@ class AgentHttpTransportTest {
     }
 
     @Test
-    fun aMidStreamDisconnectIsReportedAndNotRetried() = withTransport { server, run ->
-        server.enqueue(sse("event: response.created\ndata: {\"type\":\"response.created\"}\n\n" + "x".repeat(4096))
+    fun aMidStreamDisconnectDuringReasoningSaysItCanBeSentAgain() = withTransport { server, run ->
+        server.enqueue(sse("event: response.created\ndata: {\"type\":\"response.created\"}\n\n" +
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\"}}\n\n" +
+            "data: {\"type\":\"response.reasoning_text.delta\",\"delta\":\"thinking\"}\n\n" + "x".repeat(4096))
+            .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
+        val outcome = run.start()
+        assertEquals("error", outcome.kind)
+        // The transport itself never resends after headers: the SDK has already read part of the stream.
+        assertEquals(1, server.requestCount)
+        val message = outcome.value as String
+        assertTrue(message, "closed unexpectedly" in message)
+        assertTrue(message, STREAM_DROP_SAFE_TO_RESEND in message)
+        assertTrue(message, "response.reasoning_text.delta" in message)
+        assertTrue(message, "Phone: screen off, app in the background." in message)
+    }
+
+    @Test
+    fun aMidStreamDisconnectAfterAHostedToolStartedIsNotMarkedSafe() = withTransport { server, run ->
+        server.enqueue(sse("data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ws_1\",\"type\":\"web_search_call\"}}\n\n" +
+            "data: {\"type\":\"response.web_search_call.searching\"}\n\n" + "x".repeat(4096))
             .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
         val outcome = run.start()
         assertEquals("error", outcome.kind)
         assertEquals(1, server.requestCount)
         val message = outcome.value as String
-        assertTrue(message, "closed unexpectedly" in message)
-        assertTrue(message, "not retried" in message)
-        assertTrue(message, "response.created" in message)
+        assertTrue(message, "A hosted tool had started" in message)
+        assertFalse(message, STREAM_DROP_SAFE_TO_RESEND in message)
+    }
+
+    @Test
+    fun aToolEventAloneMarksTheResponseUnsafe() {
+        val diagnostics = StreamDiagnostics("run/1", "model", 90)
+        val line = "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\"}\n".toByteArray()
+        diagnostics.received(line, line.size)
+        assertTrue(diagnostics.toolStarted)
+        val words = StreamDiagnostics("run/2", "model", 90)
+        val text = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n".toByteArray()
+        words.received(text, text.size)
+        assertFalse(words.toolStarted)
     }
 
     @Test
@@ -242,6 +271,7 @@ class AgentHttpTransportTest {
             policy = StreamPolicy(connectTimeoutSeconds = 5, baseDelayMillis = 20, maxDelayMillis = 100),
             encode = { bytes, size -> Base64.getEncoder().encodeToString(bytes.copyOf(size)) },
             log = { logs += it },
+            environment = { "screen off, app in the background" },
         )
         try {
             block(server, Run(transport, idleSeconds, logs))
