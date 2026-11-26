@@ -9,18 +9,18 @@ Use these instructions to answer questions about the app's controls. Mention the
 
 ## Get started
 
-1. Open Settings and tap Sign in with OpenRouter, approve the key in the browser, return to the app, and tap Save. You can also paste a key. To use OpenAI models with your own OpenAI key, paste it under Settings → OpenAI (direct) and tap Save. You can use either key or both.
+1. Open Settings and tap Sign in with OpenRouter, approve the key in the browser, return to the app, and tap Save. You can also paste a key. To use OpenAI models with your own OpenAI key, paste it under Settings → Keys → OpenAI (direct) and tap Save. You can use either key or both.
 2. Tap Models to find a model from the authenticated catalog. Switch off tools if you want to use a model that only supports text.
 3. Send a prompt. The status above the composer shows the current phase. The info icon opens run activity, including tools, sources, and reported usage. The down arrow jumps to the latest reply.
 
 ## Customize a run
 
-- Open More options → SDK settings for fallback models, routing, reasoning effort, sampling, output and run limits, and response format. In Advanced, configure repetition detection, local and MCP tool deadlines, concurrency, and final-answer behavior when a stop condition is met. Unset fields use the model or provider default.
+- Settings (the gear icon) holds every setting, in pages: Keys, Tools, Routing, Model, Follow-up, Limits and Display. Routing has provider routing and fallback models. Model has system instructions, reasoning effort, verbosity, response format and output, with sampling (temperature, top P, top K, penalties, stop sequences) last because most models ignore it. Every model setting opens the model list from the user's OpenRouter account to tap a model; nobody types model IDs. In Limits, configure step and cost limits, repetition detection, local and MCP tool deadlines, concurrency, and final-answer behavior when a stop condition is met. Unset fields use the model or provider default.
 - Tap Usage beside the active model to check the current OpenRouter key’s spend and limit. With a management key that can read activity, explore the last 30 complete UTC days by spend, requests, model, provider, and tokens.
-- In SDK settings → Display, change Markdown rendering, the live reasoning preview, or whether new saved replies include reasoning. Markdown and saving reasoning start on. Thinking starts collapsed, and its row expands when reasoning is available.
+- In Settings → Display, change Markdown rendering, the live reasoning preview, or whether new saved replies include reasoning. Markdown and saving reasoning start on. Thinking starts collapsed, and its row expands when reasoning is available.
 - A follow-up profile can switch models, change sampling or output length, and append instructions after a chosen number of SDK inference turns. This applies to later requests in the current run. Hosted tools can do several steps within one request.
 - Tools in Settings controls the hosted sandbox, web search, date and time, web fetch, image generation, advisor, fusion, model search, decisions, workspace files, local time zone, and optional MCP. OpenRouter plugins in Settings switches response healing and context compression on or off. The sandbox can produce files. Open Sandbox files to preview or export them.
-- Open More options → Tools, subagents & skills → Subagents (or Settings → Tools → Subagents) to add or edit workers the main model can delegate to and assign each subagent's default model. Open Activity during a run to see the worker's task, status, and outcome.
+- Open Settings → Tools → Subagents to add or edit workers the main model can delegate to and assign each subagent's default model. Open Activity during a run to see the worker's task, status, and outcome.
 - Project files opens the device folder shared by the project's chats. Import files, create folders, and edit UTF-8 text there. Unfiled chats have their own Chat files folder. Use the project file functions when asked to create, read, or edit a saved file.
 - GitHub in the project menu connects a repository. When GitHub tools are available, use them to list repository paths, read related files in batches, and draft repository edits. Publishing a commit and opening a pull request require separate in-app approvals.
 - Upload to OpenRouter saves a device file under the project's path in Workspace files. Attach a workspace file to make a copy available to the hosted shell on the next message. Sandbox files can be copied to device files or saved to Workspace from their preview.
@@ -30,9 +30,9 @@ Use these instructions to answer questions about the app's controls. Mention the
 
 ## OpenAI (direct) models
 
-- With an OpenAI key in Settings → OpenAI (direct), Models also lists OpenAI's models as openai-direct/… (for example openai-direct/gpt-5). These runs go straight to api.openai.com with the OpenAI key and are billed by OpenAI. The OpenRouter key is never sent to OpenAI, and the OpenAI key is never sent to OpenRouter.
+- With an OpenAI key in Settings → Keys → OpenAI (direct), Models also lists OpenAI's models as openai-direct/… (for example openai-direct/gpt-5). These runs go straight to api.openai.com with the OpenAI key and are billed by OpenAI. The OpenRouter key is never sent to OpenAI, and the OpenAI key is never sent to OpenRouter.
 - The app's own tools work with OpenAI models: device time zone, mini apps, skills, custom tools, subagents, GitHub and project file functions, and remote MCP with approvals.
-- OpenAI's built-in tools are switched in Settings → OpenAI (direct): web search (web_search), image generation (image_generation, using the aspect ratio and quality there), code interpreter (code_interpreter) and file search (file_search, with up to 10 vector store IDs like vs_abc123).
+- OpenAI's built-in tools are switched in Settings → Tools → OpenAI tools, which shows only once an OpenAI key is entered: web search (web_search), image generation (image_generation, using the aspect ratio and quality there), code interpreter (code_interpreter) and file search (file_search, with up to 10 vector store IDs like vs_abc123).
 - These are OpenRouter only and are skipped for OpenAI models: the openrouter:… tools (hosted sandbox, web search, date and time, web fetch, advisor, fusion, model search), OpenRouter image generation, Workspace files, OpenRouter plugins, provider routing, fallback models, workspaces and guardrails. The Decisions tool and More options → Decisions still work when an OpenRouter key is saved, and are billed by OpenRouter. Create with AI for skills, tools and mini apps needs an OpenRouter model.
 - OpenAI doesn't report cost, so the cost line shows tokens only and the USD stop threshold can't stop an OpenAI run. Use the step limit instead.
 - If OpenAI says the key is wrong, out of quota or not allowed a model, fix it on OpenAI's site. Test OpenAI key in Settings checks the key without spending anything.
@@ -61,7 +61,7 @@ Tap Chats to open saved conversations for your OpenRouter credential. Use New pr
 
 ## Create and improve tools, skills, and subagents
 
-Open More options → Tools, subagents & skills to access the unified panel across Tools, Skills, and Subagents:
+Open Settings → Tools → Save and open custom tools & skills to access the unified panel across Tools, Skills, and Subagents:
 
 - Use **Create with AI** in any section or **Improve Tool / Skill / Subagent** on a saved item to generate or refine its configuration using the currently selected model via Chat Completions.
 - For **Tools**, create a tool with a lowercase underscore-separated name, a specific description, and a JSON object input schema. Choose its handler:

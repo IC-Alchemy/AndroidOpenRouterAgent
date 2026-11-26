@@ -16,7 +16,7 @@ SQLite stores saved chats on the phone, including OpenRouter agent state and too
 
 ## Use OpenAI models with your own key
 
-Settings → Connections → **OpenAI (direct)** takes an OpenAI API key (stored encrypted with the Android Keystore,
+Settings → Keys → **OpenAI (direct)** takes an OpenAI API key (stored encrypted with the Android Keystore,
 like the OpenRouter key). Its models appear in Models as `openai-direct/…` and run against
 `https://api.openai.com/v1/responses` with that key, billed by OpenAI. Each key only ever goes to its own host.
 
@@ -43,7 +43,7 @@ The switch above the message field picks how each chat works. **Agent** is the d
 
 The row under the chat title holds the model picker, the **Files & tools** folder button, **Aa** and **Usage**, so the chat keeps as much of the screen as possible. Web searches and sources stay folded into one line under a reply, such as “5 sources · 1 search”. Tap it to see the searches and the links.
 
-Tap **Aa** beside the **Files & tools** folder to switch between Symbols and Labels. You can also change it in **Settings → Interface**. Labels show during the first day. An explicit choice stays saved. In Symbols mode, long-press a control to see its name.
+Tap **Aa** beside the **Files & tools** folder to switch between Symbols and Labels. You can also change it in **Settings → Display**. Labels show during the first day. An explicit choice stays saved. In Symbols mode, long-press a control to see its name.
 
 ## Mini apps
 
@@ -112,8 +112,9 @@ Drafts and cached files are available offline. Use **Refresh** to check for upst
 ## Agent controls
 
 - **Body Builder** runs a text task across up to five OpenRouter models in parallel. In **Agent** mode, choose a model that supports tools and ask, for example, “Use Body Builder to compare Claude and Gemini on why stars shine.” The agent receives each reply or error and can compare the results. Generating the requests is free. Each model call is billed at its usual rate and contributes its reported usage to the run totals. [OpenRouter Body Builder](https://openrouter.ai/docs/guides/features/body-builder)
-- **Settings** controls hosted shell, search, date and time, web fetch, and the local device time-zone tool. The SDK dispatches local tools and feeds their results back to the model.
-- **Advanced agent settings** includes a step limit, an optional USD stop threshold, and temperature for models that advertise that parameter. The SDK and provider check the threshold between steps. A step in progress can take the total above the threshold.
+- **Settings → Tools** controls hosted shell, search, date and time, web fetch, image generation, the advisor, fusion, decisions, and the local device time-zone tool. The SDK dispatches local tools and feeds their results back to the model. Turn on **Advisor** to choose the advisor model. Without a choice, OpenRouter uses the chat's model.
+- **Settings → Limits** includes a step limit and an optional USD stop threshold. The SDK and provider check the threshold between steps. A step in progress can take the total above the threshold.
+- Every setting that takes a model (fallback models, the advisor, the decision model, the image model, the follow-up model and subagent models) opens the model list. You tap a model instead of typing its ID. The list is the one OpenRouter returns for your account, so it follows the provider and model preferences you set on openrouter.ai.
 - The app supports one HTTPS remote MCP server with no authentication or a separate bearer token. The server must accept cross-origin requests from `https://agent-runtime.invalid`. The app shows the tool name, endpoint, and arguments before each call and offers **Allow once** or **Decline**. Tool discovery occurs on connection.
 - **Additional server tools** accepts an array of SDK configuration objects using camelCase fields. Supported types include `openrouter:web_fetch`, `openrouter:image_generation`, `openrouter:experimental__search_models`, `openrouter:advisor`, `openrouter:subagent`, and `openrouter:fusion`. For example, `[{"type":"openrouter:advisor","parameters":{"model":"<allowed-model-id>"}}]`. Existing subagent entries in this field also appear in the Subagents editor.
 - **Stop waiting** aborts the local agent run and restores the draft. A submitted hosted tool may continue on OpenRouter.
@@ -236,15 +237,15 @@ API references [Agent SDK](https://openrouter.ai/docs/agent-sdk/call-model/overv
 
 The SDK reads the OpenRouter Responses stream through a native Android HTTP connection. The live status distinguishes connecting, waiting for the model, reasoning, tool execution, and streaming a reply, and counts output tokens and tokens per second as they arrive. Before the provider reports usage, the count is an estimate marked with `~`.
 
-The reply streams as a timeline in the order the model works. Replies render Markdown by default. To show the source, turn off **Render Markdown in replies** under **More options → SDK settings → Display**. The copy icon copies the original reply, including its Markdown.
+The reply streams as a timeline in the order the model works. Replies render Markdown by default. To show the source, turn off **Render Markdown in replies** under **Settings → Display**. The copy icon copies the original reply, including its Markdown.
 
-**Thinking** starts collapsed. Tap the row to read the reasoning the provider shares. To see a live preview, turn on **Show reasoning** in More options or **Show streamed reasoning** in SDK settings. **Save reasoning in chat history** is on by default and applies to new replies and interrupted replies. Saved replies show their reasoning in a collapsed section. The app saves up to 48,000 characters of streamed reasoning per reply.
+**Thinking** starts collapsed. Tap the row to read the reasoning the provider shares. To see a live preview, turn on **Show streamed reasoning** in **Settings → Display**. **Save reasoning in chat history** is on by default and applies to new replies and interrupted replies. Saved replies show their reasoning in a collapsed section. The app saves up to 48,000 characters of streamed reasoning per reply.
 
-When the live preview or history setting is on, the app asks supported models for an automatic reasoning summary unless you choose a summary level or turn reasoning off. Choose a summary level under **SDK settings → Request reasoning summaries**, or set **Reasoning effort** to `off` to disable reasoning. Models that reason privately show *Thinking privately* and a reasoning token count. Fusion runs show one row per panel model, with that panel's streamed answer. OpenAI-compatible reasoning deltas appear in the same thinking rows.
+When the live preview or history setting is on, the app asks supported models for an automatic reasoning summary unless you choose a summary level or turn reasoning off. Choose a summary level under **Settings → Model → Request reasoning summaries**, or set **Reasoning effort** to `off` to disable reasoning. Models that reason privately show *Thinking privately* and a reasoning token count. Fusion runs show one row per panel model, with that panel's streamed answer. OpenAI-compatible reasoning deltas appear in the same thinking rows.
 
 Each tool call gets a row with a spinner while it runs. Input streams into the row, then the result replaces it when the tool finishes. Tap a row to expand it. The info icon opens **Run activity**, with tool results, citations, sandbox files, and reported token and cost totals. Available events depend on the selected model and tools.
 
-The stream connects within 10 seconds and fails after 90 seconds without any bytes. SSE keepalive comments count as activity. Change the idle limit (30–600 s) under **SDK settings → Stream idle timeout**. Connection failures and HTTP 408, 429 and 5xx responses that arrive before the stream starts are retried up to three times with exponential backoff and jitter. Retry-After is honoured up to 60 seconds. A stream that drops midway is not resent by the connection itself, because the agent has already read part of it. The error says whether a hosted tool (web search, code interpreter, image generation, MCP, OpenRouter server tools) had started, which decides how the run recovers (see Long runs). The app's own tool calls don't count, because they run only after the whole response has arrived. Before picking a run up again, the app waits up to 30 seconds for a working network, so a switch from Wi-Fi to mobile data doesn't make the next request fail too. For a dropped stream it also says what the phone was doing: screen on or off, app on screen or in the background, battery saver, and any network switch in the last 2 minutes. Errors include the request, model, HTTP status, OpenRouter request ID, bytes received and the last SSE event. The same line is logged under the `AgentHttp` logcat tag. The API key is never logged. Requests that ask OpenRouter itself to download or generate video are rejected before any network call. OpenRouter routes LLM requests, so name a video provider or a direct URL for that step.
+The stream connects within 10 seconds and fails after 90 seconds without any bytes. SSE keepalive comments count as activity. Change the idle limit (30–600 s) under **Settings → Limits → Stream idle timeout**. Connection failures and HTTP 408, 429 and 5xx responses that arrive before the stream starts are retried up to three times with exponential backoff and jitter. Retry-After is honoured up to 60 seconds. A stream that drops midway is not resent by the connection itself, because the agent has already read part of it. The error says whether a hosted tool (web search, code interpreter, image generation, MCP, OpenRouter server tools) had started, which decides how the run recovers (see Long runs). The app's own tool calls don't count, because they run only after the whole response has arrived. Before picking a run up again, the app waits up to 30 seconds for a working network, so a switch from Wi-Fi to mobile data doesn't make the next request fail too. For a dropped stream it also says what the phone was doing: screen on or off, app on screen or in the background, battery saver, and any network switch in the last 2 minutes. Errors include the request, model, HTTP status, OpenRouter request ID, bytes received and the last SSE event. The same line is logged under the `AgentHttp` logcat tag. The API key is never logged. Requests that ask OpenRouter itself to download or generate video are rejected before any network call. OpenRouter routes LLM requests, so name a video provider or a direct URL for that step.
 
 The transcript follows the newest answer until you scroll back. Tap the down arrow to resume following.
 
@@ -276,19 +277,19 @@ Touch and hold to select text in chat messages, tool output, file previews, or t
 
 ## Customize your agent
 
-Open **More options → Tools, subagents & skills**. **Tools** registers validated SDK functions with a JSON object schema. Supported handlers are templates, questions answered in the app, and HTTPS JSON webhooks. Webhooks ask for approval before a request and publish a live progress event. They need a CORS-enabled endpoint. Tool results become part of the agent conversation.
+Open **Settings → Tools → Save and open custom tools & skills**. **Tools** registers validated SDK functions with a JSON object schema. Supported handlers are templates, questions answered in the app, and HTTPS JSON webhooks. Webhooks ask for approval before a request and publish a live progress event. They need a CORS-enabled endpoint. Tool results become part of the agent conversation.
 
 **Skills & app guide** saves text instructions with a name and description. Import or export the Markdown `SKILL.md` form. The import uses the name, description, and Markdown body, and opens the skill disabled for review. A tool-capable model sees enabled skills by name and description and can load their full text on demand. Pin a skill to include its instructions on each run. The built-in app guide is readable offline.
 
 You can also ask in chat to create a subagent, custom tool, or skill, or to enable a supported OpenRouter server tool. For example, “Create a subagent named Editor to review Markdown for clarity.” Review the proposed settings and tap **Save change**. The app validates and saves the resource to the same settings used by the configuration screens. It becomes available on the next message. Custom tools can use templates, ask for an answer, or POST to a fixed HTTPS webhook that requires approval when called.
 
-**SDK settings** separates generation, routing, follow-up behavior, advanced fields, and display.
+Settings opens with the gear icon and holds every setting. Its pages run in the order you need them: **Keys**, **Tools**, **Routing**, **Model**, **Follow-up**, **Limits** and **Display**. It opens on **Keys** until an OpenRouter key is saved, then on **Tools**. OpenAI settings show only after you enter an OpenAI key. On **Model**, reasoning, verbosity and output come first. Temperature, top P, top K, the penalties and stop sequences come last under **Sampling**, because most current models ignore them. **More options** (⋮) holds places to go: device and workspace files, workspaces, mini apps, decisions and the app guide.
 
 Tap **Usage** beside the active model to see spending and limits for the current OpenRouter API key. **Activity** adds trends, a calendar, model and provider rankings, and daily endpoint records. It covers the last 30 completed UTC days visible to the management key. Use the management key saved in **Workspaces**, or enter a read-only key for the current visit. [OpenRouter activity API](https://openrouter.ai/docs/api/api-reference/analytics/get-user-activity)
 
 ### Provider routing
 
-**SDK settings → Routing** controls which provider serves each OpenRouter request. Each option shows a short description when you select it. [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection)
+**Settings → Routing** controls which provider serves each OpenRouter request. Each option shows a short description when you select it. [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection)
 
 - **Auto** is OpenRouter's default routing. It balances price, speed, latency and reliability, and keeps a chat on one provider while its prompt cache is warm. When tools are sent, Auto Exacto also moves providers with better tool-calling results to the front.
 - **Floor**, **Nitro** and **Exacto** add the `:floor`, `:nitro` or `:exacto` routing variant to every model ID the app sends, including fallback and follow-up models.
@@ -309,7 +310,7 @@ Tap **Usage** beside the active model to see spending and limits for the current
 
 OpenRouter chat runs start with `callModel` from the bundled official Agent SDK. The app uses its full-response and item streams together for live text, reasoning summaries, tool activity, sources, usage, and available sandbox files. Each chat commits the SDK's versioned conversation state and visible transcript together. New requests are appended by the SDK when a chat is reopened. A cancelled or failed turn keeps its partial reply for review and retry.
 
-Advanced settings include SDK repetition detection, final-turn behavior, tool deadlines and concurrency, and stopping after a named function tool. Follow-up profiles use the SDK's dynamic model, instruction, and generation callbacks. Enabled skills can be discovered or pinned, and MCP and webhook calls request approval inside the app.
+**Settings → Limits** includes SDK repetition detection, final-turn behavior, tool deadlines and concurrency, and stopping after a named function tool. Follow-up profiles use the SDK's dynamic model, instruction, and generation callbacks. Enabled skills can be discovered or pinned, and MCP and webhook calls request approval inside the app.
 
 The Android app handles approvals during a run, including from the background notification. It does not currently resume a run after the process dies. SDK telemetry is unavailable. A generated image that OpenRouter returns only as a link is shown as a link, not downloaded. Server tool availability depends on the selected model and OpenRouter workspace.
 

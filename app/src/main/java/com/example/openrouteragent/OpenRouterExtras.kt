@@ -20,6 +20,11 @@ internal fun AgentConfig.toggledServerTools(): List<String> = buildList {
     if (modelSearchTool) add(MODEL_SEARCH_TOOL)
 }
 
+/** Parameters for switched-on server tools that have a setting, such as the advisor's model, keyed by tool type. */
+internal fun AgentConfig.toggledServerToolParameters(): Map<String, JSONObject> = buildMap {
+    advisorModel.trim().takeIf { advisorTool && it.isNotEmpty() }?.let { put(ADVISOR_TOOL, JSONObject().put("model", it)) }
+}
+
 /** The switched-on plugins, in the order they go in the request. */
 internal fun AgentConfig.toggledPlugins(): List<String> = buildList {
     if (responseHealing) add(RESPONSE_HEALING_PLUGIN)
@@ -29,12 +34,20 @@ internal fun AgentConfig.toggledPlugins(): List<String> = buildList {
 /**
  * The runtime's additional server tools: the JSON list from Settings plus each switched-on tool. A tool already in the
  * JSON list keeps its own settings there, so it isn't added twice. Nothing is added when tools are off for this message.
+ * [parameters] holds settings for a switched-on tool, such as the advisor's model.
  */
-internal fun runExtraTools(extraToolsJson: String, toggled: List<String>, toolsOff: Boolean): JSONArray {
+internal fun runExtraTools(
+    extraToolsJson: String,
+    toggled: List<String>,
+    toolsOff: Boolean,
+    parameters: Map<String, JSONObject> = emptyMap(),
+): JSONArray {
     val tools = JSONArray(extraToolsJson.ifBlank { "[]" })
     if (toolsOff) return tools
     val present = (0 until tools.length()).mapNotNull { (tools.opt(it) as? JSONObject)?.optString("type") }.toSet()
-    toggled.filterNot { it in present }.forEach { tools.put(JSONObject().put("type", it)) }
+    toggled.filterNot { it in present }.forEach { type ->
+        tools.put(JSONObject().put("type", type).apply { parameters[type]?.let { put("parameters", it) } })
+    }
     return tools
 }
 

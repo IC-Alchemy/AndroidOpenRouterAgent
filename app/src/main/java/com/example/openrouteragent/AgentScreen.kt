@@ -181,7 +181,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     // Reopen Settings when an OpenRouter sign-in finishes while the sheet is closed.
     LaunchedEffect(agent.signInKey) { if (agent.signInKey != null) showSettings = true }
     var showConfigure by remember { mutableStateOf(false) }
-    var showSdkSettings by rememberSaveable { mutableStateOf(false) }
     var customizeTab by rememberSaveable { mutableStateOf<String?>(null) }
     var showModels by rememberSaveable { mutableStateOf(false) }
     val model = agent.selectedModel
@@ -322,34 +321,10 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                                 workspaceFilesTarget = "all"
                                             })
                                         }
-                                        DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
-                                            showConfigure = false
-                                            showSdkSettings = true
-                                        })
+                                        // Every setting lives behind the Settings icon. This menu holds places to go.
                                         DropdownMenuItem(text = { Text("Workspaces") }, onClick = {
                                             showConfigure = false
                                             showWorkspaces = true
-                                        })
-                                        // Tools, subagents and skills share one page with tabs, so one row opens it.
-                                        DropdownMenuItem(text = { Text("Tools, subagents & skills") },
-                                            leadingIcon = { Icon(StudioSymbols.Agent, null) }, onClick = {
-                                            showConfigure = false
-                                            customizeTab = "tools"
-                                        })
-                                        DropdownMenuItem(text = { Text("Show reasoning") }, onClick = {
-                                            agent.setShowReasoning(!config.sdk.showReasoning)
-                                        }, trailingIcon = {
-                                            Switch(checked = config.sdk.showReasoning, onCheckedChange = null)
-                                        })
-                                        DropdownMenuItem(text = { Text("Render Markdown") }, onClick = {
-                                            agent.setRenderMarkdown(!config.sdk.renderMarkdown)
-                                        }, trailingIcon = {
-                                            Switch(checked = config.sdk.renderMarkdown, onCheckedChange = null)
-                                        })
-                                        DropdownMenuItem(text = { Text("Read voice replies aloud") }, onClick = {
-                                            agent.setReadVoiceReplies(!config.sdk.readVoiceReplies)
-                                        }, trailingIcon = {
-                                            Switch(checked = config.sdk.readVoiceReplies, onCheckedChange = null)
                                         })
                                         DropdownMenuItem(text = { Text("Mini apps") },
                                             leadingIcon = { Icon(StudioSymbols.MiniApps, null) }, onClick = {
@@ -602,11 +577,9 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
         )
     }
     if (showSettings) {
-        SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey, agent)
-    }
-    if (showSdkSettings) {
-        SdkSettingsSheet(config, agent.availableModels, { showSdkSettings = false }, agent::saveSettings,
-            routedPrice = { sdk -> model?.let { agent.routedPriceFor(it.id, sdk) } })
+        SettingsBottomSheet(config, { showSettings = false }, agent::saveSettings, agent.client::validateKey, agent,
+            routedPrice = { sdk -> model?.let { agent.routedPriceFor(it.id, sdk) } },
+            onOpenCustomization = { customizeTab = "tools" })
     }
     if (showWorkspaces) {
         WorkspacesSheet(agent) { showWorkspaces = false }

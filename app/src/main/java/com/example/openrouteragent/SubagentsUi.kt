@@ -57,7 +57,7 @@ internal fun SubagentsSettings(
             )
             if (tools == null) {
                 Text(
-                    "Fix the Additional server tools JSON in Advanced agent settings to edit subagents.",
+                    "Fix Additional server tools (JSON) at the bottom of Settings → Tools to edit subagents.",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                 )

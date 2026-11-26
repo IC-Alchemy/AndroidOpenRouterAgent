@@ -559,7 +559,8 @@ internal fun runtimeOptions(
                 .put("mimeType", item.mimeType).put("text", text)
         }))
         .put("miniApps", config.miniApps)
-        .put("extraTools", runExtraTools(config.extraToolsJson, config.toggledServerTools(), config.sdk.toolChoice == "none"))
+        .put("extraTools", runExtraTools(config.extraToolsJson, config.toggledServerTools(), config.sdk.toolChoice == "none",
+            config.toggledServerToolParameters()))
         .put("mcpUrl", config.mcpUrl).put("mcpToken", config.mcpToken)
         .put("maxSteps", config.maxSteps).put("maxCost", config.maxCost)
         .put("temperature", config.temperature.takeIf { "temperature" in model.parameters })

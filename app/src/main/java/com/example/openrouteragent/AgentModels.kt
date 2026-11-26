@@ -51,6 +51,8 @@ data class AgentConfig(
     val imageQuality: String = "",
     /** Adds openrouter:advisor, so the model can ask a stronger model for advice mid-answer. */
     val advisorTool: Boolean = false,
+    /** The model the advisor tool asks, sent as its `parameters.model`. Empty lets OpenRouter use the chat's model. */
+    val advisorModel: String = "",
     /** Adds openrouter:fusion, which asks a panel of models in parallel and compares their answers. */
     val fusionTool: Boolean = false,
     /** Adds openrouter:experimental__search_models, so the agent can search OpenRouter's model list. */

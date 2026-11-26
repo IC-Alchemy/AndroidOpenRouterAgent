@@ -206,7 +206,7 @@ class ModerationReportUiTest {
             }
         }
 
-        composeRule.onNodeWithText("Interface").performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.onNodeWithText("Display").performSemanticsAction(SemanticsActions.OnClick)
         val toggleNode = composeRule.onNodeWithText("On-device content moderation")
         toggleNode.performScrollTo().assertIsDisplayed().assertIsOff()
 
@@ -228,7 +228,7 @@ class ModerationReportUiTest {
         showSheet = true
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Interface").performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.onNodeWithText("Display").performSemanticsAction(SemanticsActions.OnClick)
         val toggleNodeAgain = composeRule.onNodeWithText("On-device content moderation")
         toggleNodeAgain.performScrollTo().assertIsDisplayed().assertIsOn()
         toggleNodeAgain.performSemanticsAction(SemanticsActions.OnClick)
