@@ -40,6 +40,7 @@ class AgentStorage internal constructor(context: Context, private val key: () ->
         return saved.copy(apiKey = readSecret("encrypted_key", "key_iv"),
             mcpToken = readSecret("encrypted_mcp_token", "mcp_token_iv"),
             managementKey = readSecret("encrypted_management_key", "management_key_iv"),
+            activityManagementKey = readSecret("encrypted_activity_management_key", "activity_management_key_iv"),
             openAiKey = readSecret("encrypted_openai_key", "openai_key_iv"),
             workspaceKeys = readSecret("encrypted_workspace_keys", "workspace_keys_iv").takeIf { it.isNotBlank() }
                 ?.let { json.decodeFromString<Map<String, String>>(it) }.orEmpty())
@@ -75,6 +76,7 @@ class AgentStorage internal constructor(context: Context, private val key: () ->
         putSecret(edit, "encrypted_key", "key_iv", config.apiKey)
         putSecret(edit, "encrypted_mcp_token", "mcp_token_iv", config.mcpToken)
         putSecret(edit, "encrypted_management_key", "management_key_iv", config.managementKey)
+        putSecret(edit, "encrypted_activity_management_key", "activity_management_key_iv", config.activityManagementKey)
         putSecret(edit, "encrypted_openai_key", "openai_key_iv", config.openAiKey)
         putSecret(edit, "encrypted_workspace_keys", "workspace_keys_iv",
             if (config.workspaceKeys.isEmpty()) "" else json.encodeToString(config.workspaceKeys))

@@ -29,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,7 +74,7 @@ private enum class UsageView(val label: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun UsageExplorer(rows: List<UsageActivity>, today: LocalDate) {
+internal fun UsageExplorer(rows: List<UsageActivity>, today: LocalDate, unreadableRows: Int = 0) {
     var days by rememberSaveable { mutableIntStateOf(30) }
     var metric by rememberSaveable { mutableStateOf(UsageMetric.Cost) }
     var view by rememberSaveable { mutableStateOf(UsageView.Trend) }
@@ -96,21 +95,27 @@ internal fun UsageExplorer(rows: List<UsageActivity>, today: LocalDate) {
         .takeIf { it >= 0 } ?: daily.indexOfLast { it.second.requests > 0 }.takeIf { it >= 0 } ?: daily.lastIndex
     fun selectDay(index: Int) { selectedDay = daily[index].first.toEpochDay() }
 
-    OutlinedSection(title = "Activity explorer", highlighted = true) {
+    OutlinedSection(title = "Activity totals", highlighted = true) {
+        UsageTotalsGrid(total)
+        Text("${usageDate(daily.first().first)} – ${usageDate(daily.last().first)} · UTC",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (unreadableRows > 0) {
+            Text(
+                "${usageCount(unreadableRows.toLong())} unreadable records were left out of these totals.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(7, 14, 30).forEach { length ->
                 UsageChip("$length days", days == length) { days = length }
             }
         }
-        Text("${usageDate(daily.first().first)} – ${usageDate(daily.last().first)} · UTC",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (rows.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 UsageFilter("All models", activeModel, models, onSelect = { model = it })
                 UsageFilter("All providers", activeProvider, providers, onSelect = { provider = it })
             }
         }
-        UsageTotalsGrid(total)
     }
     if (filtered.isEmpty()) {
         OutlinedSection(title = "No activity in this view") {
@@ -122,7 +127,10 @@ internal fun UsageExplorer(rows: List<UsageActivity>, today: LocalDate) {
         }
         return
     }
-    OutlinedSection(title = "Display") {
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             UsageView.entries.forEach { item ->
                 UsageChip(item.label, view == item) {
@@ -131,7 +139,6 @@ internal fun UsageExplorer(rows: List<UsageActivity>, today: LocalDate) {
                 }
             }
         }
-        HorizontalDivider()
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             UsageMetric.entries.forEach { item -> UsageChip(item.label, metric == item) { metric = item } }
         }
@@ -172,7 +179,7 @@ internal fun UsageExplorer(rows: List<UsageActivity>, today: LocalDate) {
 
 @Composable
 private fun UsageChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) }, modifier = Modifier.heightIn(min = 48.dp))
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
 }
 
 @Composable
@@ -184,7 +191,7 @@ private fun UsageFilter(
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+        TextButton(onClick = { open = true }) {
             Text(selected ?: allLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 4.dp))
             Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
         }
