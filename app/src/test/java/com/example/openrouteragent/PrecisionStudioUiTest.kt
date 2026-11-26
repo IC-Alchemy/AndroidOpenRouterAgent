@@ -168,7 +168,7 @@ class PrecisionStudioUiTest {
         composeRule.setContent {
             OpenRouterAgentTheme(darkTheme = false) {
                 androidx.compose.foundation.layout.Column {
-                    ChatToolsDisclosure(expanded = false, onToggle = {}, attachmentCount = 0) {}
+                    ChatToolsActions(expanded = false, onToggle = {}, attachmentCount = 0)
                     AgentInputBar(
                         value = "Run check",
                         onValueChange = {},
@@ -214,7 +214,7 @@ class PrecisionStudioUiTest {
         composeRule.setContent {
             OpenRouterAgentTheme(darkTheme = false) {
                 Column {
-                    ChatToolsDisclosure(expanded = false, onToggle = {}, attachmentCount = 0) {}
+                    ChatToolsActions(expanded = false, onToggle = {}, attachmentCount = 0)
                     Box(Modifier.weight(1f)) {
                         EmptyAgentState(hasApiKey = true, onOpenSettings = {}, onSelectPrompt = { selectedPrompt = it })
                     }
