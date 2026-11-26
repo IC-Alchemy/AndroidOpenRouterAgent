@@ -89,6 +89,21 @@ class OpenRouterUsageTest {
         assertEquals(3_000_000_125L, series.sumOf { it.second.tokens })
     }
 
+    @Test fun activityAcceptsUtcTimestampsWithASpaceSeparator() = runBlocking {
+        MockWebServer().use { server ->
+            val midnight = activity.replace("2025-08-24", "2025-08-24 00:00:00")
+            val fractional = activity.replace("2025-08-24", "2025-08-25 00:00:00.000")
+            server.enqueue(MockResponse().setBody("""{"data":[$midnight,$fractional]}"""))
+            val client = OpenRouterAgentClient(server.url("/api/v1/"))
+
+            val report = client.usageActivity("management-key")
+
+            assertEquals(0, report.unreadableRows)
+            assertEquals(listOf(LocalDate.of(2025, 8, 24), LocalDate.of(2025, 8, 25)), report.rows.map { it.date })
+            assertEquals(10L, report.rows.usageTotals().requests)
+        }
+    }
+
     @Test fun unreadableRowsDoNotHideTheRestOfTheReport() {
         val report = parseUsageActivity(
             """{"data":[{"date":"invalid"},$activity, ${activity.replace("2025-08-24", "2025-08-24T23:00:00-02:00")}]}"""

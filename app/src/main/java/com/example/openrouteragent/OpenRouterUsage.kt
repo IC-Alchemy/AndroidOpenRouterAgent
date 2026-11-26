@@ -8,7 +8,9 @@ import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoField
 import java.util.Locale
 
 internal data class KeyUsage(
@@ -136,13 +138,20 @@ private fun JSONObject.activityText(name: String): String? = (opt(name) as? Stri
 private fun JSONObject.activityCount(name: String): Long? = optLong(name, -1).takeIf { it >= 0 }
 
 private fun parseActivityDate(value: String): LocalDate? = try {
-    LocalDate.parse(value)
-} catch (_: DateTimeParseException) {
-    try {
-        OffsetDateTime.parse(value).withOffsetSameInstant(ZoneOffset.UTC).toLocalDate()
-    } catch (_: DateTimeParseException) {
-        null
+    // OpenRouter also returns UTC bucket timestamps such as "2024-01-15 00:00:00".
+    val normalized = value.trim().replaceFirst(' ', 'T')
+    if (!normalized.contains('T', ignoreCase = true)) {
+        LocalDate.parse(normalized)
+    } else {
+        val timestamp = DateTimeFormatter.ISO_DATE_TIME.parse(normalized)
+        if (timestamp.isSupported(ChronoField.OFFSET_SECONDS)) {
+            OffsetDateTime.from(timestamp).withOffsetSameInstant(ZoneOffset.UTC).toLocalDate()
+        } else {
+            LocalDate.from(timestamp)
+        }
     }
+} catch (_: DateTimeParseException) {
+    null
 }
 
 internal fun filterUsageActivity(
