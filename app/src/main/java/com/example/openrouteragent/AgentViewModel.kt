@@ -558,8 +558,14 @@ class AgentViewModel internal constructor(
     }
 
     private fun finishBackground(title: String, text: String) {
-        AgentRunService.stop(app)
-        RunNotifications.end(app)
+        if (miniAppBuilds.busy) {
+            // A mini app is still being built, so the app stays in the foreground and the notice shows the build.
+            RunNotifications.begin(app)
+            RunNotifications.update(miniAppNotice(miniAppBuilds.pending.value.firstOrNull()))
+        } else {
+            AgentRunService.stop(app)
+            RunNotifications.end(app)
+        }
         if (!AppVisibility.visible) RunNotifications.finished(app, title, text, workspace.id)
     }
 
@@ -1269,6 +1275,43 @@ class AgentViewModel internal constructor(
         return miniAppGenerator.editMiniApp(config, model, miniAppRepository(app), id, changeRequest)
     }
 
+    /**
+     * Mini app builds run here rather than in the mini apps sheet, so closing the sheet or leaving the app does not
+     * stop them. While one runs with no agent run active, the run service keeps the app in the foreground.
+     */
+    internal val miniAppBuilds = MiniAppBuildTracker(
+        scope = viewModelScope,
+        onBusy = ::miniAppBuildStarted,
+        onIdle = ::miniAppBuildsEnded,
+    )
+
+    private fun miniAppNotice(build: PendingMiniAppBuild?) = RunNotice(
+        title = build?.editing?.let { "Updating ${it.name}" } ?: "Building your mini app",
+        text = "Feel free to leave. It will be ready when you get back.",
+    )
+
+    private fun miniAppBuildStarted(build: PendingMiniAppBuild) {
+        // An agent run already keeps the app in the foreground; its own end hands the notice over to the build.
+        if (activePrompt != null) return
+        RunNotifications.begin(app)
+        RunNotifications.update(miniAppNotice(build))
+        AgentRunService.start(app)
+    }
+
+    private fun miniAppBuildsEnded(outcome: MiniAppBuildOutcome?) {
+        if (activePrompt == null) {
+            AgentRunService.stop(app)
+            RunNotifications.end(app)
+        }
+        if (AppVisibility.visible) return
+        when (outcome) {
+            is MiniAppBuildOutcome.Done ->
+                RunNotifications.finished(app, "Mini app ready", "${outcome.app.name} is ready in Mini apps.")
+            is MiniAppBuildOutcome.Failed -> RunNotifications.finished(app, "Mini app not built", outcome.message)
+            null -> Unit
+        }
+    }
+
     internal suspend fun searchSkillsDirectory(query: String): List<RemoteSkillSummary> =
         skillsDirectory.search(query)
 
@@ -1405,7 +1448,10 @@ class AgentViewModel internal constructor(
         RunCommands.handler = { command, decision ->
             viewModelScope.launch {
                 when (command) {
-                    RunCommands.STOP -> cancelTurn()
+                    RunCommands.STOP -> {
+                        // With no agent run, the notice belongs to a mini app build, so Stop stops that.
+                        if (activePrompt == null) miniAppBuilds.cancelAll() else cancelTurn()
+                    }
                     RunCommands.ALLOW, RunCommands.DENY ->
                         if (approval?.decision == decision && approval?.asksUser == false) {
                             decideTool(command == RunCommands.ALLOW)
