@@ -99,7 +99,6 @@ internal fun AgentResponseCard(
     speaking: Boolean = false,
     onSpeak: (() -> Unit)? = null,
 ) {
-    val uriHandler = LocalUriHandler.current
     val isWarningCard = entry.isError || entry.isModerated
     val containerColor = if (isWarningCard) {
         MaterialTheme.colorScheme.errorContainer
@@ -117,8 +116,8 @@ internal fun AgentResponseCard(
         )
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Main Assistant Text
             Row(verticalAlignment = Alignment.Top) {
@@ -163,41 +162,6 @@ internal fun AgentResponseCard(
                 CollapsibleReasoningBox(entry.reasoningSummary)
             }
 
-            // Web Search Queries strip
-            if (entry.searchQueries.isNotEmpty()) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                    border = BorderStroke(StudioHairlineWidth, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Web Search",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        entry.searchQueries.forEach { q ->
-                            CopyableText(
-                                text = q,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-                    }
-                }
-            }
-
             // Hosted Linux Sandbox Execution Cards
             entry.shellSteps.forEachIndexed { idx, step ->
                 SandboxTerminalCard(
@@ -207,15 +171,8 @@ internal fun AgentResponseCard(
                 )
             }
 
-            if (entry.citations.isNotEmpty()) {
-                OutlinedSection(title = "Sources") {
-                    entry.citations.forEach { cite ->
-                        TextButton(onClick = { runCatching { uriHandler.openUri(cite.url) } }) {
-                            Text(cite.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
+            // Searches and sources stay folded into one row so they never crowd out the reply.
+            SourcesDisclosure(entry.citations, entry.searchQueries)
 
             // Footer with usage metadata, Copy reply (when safe), and Report button on every AI bubble
             HorizontalDivider(

@@ -41,7 +41,9 @@ A run still ends if Android stops the app, for example after a force stop or a r
 
 The switch above the message field picks how each chat works. **Agent** is the default: the model can use the tools you turned on in Settings, such as the hosted shell, web search, files, mini apps, MCP and custom tools, over several steps. **Chat** sends messages without tools. Replies start sooner and cost less, because tool definitions are not sent with every message, and models without tool calling work too. Reasoning and streaming work the same in both modes. The mode is saved with the chat, a new chat starts in the mode of the chat you were in, and you can switch at any time between messages.
 
-Tap **Aa** beside **Files & tools** to switch between Symbols and Labels. You can also change it in **Settings → Interface**. Labels show during the first day. An explicit choice stays saved. In Symbols mode, long-press a control to see its name.
+The row under the chat title holds the model picker, the **Files & tools** folder button, **Aa** and **Usage**, so the chat keeps as much of the screen as possible. Web searches and sources stay folded into one line under a reply, such as “5 sources · 1 search”. Tap it to see the searches and the links.
+
+Tap **Aa** beside the **Files & tools** folder to switch between Symbols and Labels. You can also change it in **Settings → Interface**. Labels show during the first day. An explicit choice stays saved. In Symbols mode, long-press a control to see its name.
 
 ## Mini apps
 

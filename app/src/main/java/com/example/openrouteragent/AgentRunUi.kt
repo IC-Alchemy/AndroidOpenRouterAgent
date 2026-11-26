@@ -255,7 +255,6 @@ internal fun RunActivityDialog(
     onDismiss: () -> Unit,
     onFile: (LiveFile) -> Unit,
 ) {
-    val uriHandler = LocalUriHandler.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Run activity") },
@@ -272,11 +271,7 @@ internal fun RunActivityDialog(
                     }
                 }
                 if (progress.sources.isNotEmpty()) OutlinedSection(title = "Sources") {
-                    progress.sources.forEach { source ->
-                        TextButton(onClick = { runCatching { uriHandler.openUri(source.url) } }) {
-                            Text(source.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
+                    SourceLinks(progress.sources)
                 }
                 progress.usage?.let { Text(it.display(), style = MaterialTheme.typography.labelSmall) }
                 if (progress.summary.isBlank() && progress.tools.isEmpty() && progress.usage == null &&

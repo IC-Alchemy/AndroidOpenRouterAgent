@@ -3,6 +3,8 @@ package com.example.openrouteragent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -370,8 +372,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 Row(
                                     Modifier.widthIn(max = 840.dp).fillMaxWidth()
-                                        .padding(start = 12.dp, end = 12.dp, bottom = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        .padding(start = 8.dp, end = 12.dp, bottom = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     val modelLabel = when {
@@ -397,14 +399,26 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                                             Text(modelLabel, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
-                                    FilledTonalButton(
-                                        onClick = { showUsage = true },
-                                        enabled = canManageChat && !agent.side.isOpen,
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    ) {
-                                        Icon(StudioSymbols.Usage, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("Usage")
+                                    ChatToolsActions(
+                                        expanded = showChatTools,
+                                        onToggle = { showChatTools = !showChatTools },
+                                        attachmentCount = agent.attachedFiles.size,
+                                    )
+                                    val usageLabel = LocalControlLabels.current.visible
+                                    ControlTooltip("Usage", enabled = !usageLabel) {
+                                        FilledTonalButton(
+                                            onClick = { showUsage = true },
+                                            enabled = canManageChat && !agent.side.isOpen,
+                                            contentPadding = PaddingValues(horizontal = if (usageLabel) 12.dp else 10.dp,
+                                                vertical = 6.dp),
+                                            modifier = Modifier.semantics { contentDescription = "Usage" },
+                                        ) {
+                                            Icon(StudioSymbols.Usage, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            if (usageLabel) {
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("Usage")
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -449,12 +463,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
                     .background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (!agent.isLoading) {
-                        ChatToolsDisclosure(
-                            expanded = showChatTools,
-                            onToggle = { showChatTools = !showChatTools },
-                            attachmentCount = agent.attachedFiles.size,
-                        ) {
+                    if (!agent.isLoading && showChatTools) {
+                        Box(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 8.dp)) {
                             StatusCapabilitiesBar(
                                 config = if (agent.chatMode) config.withoutTools() else config,
                                 activeContainerId = activeContainerId,
@@ -485,7 +495,7 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                             LazyColumn(
                                 state = listState, modifier = Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth()
                                     .nestedScroll(manualScroll),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 itemsIndexed(messages, key = { _, entry -> entry.id }) { index, entry ->

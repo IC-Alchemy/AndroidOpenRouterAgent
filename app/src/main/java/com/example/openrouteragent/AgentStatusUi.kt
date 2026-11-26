@@ -5,6 +5,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -66,34 +68,41 @@ private val QUICK_PROMPTS = listOf(
     ),
 )
 
+/**
+ * The Files & tools toggle, the labels toggle and the chat modes note. They sit in the
+ * model row above the chat, so they don't take a row of their own away from the replies.
+ */
 @Composable
-internal fun ChatToolsDisclosure(
+internal fun ChatToolsActions(
     expanded: Boolean,
     onToggle: () -> Unit,
     attachmentCount: Int,
-    content: @Composable () -> Unit,
 ) {
-    Column(Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(horizontal = 8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                TextButton(
-                    onClick = onToggle,
-                    modifier = Modifier.heightIn(min = 48.dp)
-                        .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
-                ) {
-                    Icon(StudioSymbols.Folder, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (attachmentCount > 0) "Files & tools · $attachmentCount attached" else "Files & tools")
-                    Spacer(Modifier.width(4.dp))
-                    Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null)
+    val label = if (attachmentCount > 0) "Files & tools · $attachmentCount attached" else "Files & tools"
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ControlTooltip(label) {
+            TextButton(
+                onClick = onToggle,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .semantics {
+                        contentDescription = label
+                        stateDescription = if (expanded) "Expanded" else "Collapsed"
+                    },
+                contentPadding = PaddingValues(horizontal = 6.dp),
+            ) {
+                Icon(StudioSymbols.Folder, null, modifier = Modifier.size(20.dp))
+                if (attachmentCount > 0) {
+                    Text(attachmentCount.toString(), style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(start = 2.dp))
                 }
-            }
-            ControlLabelsToggle()
-            StudioInfoButton("Chat modes") {
-                Text("Agent can use tools and work through several steps. Chat gives a direct reply.")
+                Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null,
+                    modifier = Modifier.size(16.dp))
             }
         }
-        if (expanded) content()
+        ControlLabelsToggle()
+        StudioInfoButton("Chat modes") {
+            Text("Agent can use tools and work through several steps. Chat gives a direct reply.")
+        }
     }
 }
 
