@@ -22,6 +22,17 @@ class OpenRouterExtrasTest {
     }
 
     @Test
+    fun theChosenAdvisorModelIsSentAsTheToolsModelParameter() {
+        val config = AgentConfig(advisorTool = true, advisorModel = " anthropic/claude-opus-4.7 ")
+        val array = runExtraTools("", config.toggledServerTools(), toolsOff = false, config.toggledServerToolParameters())
+        assertEquals(ADVISOR_TOOL, array.getJSONObject(0).getString("type"))
+        assertEquals("anthropic/claude-opus-4.7", array.getJSONObject(0).getJSONObject("parameters").getString("model"))
+        // No chosen model, or the advisor switched off, sends no parameters.
+        assertTrue(AgentConfig(advisorTool = true).toggledServerToolParameters().isEmpty())
+        assertTrue(AgentConfig(advisorModel = "a/b").toggledServerToolParameters().isEmpty())
+    }
+
+    @Test
     fun aToolAlreadyInTheJsonKeepsItsSettings() {
         val array = runExtraTools("""[{"type":"openrouter:fusion","parameters":{"max_tool_calls":2}}]""",
             listOf(FUSION_TOOL), toolsOff = false)
