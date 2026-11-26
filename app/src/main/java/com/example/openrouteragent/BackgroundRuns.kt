@@ -13,11 +13,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModelProvider
@@ -40,6 +42,8 @@ class AgentApplication : Application(), ViewModelStoreOwner {
         // A new process has no run, so an ongoing notice left behind by a killed process is stale.
         RunNotifications.cancelOngoing(this)
         registerActivityLifecycleCallbacks(AppVisibility.tracker)
+        // Records network changes, so a dropped stream can say whether the phone switched networks.
+        RunEnvironment.start(this)
     }
 }
 
@@ -110,7 +114,40 @@ data class RunNotice(
 )
 
 class AgentRunService : Service() {
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * Keeps the CPU and Wi-Fi awake while a run streams with the screen off. Without them, some phones let Wi-Fi
+     * doze or hand over to mobile data mid-stream, and Android aborts the open socket ("Software caused connection
+     * abort"). Both are released when the service stops, and the wake lock also times out at the run ceiling.
+     */
+    private fun holdLocks() {
+        if (wakeLock == null) wakeLock = runCatching {
+            getSystemService(PowerManager::class.java)?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "OpenRouterAgent:run")
+                ?.apply { setReferenceCounted(false); acquire(RUN_CEILING_MILLIS) }
+        }.onFailure { Log.w(TAG, "Could not hold a wake lock: ${it.message}") }.getOrNull()
+        if (wifiLock == null) wifiLock = runCatching {
+            @Suppress("DEPRECATION") // The low-latency mode only works while the screen is on, which is not the case here.
+            applicationContext.getSystemService(WifiManager::class.java)
+                ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "OpenRouterAgent:run")
+                ?.apply { setReferenceCounted(false); acquire() }
+        }.onFailure { Log.w(TAG, "Could not hold a Wi-Fi lock: ${it.message}") }.getOrNull()
+    }
+
+    private fun releaseLocks() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
+        wifiLock = null
+    }
+
+    override fun onDestroy() {
+        releaseLocks()
+        super.onDestroy()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Android crashes the app when a startForegroundService call is not answered with startForeground, even if
@@ -128,6 +165,7 @@ class AgentRunService : Service() {
             Log.w(TAG, "Could not start the foreground run service: ${it.message}")
         }.isSuccess
         val wanted = onStarted()
+        if (wanted && promoted) holdLocks()
         // stopSelf(startId) keeps the service when a newer start is still on its way, which must also go foreground.
         if (!wanted || !promoted) stopSelf(startId)
         // A run cannot resume after the process dies, so do not ask Android to restart the service.
@@ -136,6 +174,7 @@ class AgentRunService : Service() {
 
     override fun onTimeout(startId: Int, fgsType: Int) {
         // Android 15 limits data-sync services and requires a prompt stop. Runs time out long before this.
+        releaseLocks()
         stopSelf()
     }
 

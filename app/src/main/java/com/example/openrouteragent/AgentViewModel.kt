@@ -764,6 +764,8 @@ class AgentViewModel internal constructor(
             var runSpace = priorWorkspace
             val earlier = mutableListOf<AgentRunResult>()
             var continues = 0
+            // How many of those continued from a checkpoint, rather than resending a request that saved nothing.
+            var resumes = 0
             try {
                 val gitHubAccess = if (noTools || currentConfig.sdk.toolChoice == "none") null
                     else area.projectId?.let { github.session(it) }
@@ -776,6 +778,8 @@ class AgentViewModel internal constructor(
                     }
                 }
                 var runPrompt = prompt
+                // Attachments go with the first request, and again when that same request is resent.
+                var sendMedia = true
                 lateinit var sdkResult: SdkRunResult
                 while (true) {
                     checkpoint = null
@@ -783,7 +787,7 @@ class AgentViewModel internal constructor(
                         sdkResult = sdk.run(currentConfig, runSpace, runPrompt, model, availableModels, builtInGuide,
                             onUpdate = ::updateProgress, onApproval = { approvals = approvals + it; notifyBackground() },
                             files = runFiles.copy(github = gitHubAccess != null,
-                                media = if (continues == 0) runMedia else emptyList()),
+                                media = if (sendMedia) runMedia else emptyList()),
                             onAppAction = if (currentConfig.sdk.toolChoice == "none") null else { name, args ->
                                 executeAppAction(area, gitHubAccess, name, args)
                             },
@@ -792,15 +796,21 @@ class AgentViewModel internal constructor(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        val saved = checkpoint?.takeIf { it.history != null }
-                        if (saved == null || continues >= MAX_AUTO_CONTINUES || !resumableFailure(e)) throw e
+                        val step = recoveryStep(e, checkpoint, continues)
+                        if (step == RunRecoveryStep.Stop) throw e
                         continues++
-                        saved.partial?.let(earlier::add)
-                        runSpace = runSpace.copy(sdkHistory = saved.history, sdkState = null,
-                            containerId = if (area.projectId != null) runSpace.containerId
-                                else saved.partial?.discoveredContainerId ?: runSpace.containerId)
-                        val reason = e.userMessage(currentConfig.apiKey).redact(currentConfig.openAiKey)
-                        runPrompt = continuePrompt(reason)
+                        if (step is RunRecoveryStep.Continue) {
+                            val saved = step.checkpoint
+                            saved.partial?.let(earlier::add)
+                            runSpace = runSpace.copy(sdkHistory = saved.history, sdkState = null,
+                                containerId = if (area.projectId != null) runSpace.containerId
+                                    else saved.partial?.discoveredContainerId ?: runSpace.containerId)
+                            val reason = e.userMessage(currentConfig.apiKey).redact(currentConfig.openAiKey)
+                            runPrompt = continuePrompt(reason)
+                            sendMedia = false
+                            resumes++
+                        }
+                        // A Resend sends the same request again, with the same prompt, history and attachments.
                         approvals = emptyList()
                         progress = progress?.continuing(continues, MAX_AUTO_CONTINUES)
                         notifyBackground()
@@ -883,13 +893,13 @@ class AgentViewModel internal constructor(
                 finishedText = turnError ?: "The run was stopped."
                 // Stopped by the user, or because the app closed: either way the work so far stays in the chat.
                 keepInterrupted(prompt, turnError ?: "The run stopped because the app closed.", checkpoint, earlier,
-                    runSpace, continues, keepContainer = area.projectId == null, chatWasSaved)
+                    runSpace, continues, resumes, keepContainer = area.projectId == null, chatWasSaved)
                 throw e
             } catch (e: Exception) {
                 turnError = e.userMessage(currentConfig.apiKey).redact(currentConfig.openAiKey)
                 finishedTitle = "The agent could not finish"
                 finishedText = turnError ?: "The run failed."
-                keepInterrupted(prompt, turnError, checkpoint, earlier, runSpace, continues,
+                keepInterrupted(prompt, turnError, checkpoint, earlier, runSpace, continues, resumes,
                     keepContainer = area.projectId == null, chatWasSaved)
             } finally {
                 activePrompt = null
@@ -1009,12 +1019,13 @@ class AgentViewModel internal constructor(
      */
     private suspend fun keepInterrupted(
         prompt: String, error: String?, checkpoint: RunCheckpoint?, earlier: List<AgentRunResult>,
-        runSpace: Workspace, continues: Int, keepContainer: Boolean, chatWasSaved: Boolean,
+        runSpace: Workspace, continues: Int, resumes: Int, keepContainer: Boolean, chatWasSaved: Boolean,
     ) {
         val media = activeMedia
         val partial = progress?.stopped()
         val parts = earlier + listOfNotNull(checkpoint?.partial)
-        val history = checkpoint?.history ?: runSpace.sdkHistory.takeIf { continues > 0 }
+        // After a resume, the run's history already holds this turn; a resend left it as the chat had it.
+        val history = checkpoint?.history ?: runSpace.sdkHistory.takeIf { resumes > 0 }
         val didWork = partial != null && (partial.answer.isNotBlank() || partial.summary.isNotBlank() ||
             partial.tools.isNotEmpty()) || parts.isNotEmpty() || continues > 0
         val base = workspace.copy(interruptedTurn = null)

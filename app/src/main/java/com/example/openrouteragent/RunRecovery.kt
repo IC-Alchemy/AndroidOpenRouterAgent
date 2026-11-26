@@ -12,7 +12,8 @@ import java.io.IOException
  * RUN_CEILING_MILLIS backstop. While it works, the runtime sends checkpoints: the conversation so far, ready to
  * replay, and what the run produced. When a run fails for a reason that a fresh request can get past (a stream
  * that went quiet or closed, a server error, a restarted runtime), the app continues it from its last checkpoint
- * in a new request, up to MAX_AUTO_CONTINUES times, with the sandbox it was using.
+ * in a new request, up to MAX_AUTO_CONTINUES times, with the sandbox it was using. A stream that closes before the
+ * first checkpoint is sent again from the start, but only while it had streamed nothing but reasoning and text.
  */
 
 internal const val RUN_IDLE_LIMIT_MILLIS = 10 * 60_000L
@@ -55,6 +56,28 @@ internal fun resumableFailure(error: Throwable): Boolean {
     if (error is AgentRunStalled) return error.resumable
     val message = error.message ?: return false
     return resumableText.any { message.contains(it, ignoreCase = true) } || serverError.containsMatchIn(message)
+}
+
+/** What the app does after a request in a run fails. */
+internal sealed class RunRecoveryStep {
+    /** Give up and keep the turn as stopped, with Continue and Retry. */
+    object Stop : RunRecoveryStep()
+    /** Continue from the last checkpoint in a fresh request, telling the model where it stopped. */
+    data class Continue(val checkpoint: RunCheckpoint) : RunRecoveryStep()
+    /** Send the same request again from the start: it stopped before it saved any step, and nothing had run. */
+    object Resend : RunRecoveryStep()
+}
+
+/**
+ * Decides how to recover from a failed request. A checkpoint wins: the run continues from its last saved step. With
+ * no checkpoint, the first request is sent again only when its stream closed while the model was still only
+ * reasoning or writing, because then no hosted tool can run twice.
+ */
+internal fun recoveryStep(error: Throwable, checkpoint: RunCheckpoint?, continues: Int): RunRecoveryStep {
+    if (continues >= MAX_AUTO_CONTINUES || !resumableFailure(error)) return RunRecoveryStep.Stop
+    checkpoint?.takeIf { it.history != null }?.let { return RunRecoveryStep.Continue(it) }
+    return if (error.message?.contains(STREAM_DROP_SAFE_TO_RESEND) == true) RunRecoveryStep.Resend
+        else RunRecoveryStep.Stop
 }
 
 /** The message that continues a stopped run in a fresh request. The user doesn't see it as a chat message. */
