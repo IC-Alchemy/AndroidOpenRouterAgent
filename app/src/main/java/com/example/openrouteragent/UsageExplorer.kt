@@ -207,9 +207,9 @@ private fun UsageTotalsGrid(totals: UsageTotals, detailed: Boolean = false) {
         if (detailed) {
             UsageValue("Input", usageCount(totals.prompt))
             UsageValue("Output", usageCount(totals.completion))
-            UsageValue("Cached input", usageCount(totals.cached))
-            UsageValue("Reasoning", usageCount(totals.reasoning))
-            UsageValue("External spend (BYOK)", usageMoney(totals.byok))
+            UsageValue("Cached input", totals.cached?.let(::usageCount) ?: "Unavailable")
+            UsageValue("Reasoning", totals.reasoning?.let(::usageCount) ?: "Unavailable")
+            UsageValue("External spend (BYOK)", totals.byok?.let(::usageMoney) ?: "Unavailable")
         }
     }
 }
@@ -427,8 +427,8 @@ private fun UsageRecords(
                     if (expanded == index) {
                         HorizontalDivider()
                         UsageTotalsGrid(row.totals, detailed = true)
-                        Text("Version · ${row.version}", style = MaterialTheme.typography.bodySmall)
-                        CopyableText("Endpoint · ${row.endpoint}", style = MaterialTheme.typography.bodySmall)
+                        row.version?.let { Text("Version · $it", style = MaterialTheme.typography.bodySmall) }
+                        row.endpoint?.let { CopyableText("Endpoint · $it", style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             }

@@ -55,6 +55,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
+import java.io.IOException
+import java.io.InterruptedIOException
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -156,8 +158,14 @@ internal fun UsageScreen(
                                     val today = LocalDate.now(ZoneOffset.UTC)
                                     today to client.usageActivity(managementKey)
                                 },
-                            ) { (today, rows) ->
-                                UsageExplorer(rows, today)
+                            ) { (today, report) ->
+                                if (report.unreadableRows > 0) {
+                                    OutlinedSection(title = "Partial activity data") {
+                                        Text("${usageCount(report.unreadableRows.toLong())} unreadable records were left out of these totals.",
+                                            style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                UsageExplorer(report.rows, today)
                             }
                         }
                     }
@@ -227,17 +235,23 @@ private fun <T : Any> UsageRequest(
     error?.let {
         OutlinedSection(title = if (value == null) "Usage unavailable" else "Showing the last loaded usage") {
             val apiError = it as? ApiStatusException
-            val summary = when (apiError?.code) {
-                401 -> "OpenRouter couldn’t authenticate this request."
-                403 -> "OpenRouter denied access. For Activity, a Custom management key needs Activity → Read Only."
-                429 -> "OpenRouter is rate limiting requests. Try again in a moment."
+            val payloadError = it as? UsagePayloadException
+            val summary = when {
+                payloadError != null -> "OpenRouter returned activity the app couldn’t read."
+                apiError?.code == 401 -> "OpenRouter couldn’t authenticate this request."
+                apiError?.code == 403 -> "OpenRouter denied access. For Activity, a Custom management key needs Activity → Read Only."
+                apiError?.code == 429 -> "OpenRouter is rate limiting requests. Try again in a moment."
+                apiError != null -> "OpenRouter couldn’t complete the usage request."
+                it is InterruptedIOException -> "OpenRouter took too long to return usage. Try again."
+                it is IOException -> "Couldn’t load usage over this connection. Check your connection and retry."
+                it is IllegalArgumentException -> "The key couldn’t be sent. Copy it again from OpenRouter."
                 else -> "Usage couldn’t be loaded. Try again."
             }
             Text(summary, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error)
-            apiError?.let { failure ->
-                val diagnostic = listOfNotNull(
-                    failure.message, failure.requestId?.let { id -> "Request ID $id" },
-                ).joinToString("\n")
+            val detail = apiError?.message ?: payloadError?.message
+            if (detail != null) {
+                val id = apiError?.requestId ?: payloadError?.requestId
+                val diagnostic = listOfNotNull(detail, id?.let { "Request ID $it" }).joinToString("\n")
                 CopyableText(diagnostic, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = onRetry, enabled = !loading) { Text("Retry") }

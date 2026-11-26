@@ -19,7 +19,7 @@ class OpenRouterUsageTest {
             val client = OpenRouterAgentClient(server.url("/api/v1/"))
 
             val snapshot = client.keyUsage("chat-key")
-            val rows = client.usageActivity("management-key")
+            val rows = client.usageActivity("management-key").rows
 
             assertEquals("/api/v1/key", server.takeRequest().let {
                 assertEquals("Bearer chat-key", it.getHeader("Authorization"))
@@ -34,7 +34,7 @@ class OpenRouterUsageTest {
             assertEquals(2.5, snapshot.byok!!, 0.0)
             assertEquals("OpenAI", rows.single().provider)
             assertEquals(3_000_000_000L, rows.single().totals.prompt)
-            assertEquals(0.012, rows.single().totals.byok, 0.0)
+            assertEquals(0.012, rows.single().totals.byok!!, 0.0)
         }
     }
 
@@ -44,16 +44,37 @@ class OpenRouterUsageTest {
             val client = OpenRouterAgentClient(server.url("/api/v1/"))
             val key = "sk-or-v1-" + "a".repeat(64)
 
-            val rows = client.usageActivity("  \"Bearer $key\"  ")
+            val rows = client.usageActivity("  \"Bearer $key\"  ").rows
 
             assertEquals("Bearer $key", server.takeRequest().getHeader("Authorization"))
             assertEquals(1, rows.size)
         }
     }
 
+    @Test fun olderActivityRowsRetainCoreTotalsWhenCachedTokensAreAbsent() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """{"data":[{"date":"2025-08-24","model":"openai/gpt-4.1",
+                    "provider_name":"OpenAI","usage":0.015,"requests":5,
+                    "prompt_tokens":50,"completion_tokens":125,"reasoning_tokens":25,
+                    "model_permaslug":null,"endpoint_id":null,"byok_usage_inference":null}]}"""
+            ))
+            val client = OpenRouterAgentClient(server.url("/api/v1/"))
+
+            val row = client.usageActivity("management-key").rows.single()
+
+            assertEquals(LocalDate.of(2025, 8, 24), row.date)
+            assertEquals(5L, row.totals.requests)
+            assertEquals(175L, row.totals.tokens)
+            assertNull(row.totals.cached)
+            assertNull(row.totals.byok)
+            assertNull(row.endpoint)
+        }
+    }
+
     @Test fun completeUtcDaysExcludeTodayAndFillGapsAfterFiltering() {
         val today = LocalDate.parse("2025-08-26")
-        val row = parseUsageActivity("""{"data":[$activity]}""").single()
+        val row = parseUsageActivity("""{"data":[$activity]}""").rows.single()
         val filtered = filterUsageActivity(
             listOf(row, row.copy(date = today), row.copy(date = today.minusDays(8)),
                 row.copy(provider = "Other"), row.copy(model = "another/model")),
@@ -68,8 +89,22 @@ class OpenRouterUsageTest {
         assertEquals(3_000_000_125L, series.sumOf { it.second.tokens })
     }
 
+    @Test fun unreadableRowsDoNotHideTheRestOfTheReport() {
+        val report = parseUsageActivity(
+            """{"data":[{"date":"invalid"},$activity, ${activity.replace("2025-08-24", "2025-08-24T23:00:00-02:00")}]}"""
+        )
+
+        assertEquals(1, report.unreadableRows)
+        assertEquals(listOf(LocalDate.of(2025, 8, 24), LocalDate.of(2025, 8, 25)), report.rows.map { it.date })
+        assertEquals(10L, report.rows.usageTotals().requests)
+        assertEquals(20L, report.rows.usageTotals().cached)
+        val complete = report.rows.first()
+        val incomplete = report.rows.last().let { it.copy(totals = it.totals.copy(cached = null)) }
+        assertNull(listOf(complete, incomplete).usageTotals().cached)
+    }
+
     @Test fun rankingsUseTheSelectedMetricAndGroupMatchingModels() {
-        val row = parseUsageActivity("""{"data":[$activity]}""").single()
+        val row = parseUsageActivity("""{"data":[$activity]}""").rows.single()
         val alternate = row.copy(model = "another/model", totals = row.totals.copy(cost = 10.0, requests = 1))
         val rows = listOf(row, row.copy(provider = "Other"), alternate)
 

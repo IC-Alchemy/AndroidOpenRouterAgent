@@ -105,12 +105,17 @@ class OpenRouterAgentClient(
     internal suspend fun keyUsage(apiKey: String): KeyUsage =
         execute(request(apiKey, endpoint("key")).build(), apiKey, quick) { parseKeyUsage(it.bodyText()) }
 
-    internal suspend fun usageActivity(managementKey: String): List<UsageActivity> {
+    internal suspend fun usageActivity(managementKey: String): UsageActivityReport {
         val pasted = managementKey.trim().removeSurrounding("\"").removeSurrounding("'").trim()
         val key = if (pasted.startsWith("Bearer ", ignoreCase = true)) pasted.substringAfter(' ').trim() else pasted
         val credential = key.removeSurrounding("\"").removeSurrounding("'").trim()
-        return execute(request(credential, endpoint("activity")).build(), credential, quick) {
-            parseUsageActivity(it.bodyText())
+        return execute(request(credential, endpoint("activity")).build(), credential, quick) { response ->
+            val body = response.body?.string().orEmpty()
+            try {
+                parseUsageActivity(body)
+            } catch (e: UsagePayloadException) {
+                throw UsagePayloadException(e.message.orEmpty(), response.openRouterRequestId(credential))
+            }
         }
     }
 
@@ -360,11 +365,13 @@ class OpenRouterAgentClient(
             else -> response.message
         }
         val message = (detail ?: fallback).redact(apiKey).take(500)
-        val requestId = listOf("request-id", "x-request-id", "openrouter-request-id", "cf-ray")
-            .firstNotNullOfOrNull { response.header(it)?.takeIf { value -> value.isNotBlank() } }
-            ?.redact(apiKey)?.take(120)
-        return ApiStatusException(response.code, "OpenRouter HTTP ${response.code}. $message", requestId)
+        return ApiStatusException(response.code, "OpenRouter HTTP ${response.code}. $message", response.openRouterRequestId(apiKey))
     }
+
+    private fun Response.openRouterRequestId(apiKey: String): String? =
+        listOf("request-id", "x-request-id", "openrouter-request-id", "cf-ray")
+            .firstNotNullOfOrNull { header(it)?.takeIf { value -> value.isNotBlank() } }
+            ?.redact(apiKey)?.take(120)
 
     private fun Response.bodyText(): String =
         body?.string()?.takeIf { it.isNotBlank() } ?: throw IOException("OpenRouter returned an empty response.")
