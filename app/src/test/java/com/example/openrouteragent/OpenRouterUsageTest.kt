@@ -38,6 +38,19 @@ class OpenRouterUsageTest {
         }
     }
 
+    @Test fun activityAcceptsKeyCopiedWithBearerPrefixAndQuotes() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"data":[$activity]}"""))
+            val client = OpenRouterAgentClient(server.url("/api/v1/"))
+            val key = "sk-or-v1-" + "a".repeat(64)
+
+            val rows = client.usageActivity("  \"Bearer $key\"  ")
+
+            assertEquals("Bearer $key", server.takeRequest().getHeader("Authorization"))
+            assertEquals(1, rows.size)
+        }
+    }
+
     @Test fun completeUtcDaysExcludeTodayAndFillGapsAfterFiltering() {
         val today = LocalDate.parse("2025-08-26")
         val row = parseUsageActivity("""{"data":[$activity]}""").single()

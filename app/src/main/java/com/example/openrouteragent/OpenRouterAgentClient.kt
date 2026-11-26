@@ -65,7 +65,11 @@ internal fun readFilePreview(source: BufferedSource): FilePreview {
     val binary = result.isError || text.any { it < ' ' && it !in "\t\n\r\u000C" }
     return FilePreview(if (binary) null else text, truncated)
 }
-internal class ApiStatusException(val code: Int, message: String) : IOException(message)
+internal class ApiStatusException(
+    val code: Int,
+    message: String,
+    val requestId: String? = null,
+) : IOException(message)
 
 class OpenRouterAgentClient(
     private val baseUrl: HttpUrl = "https://openrouter.ai/api/v1/".toHttpUrl(),
@@ -101,10 +105,14 @@ class OpenRouterAgentClient(
     internal suspend fun keyUsage(apiKey: String): KeyUsage =
         execute(request(apiKey, endpoint("key")).build(), apiKey, quick) { parseKeyUsage(it.bodyText()) }
 
-    internal suspend fun usageActivity(managementKey: String): List<UsageActivity> =
-        execute(request(managementKey, endpoint("activity")).build(), managementKey, quick) {
+    internal suspend fun usageActivity(managementKey: String): List<UsageActivity> {
+        val pasted = managementKey.trim().removeSurrounding("\"").removeSurrounding("'").trim()
+        val key = if (pasted.startsWith("Bearer ", ignoreCase = true)) pasted.substringAfter(' ').trim() else pasted
+        val credential = key.removeSurrounding("\"").removeSurrounding("'").trim()
+        return execute(request(credential, endpoint("activity")).build(), credential, quick) {
             parseUsageActivity(it.bodyText())
         }
+    }
 
     /** Every workspace the management key can see, a page of 100 at a time. */
     internal suspend fun listWorkspaces(managementKey: String): List<OpenRouterWorkspace> {
@@ -351,8 +359,11 @@ class OpenRouterAgentClient(
             429 -> "Rate limit reached. Wait a moment before retrying."
             else -> response.message
         }
-        val message = (detail ?: fallback).replace(apiKey.trim(), "[API key]").take(500)
-        return ApiStatusException(response.code, "OpenRouter HTTP ${response.code}. $message")
+        val message = (detail ?: fallback).redact(apiKey).take(500)
+        val requestId = listOf("request-id", "x-request-id", "openrouter-request-id", "cf-ray")
+            .firstNotNullOfOrNull { response.header(it)?.takeIf { value -> value.isNotBlank() } }
+            ?.redact(apiKey)?.take(120)
+        return ApiStatusException(response.code, "OpenRouter HTTP ${response.code}. $message", requestId)
     }
 
     private fun Response.bodyText(): String =

@@ -144,17 +144,19 @@ internal fun UsageScreen(
                                 Text("OpenRouter shows activity visible to this key for the last 30 completed UTC days.",
                                     style = MaterialTheme.typography.bodySmall)
                                 if (!showKeyForm) {
-                                    TextButton(onClick = {
-                                        if (temporaryKey.isNotBlank()) temporaryKey = "" else showKeyForm = true
-                                    }) {
-                                        Text(if (temporaryKey.isNotBlank()) "Forget this key" else "Use another key")
+                                    TextButton(onClick = { showKeyForm = true }) { Text("Change key") }
+                                    if (temporaryKey.isNotBlank()) {
+                                        TextButton(onClick = { temporaryKey = "" }) { Text("Forget this key") }
                                     }
                                 }
                             }
-                            UsageRequest(managementKey, refresh, onRetry = { refresh++ }, load = {
-                                val today = LocalDate.now(ZoneOffset.UTC)
-                                today to client.usageActivity(managementKey)
-                            }) { (today, rows) ->
+                            UsageRequest(
+                                managementKey, refresh, onRetry = { refresh++ },
+                                load = {
+                                    val today = LocalDate.now(ZoneOffset.UTC)
+                                    today to client.usageActivity(managementKey)
+                                },
+                            ) { (today, rows) ->
                                 UsageExplorer(rows, today)
                             }
                         }
@@ -204,7 +206,7 @@ private fun <T : Any> UsageRequest(
     content: @Composable (T) -> Unit,
 ) {
     var value by remember(credential) { mutableStateOf<T?>(null) }
-    var error by remember(credential) { mutableStateOf<String?>(null) }
+    var error by remember(credential) { mutableStateOf<Exception?>(null) }
     var loading by remember(credential) { mutableStateOf(true) }
     LaunchedEffect(credential, refresh) {
         loading = true
@@ -214,12 +216,7 @@ private fun <T : Any> UsageRequest(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            error = when ((e as? ApiStatusException)?.code) {
-                401 -> "OpenRouter rejected this key. Check that it’s still active."
-                403 -> "This key can’t access these usage records. Activity requires a management key with activity access."
-                429 -> "OpenRouter is rate limiting requests. Try again in a moment."
-                else -> "Usage couldn’t be loaded. Check your connection and try again."
-            }
+            error = e
         }
         loading = false
     }
@@ -229,7 +226,20 @@ private fun <T : Any> UsageRequest(
     }
     error?.let {
         OutlinedSection(title = if (value == null) "Usage unavailable" else "Showing the last loaded usage") {
-            Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error)
+            val apiError = it as? ApiStatusException
+            val summary = when (apiError?.code) {
+                401 -> "OpenRouter couldn’t authenticate this request."
+                403 -> "OpenRouter denied access. For Activity, a Custom management key needs Activity → Read Only."
+                429 -> "OpenRouter is rate limiting requests. Try again in a moment."
+                else -> "Usage couldn’t be loaded. Try again."
+            }
+            Text(summary, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error)
+            apiError?.let { failure ->
+                val diagnostic = listOfNotNull(
+                    failure.message, failure.requestId?.let { id -> "Request ID $id" },
+                ).joinToString("\n")
+                CopyableText(diagnostic, style = MaterialTheme.typography.bodySmall)
+            }
             TextButton(onClick = onRetry, enabled = !loading) { Text("Retry") }
         }
     }

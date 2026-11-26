@@ -9,6 +9,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,6 +22,29 @@ import java.time.LocalDate
 @Config(sdk = [35], qualifiers = "w390dp-h820dp")
 class UsageExplorerUiTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun activityRejectionShowsOpenRouterReasonAndRequestIdWithoutTheKey() {
+        MockWebServer().use { server ->
+            val key = "sk-or-v1-" + "b".repeat(64)
+            server.enqueue(
+                MockResponse().setResponseCode(401)
+                    .setHeader("request-id", "req_activity_123")
+                    .setBody("""{"error":{"message":"API key expired: $key","code":401}}""")
+            )
+            val client = OpenRouterAgentClient(server.url("/api/v1/"))
+            composeRule.setContent {
+                OpenRouterAgentTheme(darkTheme = true) {
+                    UsageScreen(client, apiKey = "", savedManagementKey = key, onBack = {}, onConnect = {})
+                }
+            }
+
+            val detail = composeRule.onNodeWithText("API key expired: [API key]", substring = true)
+            composeRule.waitUntil(5_000) { runCatching { detail.fetchSemanticsNode() }.isSuccess }
+            detail.performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("req_activity_123", substring = true).assertIsDisplayed()
+            composeRule.onNodeWithText(key, substring = true).assertDoesNotExist()
+        }
+    }
 
     @Test fun recordsCanDrillIntoAnEndpointWithTheSelectedMeasure() {
         val today = LocalDate.of(2025, 8, 26)
