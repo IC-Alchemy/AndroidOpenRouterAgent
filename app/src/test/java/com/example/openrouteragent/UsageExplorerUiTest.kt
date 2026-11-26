@@ -46,6 +46,26 @@ class UsageExplorerUiTest {
         }
     }
 
+    @Test fun unreadableActivityResponseShowsItsRequestId() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setHeader("request-id", "req_unreadable_activity")
+                    .setBody("""{"data":{"unexpected":"shape"}}""")
+            )
+            val client = OpenRouterAgentClient(server.url("/api/v1/"))
+            composeRule.setContent {
+                OpenRouterAgentTheme(darkTheme = true) {
+                    UsageScreen(client, apiKey = "", savedManagementKey = "management-key", onBack = {}, onConnect = {})
+                }
+            }
+
+            val detail = composeRule.onNodeWithText("req_unreadable_activity", substring = true)
+            composeRule.waitUntil(5_000) { runCatching { detail.fetchSemanticsNode() }.isSuccess }
+            detail.performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("OpenRouter returned activity the app couldn’t read.").assertIsDisplayed()
+        }
+    }
+
     @Test fun recordsCanDrillIntoAnEndpointWithTheSelectedMeasure() {
         val today = LocalDate.of(2025, 8, 26)
         composeRule.setContent {

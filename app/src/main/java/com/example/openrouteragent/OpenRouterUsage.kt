@@ -1,9 +1,16 @@
 package com.example.openrouteragent
 
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoField
 import java.util.Locale
 
 internal data class KeyUsage(
@@ -20,29 +27,38 @@ internal data class KeyUsage(
 
 internal data class UsageTotals(
     val cost: Double = 0.0,
-    val byok: Double = 0.0,
+    val byok: Double? = 0.0,
     val requests: Long = 0,
     val prompt: Long = 0,
     val completion: Long = 0,
-    val cached: Long = 0,
-    val reasoning: Long = 0,
+    val cached: Long? = 0,
+    val reasoning: Long? = 0,
 ) {
     val tokens: Long get() = prompt + completion
 
     operator fun plus(other: UsageTotals) = UsageTotals(
-        cost + other.cost, byok + other.byok, requests + other.requests,
-        prompt + other.prompt, completion + other.completion, cached + other.cached, reasoning + other.reasoning,
+        cost = cost + other.cost,
+        byok = if (byok != null && other.byok != null) byok + other.byok else null,
+        requests = requests + other.requests,
+        prompt = prompt + other.prompt,
+        completion = completion + other.completion,
+        cached = if (cached != null && other.cached != null) cached + other.cached else null,
+        reasoning = if (reasoning != null && other.reasoning != null) reasoning + other.reasoning else null,
     )
 }
 
 internal data class UsageActivity(
     val date: LocalDate,
     val model: String,
-    val version: String,
+    val version: String?,
     val provider: String,
-    val endpoint: String,
+    val endpoint: String?,
     val totals: UsageTotals,
 )
+
+internal data class UsageActivityReport(val rows: List<UsageActivity>, val unreadableRows: Int)
+
+internal class UsagePayloadException(message: String, val requestId: String? = null) : IOException(message)
 
 internal enum class UsageMetric(val label: String) {
     Cost("Spend"),
@@ -81,27 +97,61 @@ internal fun parseKeyUsage(body: String): KeyUsage {
     )
 }
 
-internal fun parseUsageActivity(body: String): List<UsageActivity> {
-    val rows = JSONObject(body).getJSONArray("data")
-    return List(rows.length()) { index ->
-        val row = rows.getJSONObject(index)
-        UsageActivity(
-            date = LocalDate.parse(row.getString("date")),
-            model = row.getString("model"),
-            version = row.getString("model_permaslug"),
-            provider = row.getString("provider_name"),
-            endpoint = row.getString("endpoint_id"),
-            totals = UsageTotals(
-                cost = row.getDouble("usage"),
-                byok = row.getDouble("byok_usage_inference"),
-                requests = row.getLong("requests"),
-                prompt = row.getLong("prompt_tokens"),
-                completion = row.getLong("completion_tokens"),
-                cached = row.getLong("cached_tokens"),
-                reasoning = row.getLong("reasoning_tokens"),
-            ),
-        )
+internal fun parseUsageActivity(body: String): UsageActivityReport {
+    val root = try {
+        JSONObject(body)
+    } catch (_: JSONException) {
+        throw UsagePayloadException("Expected a JSON object containing activity records.")
     }
+    val data = root.optJSONArray("data") ?: throw UsagePayloadException("Expected an activity list in the data field.")
+    val rows = (0 until data.length()).mapNotNull { index -> data.optJSONObject(index)?.let(::parseActivityRow) }
+    if (data.length() > 0 && rows.isEmpty()) {
+        throw UsagePayloadException("The activity records did not contain readable dates, models, and usage totals.")
+    }
+    return UsageActivityReport(rows, unreadableRows = data.length() - rows.size)
+}
+
+private fun parseActivityRow(row: JSONObject): UsageActivity? {
+    val date = row.activityText("date")?.let(::parseActivityDate) ?: return null
+    val version = row.activityText("model_permaslug")
+    val model = row.activityText("model") ?: version ?: return null
+    return UsageActivity(
+        date = date,
+        model = model,
+        version = version,
+        provider = row.activityText("provider_name") ?: "Unknown provider",
+        endpoint = row.activityText("endpoint_id"),
+        totals = UsageTotals(
+            cost = row.optDouble("usage").takeIf(Double::isFinite) ?: return null,
+            byok = row.optDouble("byok_usage_inference").takeIf(Double::isFinite),
+            requests = row.activityCount("requests") ?: return null,
+            prompt = row.activityCount("prompt_tokens") ?: return null,
+            completion = row.activityCount("completion_tokens") ?: return null,
+            cached = row.activityCount("cached_tokens"),
+            reasoning = row.activityCount("reasoning_tokens"),
+        ),
+    )
+}
+
+private fun JSONObject.activityText(name: String): String? = (opt(name) as? String)?.takeIf { it.isNotBlank() }
+
+private fun JSONObject.activityCount(name: String): Long? = optLong(name, -1).takeIf { it >= 0 }
+
+private fun parseActivityDate(value: String): LocalDate? = try {
+    // OpenRouter also returns UTC bucket timestamps such as "2024-01-15 00:00:00".
+    val normalized = value.trim().replaceFirst(' ', 'T')
+    if (!normalized.contains('T', ignoreCase = true)) {
+        LocalDate.parse(normalized)
+    } else {
+        val timestamp = DateTimeFormatter.ISO_DATE_TIME.parse(normalized)
+        if (timestamp.isSupported(ChronoField.OFFSET_SECONDS)) {
+            OffsetDateTime.from(timestamp).withOffsetSameInstant(ZoneOffset.UTC).toLocalDate()
+        } else {
+            LocalDate.from(timestamp)
+        }
+    }
+} catch (_: DateTimeParseException) {
+    null
 }
 
 internal fun filterUsageActivity(
