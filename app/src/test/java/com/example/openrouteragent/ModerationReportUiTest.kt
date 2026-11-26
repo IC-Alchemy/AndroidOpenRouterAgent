@@ -11,7 +11,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -76,10 +77,10 @@ class ModerationReportUiTest {
             }
         }
 
-        val reportButtons = composeRule.onAllNodesWithContentDescription("Report reply")
+        val reportButtons = composeRule.onAllNodes(hasText("Report") or hasContentDescription("Report"))
         reportButtons.assertCountEquals(3)
         // Copy reply only appears on the normal card, suppressed on error and moderated cards.
-        composeRule.onAllNodesWithContentDescription("Copy reply").assertCountEquals(1)
+        composeRule.onAllNodes(hasText("Copy reply") or hasContentDescription("Copy reply")).assertCountEquals(1)
 
         reportButtons[0].performClick()
         reportButtons[1].performClick()
@@ -148,7 +149,7 @@ class ModerationReportUiTest {
             }
 
             composeRule.onNodeWithText("Questionable AI reply").assertIsDisplayed()
-            composeRule.onNodeWithContentDescription("Report reply").performClick()
+            composeRule.onNode(hasText("Report") or hasContentDescription("Report")).performClick()
 
             composeRule.onNodeWithText("Report response").assertIsDisplayed()
             composeRule.onNodeWithText("Sexual content").assertIsDisplayed()
@@ -167,7 +168,7 @@ class ModerationReportUiTest {
             assertEquals("Harassment", json.getString("reason"))
             assertTrue(vm.reportMessage == null || vm.reportMessage == "Report submitted. Thank you.")
 
-            composeRule.onNodeWithContentDescription("Configure").performClick()
+            composeRule.onNodeWithContentDescription("Settings").performClick()
             composeRule.onNodeWithText("Settings").assertIsDisplayed()
             composeRule.onAllNodesWithText("Providers").assertCountEquals(0)
         }
@@ -205,13 +206,14 @@ class ModerationReportUiTest {
             }
         }
 
+        composeRule.onNodeWithText("Interface").performSemanticsAction(SemanticsActions.OnClick)
         val toggleNode = composeRule.onNodeWithText("On-device content moderation")
         toggleNode.performScrollTo().assertIsDisplayed().assertIsOff()
 
         // Toggle ON and save
         toggleNode.performSemanticsAction(SemanticsActions.OnClick)
         toggleNode.assertIsOn()
-        composeRule.onNodeWithText("Save").performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.onNodeWithText("Save settings").performSemanticsAction(SemanticsActions.OnClick)
 
         val saveDeadline1 = System.currentTimeMillis() + 5_000L
         while (savedConfig == null && System.currentTimeMillis() < saveDeadline1) {
@@ -226,11 +228,12 @@ class ModerationReportUiTest {
         showSheet = true
         composeRule.waitForIdle()
 
+        composeRule.onNodeWithText("Interface").performSemanticsAction(SemanticsActions.OnClick)
         val toggleNodeAgain = composeRule.onNodeWithText("On-device content moderation")
         toggleNodeAgain.performScrollTo().assertIsDisplayed().assertIsOn()
         toggleNodeAgain.performSemanticsAction(SemanticsActions.OnClick)
         toggleNodeAgain.assertIsOff()
-        composeRule.onNodeWithText("Save").performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.onNodeWithText("Save settings").performSemanticsAction(SemanticsActions.OnClick)
 
         val saveDeadline2 = System.currentTimeMillis() + 5_000L
         while (savedConfig == null && System.currentTimeMillis() < saveDeadline2) {

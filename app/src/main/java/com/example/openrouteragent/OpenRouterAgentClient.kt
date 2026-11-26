@@ -98,6 +98,14 @@ class OpenRouterAgentClient(
     internal suspend fun keyInfo(apiKey: String): KeyInfo =
         execute(request(apiKey, endpoint("key")).build(), apiKey, quick) { parseKeyInfo(it.bodyText()) }
 
+    internal suspend fun keyUsage(apiKey: String): KeyUsage =
+        execute(request(apiKey, endpoint("key")).build(), apiKey, quick) { parseKeyUsage(it.bodyText()) }
+
+    internal suspend fun usageActivity(managementKey: String): List<UsageActivity> =
+        execute(request(managementKey, endpoint("activity")).build(), managementKey, quick) {
+            parseUsageActivity(it.bodyText())
+        }
+
     /** Every workspace the management key can see, a page of 100 at a time. */
     internal suspend fun listWorkspaces(managementKey: String): List<OpenRouterWorkspace> {
         val all = mutableListOf<OpenRouterWorkspace>()

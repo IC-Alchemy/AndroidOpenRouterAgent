@@ -156,6 +156,7 @@ internal object StudioSymbols {
         "M9 13 H15 M9 16 H13")
     val Sandbox = symbol("Sandbox", "M3 6 H21 V19 H3 Z M7 10 L10 13 L7 16 M13 16 H17")
     val Network = symbol("Network", "M5 6 H9 V10 H5 Z M15 6 H19 V10 H15 Z M10 16 H14 V20 H10 Z M9 8 H15 M7 10 L11 16 M17 10 L13 16")
+    val Usage = symbol("Usage", "M4 4 V20 H21 M8 16 V12 M13 16 V7 M18 16 V10")
     val Activity = symbol("Activity", "M3 12 H7 L9 6 L13 18 L16 9 L18 12 H21")
     val Stop = symbol("Stop", "M6 6 H18 V18 H6 Z")
     val Copy = symbol("Copy", "M8 8 H21 V21 H8 Z M16 5 V3 H3 V16 H5")

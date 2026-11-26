@@ -10,6 +10,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +58,7 @@ class MainActivity : ComponentActivity() {
         val share = sharedContent(intent, packageName + ".files") ?: return
         val agent = ViewModelProvider(application as AgentApplication,
             ViewModelProvider.AndroidViewModelFactory.getInstance(application))[AgentViewModel::class.java]
+        ShareRequests.pending = true
         agent.receiveShare(share.first, share.second)
         intent.action = null
     }
@@ -65,6 +69,10 @@ class MainActivity : ComponentActivity() {
             VoiceRequests.pending = true
         }
     }
+}
+
+internal object ShareRequests {
+    var pending by mutableStateOf(false)
 }
 
 /**

@@ -19,13 +19,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -96,6 +96,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
             }
         }
     }
+    var showUsage by rememberSaveable { mutableStateOf(false) }
+    var showChatTools by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showWorkspaces by rememberSaveable { mutableStateOf(false) }
     var showGuide by rememberSaveable { mutableStateOf(false) }
@@ -163,7 +165,14 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     LaunchedEffect(VoiceRequests.pending) {
         if (VoiceRequests.pending) {
             VoiceRequests.pending = false
+            showUsage = false
             if (agent.activePrompt == null) listen()
+        }
+    }
+    LaunchedEffect(ShareRequests.pending) {
+        if (ShareRequests.pending) {
+            ShareRequests.pending = false
+            showUsage = false
         }
     }
     NotificationPermissionPrompt(agent.activePrompt != null)
@@ -174,6 +183,11 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var customizeTab by rememberSaveable { mutableStateOf<String?>(null) }
     var showModels by rememberSaveable { mutableStateOf(false) }
     val model = agent.selectedModel
+    val chatTitle = agent.library.chats.firstOrNull { it.id == agent.workspace.id }
+        ?.title?.takeIf { it.isNotBlank() }
+    val isExporting = agent.isExporting
+    val canManageChat = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
+        !agent.isWorkingChat && !isExporting && !agent.isModerating
     var showChatLibrary by rememberSaveable { mutableStateOf(false) }
     var deviceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var workspaceFilesTarget by rememberSaveable { mutableStateOf<String?>(null) }
@@ -185,7 +199,6 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
     var previewPath by rememberSaveable { mutableStateOf("") }
     var pendingExportContainer by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingExportFile by rememberSaveable { mutableStateOf<String?>(null) }
-    val isExporting = agent.isExporting
     var reportTarget by remember { mutableStateOf<ReportTarget?>(null) }
 
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
@@ -243,273 +256,307 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
 
     Box(Modifier.fillMaxSize()) {
         AgentRuntimeHost(agent, Modifier.align(Alignment.TopStart).size(1.dp))
-        Scaffold(
-            topBar = {
-                Column {
-                    TopAppBar(
-                        title = {
-                            Column(
-                                verticalArrangement = Arrangement.Center,
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    val statusColor = when {
-                                        isRunning -> MaterialTheme.colorScheme.primary
-                                        agent.providerReady -> MaterialTheme.colorScheme.secondary
-                                        else -> MaterialTheme.colorScheme.outline
-                                    }
-                                    StudioStatusDot(color = statusColor, size = 6.dp)
-                                    Spacer(Modifier.width(7.dp))
-                                    Text("OpenRouter Agent",
-                                        Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                val detail = when {
-                                    model != null -> model.name
-                                    agent.catalogLoading -> "Loading models…"
-                                    agent.providerReady -> "Choose a model"
-                                    else -> "Connect OpenRouter"
-                                }
-                                Text(
-                                    listOfNotNull(agent.chatProject?.name, detail).joinToString(" · "),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        },
-                        actions = {
-                            val pillColors = ButtonDefaults.textButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            )
-                            if (agent.providerReady) {
-                                SymbolAction(
-                                    label = "Models", icon = StudioSymbols.Models,
-                                    enabled = !isRunning && !agent.isSavingSettings && !agent.isWorkingChat && !isExporting && !agent.isModerating,
-                                    onClick = { showModels = true },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = pillColors,
-                                )
-                                Spacer(Modifier.width(4.dp))
-                            }
-                            SymbolAction(
-                                label = "Chats", icon = StudioSymbols.Chats,
-                                enabled = !isRunning && !agent.isLoading && !agent.isSavingSettings &&
-                                    !agent.isWorkingChat && !isExporting && !agent.isModerating,
-                                onClick = { showChatLibrary = true },
-                                shape = RoundedCornerShape(10.dp),
-                                colors = pillColors,
-                            )
-                            Box {
-                                ControlTooltip("Configure") {
-                                    IconButton(enabled = !agent.isLoading && !isRunning && !isExporting && !agent.isSavingSettings && !agent.isWorkingChat && !agent.isModerating,
-                                        onClick = { showConfigure = true }) {
-                                        Icon(Icons.Default.Settings, contentDescription = "Configure")
+        if (showUsage) {
+            UsageScreen(
+                client = agent.client,
+                apiKey = config.apiKey,
+                savedManagementKey = config.managementKey,
+                onBack = { showUsage = false },
+                onConnect = { showSettings = true },
+            )
+        } else {
+            Scaffold(
+                topBar = {
+                    Column {
+                        TopAppBar(
+                            title = {
+                                Column {
+                                    Text(
+                                        chatTitle ?: "OpenRouter Agent",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    val context = agent.chatProject?.name
+                                    if (context != null) {
+                                        Text(context, style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
-                                DropdownMenu(expanded = showConfigure, onDismissRequest = { showConfigure = false }) {
-                                    DropdownMenuItem(text = { Text("Settings") },
-                                        leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = {
-                                        showConfigure = false
-                                        showSettings = true
-                                    })
-                                    DropdownMenuItem(text = { Text("Device files") },
-                                        leadingIcon = { Icon(StudioSymbols.Folder, null) }, onClick = {
-                                        showConfigure = false
-                                        deviceFilesTarget = "all"
-                                    })
-                                    if (agent.chatProject != null && agent.openRouterReady) {
-                                        DropdownMenuItem(text = { Text("All workspace files") },
-                                            leadingIcon = { Icon(StudioSymbols.Workspace, null) }, onClick = {
+                            },
+                            navigationIcon = {
+                                ControlTooltip("Chats") {
+                                    IconButton(onClick = { showChatLibrary = true }, enabled = canManageChat) {
+                                        Icon(StudioSymbols.Chats, contentDescription = "Chats")
+                                    }
+                                }
+                            },
+                            actions = {
+                                ControlTooltip("Settings") {
+                                    IconButton(onClick = { showSettings = true }, enabled = canManageChat) {
+                                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                                    }
+                                }
+                                Box {
+                                    ControlTooltip("More options") {
+                                        IconButton(onClick = { showConfigure = true }, enabled = canManageChat) {
+                                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                                        }
+                                    }
+                                    DropdownMenu(expanded = showConfigure, onDismissRequest = { showConfigure = false }) {
+                                        DropdownMenuItem(text = { Text("Device files") },
+                                            leadingIcon = { Icon(StudioSymbols.Folder, null) }, onClick = {
                                             showConfigure = false
-                                            workspaceFilesTarget = "all"
+                                            deviceFilesTarget = "all"
+                                        })
+                                        if (agent.chatProject != null && agent.openRouterReady) {
+                                            DropdownMenuItem(text = { Text("All workspace files") },
+                                                leadingIcon = { Icon(StudioSymbols.Workspace, null) }, onClick = {
+                                                showConfigure = false
+                                                workspaceFilesTarget = "all"
+                                            })
+                                        }
+                                        DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
+                                            showConfigure = false
+                                            showSdkSettings = true
+                                        })
+                                        DropdownMenuItem(text = { Text("Workspaces") }, onClick = {
+                                            showConfigure = false
+                                            showWorkspaces = true
+                                        })
+                                        // Tools, subagents and skills share one page with tabs, so one row opens it.
+                                        DropdownMenuItem(text = { Text("Tools, subagents & skills") },
+                                            leadingIcon = { Icon(StudioSymbols.Agent, null) }, onClick = {
+                                            showConfigure = false
+                                            customizeTab = "tools"
+                                        })
+                                        DropdownMenuItem(text = { Text("Show reasoning") }, onClick = {
+                                            agent.setShowReasoning(!config.sdk.showReasoning)
+                                        }, trailingIcon = {
+                                            Switch(checked = config.sdk.showReasoning, onCheckedChange = null)
+                                        })
+                                        DropdownMenuItem(text = { Text("Render Markdown") }, onClick = {
+                                            agent.setRenderMarkdown(!config.sdk.renderMarkdown)
+                                        }, trailingIcon = {
+                                            Switch(checked = config.sdk.renderMarkdown, onCheckedChange = null)
+                                        })
+                                        DropdownMenuItem(text = { Text("Read voice replies aloud") }, onClick = {
+                                            agent.setReadVoiceReplies(!config.sdk.readVoiceReplies)
+                                        }, trailingIcon = {
+                                            Switch(checked = config.sdk.readVoiceReplies, onCheckedChange = null)
+                                        })
+                                        DropdownMenuItem(text = { Text("Mini apps") },
+                                            leadingIcon = { Icon(StudioSymbols.MiniApps, null) }, onClick = {
+                                            showConfigure = false
+                                            showMiniApps = true
+                                        })
+                                        DropdownMenuItem(text = { Text("Decisions") },
+                                            leadingIcon = { Icon(StudioSymbols.Decisions, null) }, onClick = {
+                                            showConfigure = false
+                                            showDecisions = true
+                                        })
+                                        DropdownMenuItem(text = { Text("App guide") }, onClick = {
+                                            showConfigure = false
+                                            showGuide = true
                                         })
                                     }
-                                    DropdownMenuItem(text = { Text("SDK settings") }, onClick = {
-                                        showConfigure = false
-                                        showSdkSettings = true
-                                    })
-                                    DropdownMenuItem(text = { Text("Workspaces") }, onClick = {
-                                        showConfigure = false
-                                        showWorkspaces = true
-                                    })
-                                    // Tools, subagents and skills share one page with tabs, so one row opens it.
-                                    DropdownMenuItem(text = { Text("Tools, subagents & skills") },
-                                        leadingIcon = { Icon(StudioSymbols.Agent, null) }, onClick = {
-                                        showConfigure = false
-                                        customizeTab = "tools"
-                                    })
-                                    DropdownMenuItem(text = { Text("Show reasoning") }, onClick = {
-                                        agent.setShowReasoning(!config.sdk.showReasoning)
-                                    }, trailingIcon = {
-                                        Switch(checked = config.sdk.showReasoning, onCheckedChange = null)
-                                    })
-                                    DropdownMenuItem(text = { Text("Render Markdown") }, onClick = {
-                                        agent.setRenderMarkdown(!config.sdk.renderMarkdown)
-                                    }, trailingIcon = {
-                                        Switch(checked = config.sdk.renderMarkdown, onCheckedChange = null)
-                                    })
-                                    DropdownMenuItem(text = { Text("Read voice replies aloud") }, onClick = {
-                                        agent.setReadVoiceReplies(!config.sdk.readVoiceReplies)
-                                    }, trailingIcon = {
-                                        Switch(checked = config.sdk.readVoiceReplies, onCheckedChange = null)
-                                    })
-                                    DropdownMenuItem(text = { Text("Mini apps") },
-                                        leadingIcon = { Icon(StudioSymbols.MiniApps, null) }, onClick = {
-                                        showConfigure = false
-                                        showMiniApps = true
-                                    })
-                                    DropdownMenuItem(text = { Text("Decisions") },
-                                        leadingIcon = { Icon(StudioSymbols.Decisions, null) }, onClick = {
-                                        showConfigure = false
-                                        showDecisions = true
-                                    })
-                                    DropdownMenuItem(text = { Text("App guide") }, onClick = {
-                                        showConfigure = false
-                                        showGuide = true
-                                    })
                                 }
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                    )
-                    HorizontalDivider(
-                        thickness = StudioHairlineWidth,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                }
-            },
-            snackbarHost = { SnackbarHost(snackbar) },
-            bottomBar = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    runProgress?.let {
-                        AgentRunStatus(it, agent.approval != null, following,
-                            onActivity = { showRunActivity = true }, onFollow = { following = true })
-                    }
-                    AgentInputBar(
-                        value = agent.promptText, onValueChange = { agent.promptText = it },
-                        isRunning = isRunning,
-                        isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat || agent.isModerating,
-                        error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
-                        onVoice = listen,
-                        chatMode = if (!agent.isLoading) agent.chatMode else null,
-                        onChatMode = agent::setChatMode,
-                        attachments = if (isRunning) agent.activeMedia else agent.pendingMedia,
-                        mediaFile = agent::mediaFile,
-                        onOpenAttachment = { viewingMedia = it },
-                        onRemoveAttachment = agent::removeAttachment,
-                        onAttach = attach,
-                        canAttachImages = model?.accepts("image") != false,
-                        importing = agent.isImporting,
-                        placeholder = if (isRunning) "Type /btw to ask on the side" else null,
-                        onSideConversation = agent.side::open,
-                        sideConversationBusy = agent.side.isRunning || agent.side.unread,
-                        // During a main run the field takes only slash commands, so /btw works while the chat continues.
-                        acceptsInputWhileRunning = true,
-                        sendWhileRunning = isRunning && SlashCommands.parse(agent.promptText) != null,
-                    )
-                }
-            }
-        ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
-                .background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (!agent.isLoading) {
-                    StatusCapabilitiesBar(
-                        config = if (agent.chatMode) config.withoutTools() else config, activeContainerId = activeContainerId, canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
-                        inProject = agent.chatProject != null, attachmentCount = agent.attachedFiles.size,
-                        onOpenProjectFiles = { deviceFilesTarget = "current" },
-                        onOpenWorkspaceFiles = if (agent.openRouterReady) ({ workspaceFilesTarget = "current" }) else null,
-                        onClearAttachments = agent::clearWorkspaceAttachments,
-                        onOpenFiles = { browserContainer = activeContainerId },
-                        onResetContainer = agent::detachSandbox
-                    )
-                }
-                agent.storageError?.let {
-                    CopyableText(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall)
-                }
-                if (agent.isLoading) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                } else if (messages.isEmpty() && activePrompt == null && interrupted == null) {
-                    EmptyAgentState(agent.providerReady, { showSettings = true }) { agent.promptText = it }
-                } else {
-                    CompositionLocalProvider(LocalTranscriptSelection provides { if (isRunning) following = false }) {
-                        LazyColumn(
-                            state = listState, modifier = Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth()
-                                .nestedScroll(manualScroll),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            itemsIndexed(messages, key = { _, entry -> entry.id }) { index, entry ->
-                                if (entry.isUser) UserMessageBubble(entry.text, entry.media, agent::mediaFile) {
-                                    viewingMedia = it
-                                }
-                                else {
-                                    val prompt = messages.take(index).lastOrNull { it.isUser }?.text.orEmpty()
-                                    AgentResponseCard(
-                                        entry = entry,
-                                        onCopyText = clipboard::copy,
-                                        onFileClick = ::openFile,
-                                        showReasoning = config.sdk.showReasoning,
-                                        renderMarkdown = config.sdk.renderMarkdown,
-                                        onReport = { reportTarget = ReportTarget(prompt = prompt, response = entry.text) },
-                                        mediaFile = agent::mediaFile,
-                                        onOpenMedia = { viewingMedia = it },
-                                        speaking = speaker.speakingId == entry.id,
-                                        onSpeak = { speaker.toggle(entry.id, entry.text) },
-                                    )
-                                }
-                            }
-                            if (activePrompt != null) {
-                                item("active_prompt") {
-                                    UserMessageBubble(activePrompt, agent.activeMedia, agent::mediaFile) { viewingMedia = it }
-                                }
-                                item("running") {
-                                    if (runProgress != null) LiveAgentReply(runProgress,
-                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
-                                        renderMarkdown = config.sdk.renderMarkdown)
-                                }
-                            }
-                            if (stoppedTurn != null) {
-                                // The message of a reply that stopped stays in the chat, above what the agent did.
-                                item("stopped_prompt") {
-                                    UserMessageBubble(stoppedTurn.prompt, stoppedTurn.media, agent::mediaFile) {
-                                        viewingMedia = it
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                        )
+                        Surface(color = MaterialTheme.colorScheme.surface) {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Row(
+                                    Modifier.widthIn(max = 840.dp).fillMaxWidth()
+                                        .padding(start = 12.dp, end = 12.dp, bottom = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    val modelLabel = when {
+                                        model != null -> model.name
+                                        agent.catalogLoading -> "Loading models…"
+                                        agent.providerReady -> "Choose a model"
+                                        else -> "Connect a provider"
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            if (agent.providerReady) showModels = true else showSettings = true
+                                        },
+                                        enabled = canManageChat,
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    ) {
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Icon(StudioSymbols.Models, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Text(modelLabel, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    FilledTonalButton(
+                                        onClick = { showUsage = true },
+                                        enabled = canManageChat && !agent.side.isOpen,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    ) {
+                                        Icon(StudioSymbols.Usage, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Usage")
                                     }
                                 }
                             }
-                            if (interrupted != null) {
-                                item("interrupted") {
-                                    LiveAgentReply(interrupted, interrupted = true,
-                                        showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
-                                        renderMarkdown = config.sdk.renderMarkdown,
-                                        onRetry = { following = true; agent.retryTurn() },
-                                        onRetryWithoutTools = if (!agent.chatMode && config.agentToolsEnabled()) {
-                                            { following = true; agent.retryTurn(toolsOff = true) }
-                                        } else null,
-                                        onActivity = { showRunActivity = true },
-                                        onContinue = if (agent.canContinue) {
-                                            { following = true; agent.continueTurn() }
-                                        } else null)
+                        }
+                        HorizontalDivider(
+                            thickness = StudioHairlineWidth,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                    }
+                },
+                snackbarHost = { SnackbarHost(snackbar) },
+                bottomBar = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        runProgress?.let {
+                            AgentRunStatus(it, agent.approval != null, following,
+                                onActivity = { showRunActivity = true }, onFollow = { following = true })
+                        }
+                        AgentInputBar(
+                            value = agent.promptText, onValueChange = { agent.promptText = it },
+                            isRunning = isRunning,
+                            isLoading = agent.isLoading || agent.isSavingSettings || agent.isWorkingChat || agent.isModerating,
+                            error = agent.turnError, onSend = { send(agent.promptText) }, onStop = agent::cancelTurn,
+                            onVoice = listen,
+                            chatMode = if (!agent.isLoading) agent.chatMode else null,
+                            onChatMode = agent::setChatMode,
+                            attachments = if (isRunning) agent.activeMedia else agent.pendingMedia,
+                            mediaFile = agent::mediaFile,
+                            onOpenAttachment = { viewingMedia = it },
+                            onRemoveAttachment = agent::removeAttachment,
+                            onAttach = attach,
+                            canAttachImages = model?.accepts("image") != false,
+                            importing = agent.isImporting,
+                            placeholder = if (isRunning) "Type /btw to ask on the side" else null,
+                            onSideConversation = agent.side::open,
+                            sideConversationBusy = agent.side.isRunning || agent.side.unread,
+                            // During a main run the field takes only slash commands, so /btw works while the chat continues.
+                            acceptsInputWhileRunning = true,
+                            sendWhileRunning = isRunning && SlashCommands.parse(agent.promptText) != null,
+                        )
+                    }
+                }
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                    .background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (!agent.isLoading) {
+                        ChatToolsDisclosure(
+                            expanded = showChatTools,
+                            onToggle = { showChatTools = !showChatTools },
+                            attachmentCount = agent.attachedFiles.size,
+                        ) {
+                            StatusCapabilitiesBar(
+                                config = if (agent.chatMode) config.withoutTools() else config,
+                                activeContainerId = activeContainerId,
+                                canDetach = !isRunning && !agent.isWorkingChat && !agent.isSavingSettings,
+                                inProject = agent.chatProject != null, attachmentCount = agent.attachedFiles.size,
+                                onOpenProjectFiles = { deviceFilesTarget = "current" },
+                                onOpenWorkspaceFiles = if (agent.openRouterReady) ({ workspaceFilesTarget = "current" }) else null,
+                                onClearAttachments = agent::clearWorkspaceAttachments,
+                                onOpenFiles = { browserContainer = activeContainerId },
+                                onResetContainer = agent::detachSandbox,
+                            )
+                        }
+                    }
+                    agent.storageError?.let {
+                        CopyableText(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (agent.isLoading) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    } else if (messages.isEmpty() && activePrompt == null && interrupted == null) {
+                        EmptyAgentState(
+                            hasApiKey = agent.providerReady,
+                            onOpenSettings = { showSettings = true },
+                            tools = config.takeUnless { agent.chatMode || agent.usingOpenAiDirect },
+                        ) { agent.promptText = it }
+                    } else {
+                        CompositionLocalProvider(LocalTranscriptSelection provides { if (isRunning) following = false }) {
+                            LazyColumn(
+                                state = listState, modifier = Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth()
+                                    .nestedScroll(manualScroll),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                itemsIndexed(messages, key = { _, entry -> entry.id }) { index, entry ->
+                                    if (entry.isUser) UserMessageBubble(entry.text, entry.media, agent::mediaFile) {
+                                        viewingMedia = it
+                                    }
+                                    else {
+                                        val prompt = messages.take(index).lastOrNull { it.isUser }?.text.orEmpty()
+                                        AgentResponseCard(
+                                            entry = entry,
+                                            onCopyText = clipboard::copy,
+                                            onFileClick = ::openFile,
+                                            showReasoning = config.sdk.showReasoning,
+                                            renderMarkdown = config.sdk.renderMarkdown,
+                                            onReport = { reportTarget = ReportTarget(prompt = prompt, response = entry.text) },
+                                            mediaFile = agent::mediaFile,
+                                            onOpenMedia = { viewingMedia = it },
+                                            speaking = speaker.speakingId == entry.id,
+                                            onSpeak = { speaker.toggle(entry.id, entry.text) },
+                                        )
+                                    }
                                 }
+                                if (activePrompt != null) {
+                                    item("active_prompt") {
+                                        UserMessageBubble(activePrompt, agent.activeMedia, agent::mediaFile) { viewingMedia = it }
+                                    }
+                                    item("running") {
+                                        if (runProgress != null) LiveAgentReply(runProgress,
+                                            showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
+                                            renderMarkdown = config.sdk.renderMarkdown)
+                                    }
+                                }
+                                if (stoppedTurn != null) {
+                                    // The message of a reply that stopped stays in the chat, above what the agent did.
+                                    item("stopped_prompt") {
+                                        UserMessageBubble(stoppedTurn.prompt, stoppedTurn.media, agent::mediaFile) {
+                                            viewingMedia = it
+                                        }
+                                    }
+                                }
+                                if (interrupted != null) {
+                                    item("interrupted") {
+                                        LiveAgentReply(interrupted, interrupted = true,
+                                            showReasoning = config.sdk.showReasoning, onShowReasoning = agent::setShowReasoning,
+                                            renderMarkdown = config.sdk.renderMarkdown,
+                                            onRetry = { following = true; agent.retryTurn() },
+                                            onRetryWithoutTools = if (!agent.chatMode && config.agentToolsEnabled()) {
+                                                { following = true; agent.retryTurn(toolsOff = true) }
+                                            } else null,
+                                            onActivity = { showRunActivity = true },
+                                            onContinue = if (agent.canContinue) {
+                                                { following = true; agent.continueTurn() }
+                                            } else null)
+                                    }
+                                }
+                                item("latest") { Spacer(Modifier.size(1.dp)) }
                             }
-                            item("latest") { Spacer(Modifier.size(1.dp)) }
                         }
                     }
                 }
             }
-        }
 
-        SideConversationPanel(
-            agent = agent,
-            onVoice = listen,
-            onCopyText = clipboard::copy,
-            onReport = { prompt, response -> reportTarget = ReportTarget(prompt = prompt, response = response) },
-            showReasoning = config.sdk.showReasoning,
-            renderMarkdown = config.sdk.renderMarkdown,
-        )
+            SideConversationPanel(
+                agent = agent,
+                onVoice = listen,
+                onCopyText = clipboard::copy,
+                onReport = { prompt, response -> reportTarget = ReportTarget(prompt = prompt, response = response) },
+                showReasoning = config.sdk.showReasoning,
+                renderMarkdown = config.sdk.renderMarkdown,
+            )
+        }
     }
 
     viewingMedia?.let { item ->
