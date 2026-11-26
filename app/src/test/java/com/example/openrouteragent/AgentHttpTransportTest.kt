@@ -163,16 +163,48 @@ class AgentHttpTransportTest {
     }
 
     @Test
-    fun aToolEventAloneMarksTheResponseUnsafe() {
-        val diagnostics = StreamDiagnostics("run/1", "model", 90)
-        val line = "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\"}\n".toByteArray()
-        diagnostics.received(line, line.size)
-        assertTrue(diagnostics.toolStarted)
+    fun aHostedToolEventAloneMarksTheResponseUnsafe() {
+        for (event in listOf("response.web_search_call.searching", "response.code_interpreter_call.in_progress",
+            "response.image_generation_call.generating", "response.mcp_call_arguments.delta")) {
+            val diagnostics = StreamDiagnostics("run/1", "model", 90)
+            val line = "data: {\"type\":\"$event\"}\n".toByteArray()
+            diagnostics.received(line, line.size)
+            assertTrue(event, diagnostics.toolStarted)
+        }
         val words = StreamDiagnostics("run/2", "model", 90)
         val text = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n".toByteArray()
         words.received(text, text.size)
         assertFalse(words.toolStarted)
     }
+
+    @Test
+    fun theAppsOwnToolCallsDontMarkTheResponseUnsafe() {
+        // The SDK runs the app's own calls only after the whole response arrives, so a drop mid-call ran nothing.
+        val diagnostics = StreamDiagnostics("run/1", "model", 90)
+        val lines = ("data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"name\":\"write_file\"}}\n" +
+            "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\"}\n" +
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ct_1\",\"type\":\"custom_tool_call\"}}\n" +
+            "data: {\"type\":\"response.custom_tool_call_input.delta\",\"delta\":\"x\"}\n").toByteArray()
+        diagnostics.received(lines, lines.size)
+        assertFalse(diagnostics.toolStarted)
+        // A hosted item in the same response still counts.
+        val hosted = "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ci_1\",\"type\":\"code_interpreter_call\"}}\n".toByteArray()
+        diagnostics.received(hosted, hosted.size)
+        assertTrue(diagnostics.toolStarted)
+    }
+
+    @Test
+    fun aMidStreamDisconnectWhileTheAppsCallStreamsSaysItCanBeSentAgain() = withTransport { server, run ->
+        server.enqueue(sse("data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\"}}\n\n" +
+            "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"path\"}\n\n" + "x".repeat(4096))
+            .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
+        val outcome = run.start()
+        assertEquals("error", outcome.kind)
+        val message = outcome.value as String
+        assertTrue(message, STREAM_DROP_SAFE_TO_RESEND in message)
+        assertTrue(message, "response.function_call_arguments.delta" in message)
+    }
+
 
     @Test
     fun anInvalidApiKeyFailsFastWithoutRetryOrLeakingTheKey() = withTransport { server, run ->

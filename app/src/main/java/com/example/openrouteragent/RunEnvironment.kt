@@ -7,9 +7,13 @@ import android.net.NetworkCapabilities
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import kotlinx.coroutines.delay
 
 /** How far back a network change still counts as a likely cause of a dropped stream. */
 internal const val NETWORK_CHANGE_WINDOW_MILLIS = 120_000L
+
+/** How long a run waits for a working network before it picks up again after a dropped request. */
+internal const val NETWORK_WAIT_MILLIS = 30_000L
 
 /** One change of the phone's default network, timed with [SystemClock.elapsedRealtime]. */
 internal data class NetworkChange(val at: Long, val what: String)
@@ -65,6 +69,20 @@ object RunEnvironment {
         while (changes.size > MAX_CHANGES) changes.removeFirst()
     }
 
+    /**
+     * Whether the phone has a network that reaches the internet (Android has validated it). True before [start], so a
+     * missing context never holds a run back.
+     */
+    fun networkReady(): Boolean {
+        val context = appContext ?: return true
+        val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return true
+        return runCatching {
+            val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }.getOrDefault(true)
+    }
+
     /** One short line for an error message, or null before [start]. */
     fun describe(): String? {
         val context = appContext ?: return null
@@ -107,3 +125,20 @@ internal fun describePhoneState(
 
 private fun ago(millis: Long): String =
     if (millis < 1_000) "under a second" else "${(millis + 500) / 1_000} s"
+
+/**
+ * Waits until [ready] reports a working network, checking every [pollMillis], for at most [timeoutMillis]. Returns
+ * whether the network came up. A request sent the instant the phone moves from Wi-Fi to mobile data fails again, so a
+ * run picks up only once the new network works, or after the wait, when the request's own retries take over.
+ */
+internal suspend fun waitForNetwork(
+    ready: () -> Boolean, timeoutMillis: Long = NETWORK_WAIT_MILLIS, pollMillis: Long = 500,
+    now: () -> Long = System::currentTimeMillis,
+): Boolean {
+    val deadline = now() + timeoutMillis
+    while (true) {
+        if (ready()) return true
+        if (now() >= deadline) return false
+        delay(pollMillis)
+    }
+}
