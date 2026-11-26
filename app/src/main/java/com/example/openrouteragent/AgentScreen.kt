@@ -263,6 +263,8 @@ fun OpenRouterAgentScreen(agent: AgentViewModel = viewModel()) {
                 client = agent.client,
                 apiKey = config.apiKey,
                 savedManagementKey = config.managementKey,
+                activityManagementKey = config.activityManagementKey,
+                onSaveActivityKey = agent::saveActivityManagementKey,
                 onBack = { showUsage = false },
                 onConnect = { showSettings = true },
             )

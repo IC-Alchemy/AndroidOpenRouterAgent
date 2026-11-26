@@ -340,6 +340,17 @@ class AgentViewModel internal constructor(
         fullCatalog = client.fullCatalog(key)
     }
 
+    internal suspend fun saveActivityManagementKey(key: String) {
+        ready.await()
+        settingsMutex.withLock {
+            val updated = config.copy(activityManagementKey = key.trim())
+            withContext(NonCancellable) {
+                withContext(Dispatchers.IO) { storage.saveConfig(updated) }
+                config = updated
+            }
+        }
+    }
+
     /** Saves a management key after checking that OpenRouter lists workspaces with it. */
     suspend fun saveManagementKey(key: String) {
         val trimmed = key.trim()
@@ -1340,7 +1351,8 @@ class AgentViewModel internal constructor(
             mcpToken = updated.mcpToken.trim(),
             extraToolsJson = updated.extraToolsJson.trim(),
             allowedDomainsCsv = updated.allowedDomainsCsv.trim(),
-            systemInstructions = updated.systemInstructions.trim())
+            systemInstructions = updated.systemInstructions.trim(),
+            activityManagementKey = config.activityManagementKey)
         isSavingSettings = true
         try {
             withContext(NonCancellable) {

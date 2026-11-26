@@ -10,18 +10,24 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,13 +39,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -53,8 +59,10 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.time.LocalDate
@@ -62,7 +70,6 @@ import java.time.ZoneOffset
 
 private const val MANAGEMENT_KEYS_URL = "https://openrouter.ai/settings/management-keys"
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun UsageScreen(
     client: OpenRouterAgentClient,
@@ -70,41 +77,90 @@ internal fun UsageScreen(
     savedManagementKey: String,
     onBack: () -> Unit,
     onConnect: () -> Unit,
+    activityManagementKey: String = "",
+    onSaveActivityKey: suspend (String) -> Unit,
 ) {
-    var detail by rememberSaveable { mutableStateOf(savedManagementKey.isNotBlank()) }
+    val managementKey = activityManagementKey.ifBlank { savedManagementKey }
+    var detail by rememberSaveable { mutableStateOf(managementKey.isNotBlank()) }
     var refresh by remember { mutableIntStateOf(0) }
-    var temporaryKey by remember { mutableStateOf("") }
     var showKeyForm by remember { mutableStateOf(false) }
-    val managementKey = temporaryKey.ifBlank { savedManagementKey }
+    var showKeyMenu by remember { mutableStateOf(false) }
+    var savingKey by remember { mutableStateOf(false) }
+    var keySaveError by remember { mutableStateOf(false) }
     val credential = if (detail) managementKey else apiKey
     val tabs = rememberSaveableStateHolder()
+    val scope = rememberCoroutineScope()
     BackHandler(onBack = onBack)
+
+    fun saveKey(key: String) {
+        savingKey = true
+        keySaveError = false
+        scope.launch {
+            try {
+                onSaveActivityKey(key)
+                showKeyForm = false
+                refresh++
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                keySaveError = true
+            } finally {
+                savingKey = false
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier.imePadding(),
         topBar = {
-            Column {
-                TopAppBar(
-                    title = { Text("OpenRouter usage", Modifier.semantics { heading() }) },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to chat")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { refresh++ }, enabled = credential.isNotBlank()) {
-                            Icon(Icons.Default.Refresh, "Refresh usage")
-                        }
-                    },
-                )
+            Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FilterChip(selected = !detail, onClick = { detail = false }, label = { Text("Key spend") },
-                        modifier = Modifier.heightIn(min = 48.dp))
-                    FilterChip(selected = detail, onClick = { detail = true }, label = { Text("Activity") },
-                        modifier = Modifier.heightIn(min = 48.dp))
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to chat")
+                    }
+                    Text(
+                        "OpenRouter usage",
+                        Modifier.weight(1f).semantics { heading() },
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    IconButton(onClick = { refresh++ }, enabled = credential.isNotBlank()) {
+                        Icon(Icons.Default.Refresh, "Refresh usage")
+                    }
+                    if (detail && managementKey.isNotBlank()) {
+                        Box {
+                            IconButton(
+                                onClick = { showKeyMenu = true },
+                                enabled = !savingKey && !showKeyForm,
+                            ) {
+                                Icon(Icons.Default.MoreVert, "Activity key options")
+                            }
+                            DropdownMenu(expanded = showKeyMenu, onDismissRequest = { showKeyMenu = false }) {
+                                DropdownMenuItem(text = { Text("Change key") }, onClick = {
+                                    showKeyMenu = false
+                                    keySaveError = false
+                                    showKeyForm = true
+                                })
+                                if (activityManagementKey.isNotBlank()) {
+                                    DropdownMenuItem(text = { Text("Forget this key") }, onClick = {
+                                        showKeyMenu = false
+                                        saveKey("")
+                                    })
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(selected = !detail, onClick = { detail = false }, label = { Text("Key spend") })
+                    FilterChip(selected = detail, onClick = { detail = true }, label = { Text("Activity") })
                 }
                 HorizontalDivider()
             }
@@ -114,8 +170,8 @@ internal fun UsageScreen(
             tabs.SaveableStateProvider(detail) {
                 Column(
                     Modifier.widthIn(max = 840.dp).fillMaxSize()
-                        .verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (!detail) {
                         if (apiKey.isBlank()) {
@@ -129,29 +185,24 @@ internal fun UsageScreen(
                             }
                         }
                     } else {
+                        if (keySaveError) {
+                            Text(
+                                "Couldn’t update the saved activity key. Try again.",
+                                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                         if (managementKey.isBlank() || showKeyForm) {
                             UsageKeyForm(
                                 canCancel = managementKey.isNotBlank(),
-                                onCancel = { showKeyForm = false },
-                                onLoad = { temporaryKey = it; showKeyForm = false; refresh++ },
+                                saving = savingKey,
+                                onCancel = {
+                                    keySaveError = false
+                                    showKeyForm = false
+                                },
+                                onLoad = ::saveKey,
                             )
-                        }
-                        if (managementKey.isNotBlank()) {
-                            OutlinedSection(title = "Activity access") {
-                                Text(
-                                    if (temporaryKey.isNotBlank()) "Management key for this visit"
-                                    else "Management key from Workspaces",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                Text("OpenRouter shows activity visible to this key for the last 30 completed UTC days.",
-                                    style = MaterialTheme.typography.bodySmall)
-                                if (!showKeyForm) {
-                                    TextButton(onClick = { showKeyForm = true }) { Text("Change key") }
-                                    if (temporaryKey.isNotBlank()) {
-                                        TextButton(onClick = { temporaryKey = "" }) { Text("Forget this key") }
-                                    }
-                                }
-                            }
+                        } else {
                             UsageRequest(
                                 managementKey, refresh, onRetry = { refresh++ },
                                 load = {
@@ -159,13 +210,7 @@ internal fun UsageScreen(
                                     today to client.usageActivity(managementKey)
                                 },
                             ) { (today, report) ->
-                                if (report.unreadableRows > 0) {
-                                    OutlinedSection(title = "Partial activity data") {
-                                        Text("${usageCount(report.unreadableRows.toLong())} unreadable records were left out of these totals.",
-                                            style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                                UsageExplorer(report.rows, today)
+                                UsageExplorer(report.rows, today, report.unreadableRows)
                             }
                         }
                     }
@@ -176,12 +221,12 @@ internal fun UsageScreen(
 }
 
 @Composable
-private fun UsageKeyForm(canCancel: Boolean, onCancel: () -> Unit, onLoad: (String) -> Unit) {
+private fun UsageKeyForm(canCancel: Boolean, saving: Boolean, onCancel: () -> Unit, onLoad: (String) -> Unit) {
     var draft by remember { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     val uriHandler = LocalUriHandler.current
     OutlinedSection(title = "Unlock activity", highlighted = true) {
-        Text("Use a read-only management key with activity access to see trends and endpoint details. A key entered here is kept for this visit.",
+        Text("Use a management key with Activity → Read Only access. This app saves it on this device.",
             style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(
             value = draft,
@@ -189,6 +234,7 @@ private fun UsageKeyForm(canCancel: Boolean, onCancel: () -> Unit, onLoad: (Stri
             modifier = Modifier.fillMaxWidth(),
             label = { Text("OpenRouter management key") },
             singleLine = true,
+            enabled = !saving,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             visualTransformation = PasswordVisualTransformation(),
         )
@@ -196,12 +242,11 @@ private fun UsageKeyForm(canCancel: Boolean, onCancel: () -> Unit, onLoad: (Stri
             onClick = {
                 keyboard?.hide()
                 onLoad(draft.trim())
-                draft = ""
             },
-            enabled = draft.isNotBlank(),
-        ) { Text("Load activity") }
+            enabled = !saving && draft.isNotBlank(),
+        ) { Text(if (saving) "Saving…" else "Save and load activity") }
         TextButton(onClick = { runCatching { uriHandler.openUri(MANAGEMENT_KEYS_URL) } }) { Text("Manage keys on OpenRouter") }
-        if (canCancel) TextButton(onClick = onCancel) { Text("Cancel") }
+        if (canCancel) TextButton(onClick = onCancel, enabled = !saving) { Text("Cancel") }
     }
 }
 

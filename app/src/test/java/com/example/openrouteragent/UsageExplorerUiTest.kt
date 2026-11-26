@@ -1,5 +1,6 @@
 package com.example.openrouteragent
 
+import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,10 +12,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.time.LocalDate
 
@@ -22,6 +26,23 @@ import java.time.LocalDate
 @Config(sdk = [35], qualifiers = "w390dp-h820dp")
 class UsageExplorerUiTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun activityKeySurvivesReloadAndCanBeForgottenWithoutChangingWorkspaceKey() {
+        val app = RuntimeEnvironment.getApplication()
+        val config = AgentConfig(managementKey = "workspace-only-key", activityManagementKey = "activity-only-key")
+        testAgentStorage(app).saveConfig(config)
+
+        val reloaded = testAgentStorage(app).loadConfig()
+        assertEquals("activity-only-key", reloaded.activityManagementKey)
+        assertEquals("workspace-only-key", reloaded.managementKey)
+        val prefs = app.getSharedPreferences("agent_settings", Context.MODE_PRIVATE)
+        assertFalse(prefs.all.values.any { "activity-only-key" in it.toString() })
+
+        testAgentStorage(app).saveConfig(reloaded.copy(activityManagementKey = ""))
+        val forgotten = testAgentStorage(app).loadConfig()
+        assertEquals("", forgotten.activityManagementKey)
+        assertEquals("workspace-only-key", forgotten.managementKey)
+    }
 
     @Test fun activityRejectionShowsOpenRouterReasonAndRequestIdWithoutTheKey() {
         MockWebServer().use { server ->
@@ -34,7 +55,10 @@ class UsageExplorerUiTest {
             val client = OpenRouterAgentClient(server.url("/api/v1/"))
             composeRule.setContent {
                 OpenRouterAgentTheme(darkTheme = true) {
-                    UsageScreen(client, apiKey = "", savedManagementKey = key, onBack = {}, onConnect = {})
+                    UsageScreen(
+                        client, apiKey = "", savedManagementKey = "workspace-key", activityManagementKey = key,
+                        onBack = {}, onConnect = {}, onSaveActivityKey = {},
+                    )
                 }
             }
 
@@ -43,6 +67,8 @@ class UsageExplorerUiTest {
             detail.performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithText("req_activity_123", substring = true).assertIsDisplayed()
             composeRule.onNodeWithText(key, substring = true).assertDoesNotExist()
+            composeRule.onNodeWithText("Activity access").assertDoesNotExist()
+            assertEquals("Bearer $key", server.takeRequest().getHeader("Authorization"))
         }
     }
 
@@ -55,7 +81,10 @@ class UsageExplorerUiTest {
             val client = OpenRouterAgentClient(server.url("/api/v1/"))
             composeRule.setContent {
                 OpenRouterAgentTheme(darkTheme = true) {
-                    UsageScreen(client, apiKey = "", savedManagementKey = "management-key", onBack = {}, onConnect = {})
+                    UsageScreen(
+                        client, apiKey = "", savedManagementKey = "management-key",
+                        onBack = {}, onConnect = {}, onSaveActivityKey = {},
+                    )
                 }
             }
 
@@ -82,6 +111,7 @@ class UsageExplorerUiTest {
             }
         }
 
+        composeRule.onNodeWithText("Activity totals").assertIsDisplayed()
         composeRule.onNodeWithText("View this day’s records").performScrollTo().performClick()
         composeRule.onNodeWithText("Show all days").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Highest spend").performScrollTo().assertIsDisplayed()

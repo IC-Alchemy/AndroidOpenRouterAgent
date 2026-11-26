@@ -12,6 +12,9 @@ data class AgentConfig(
     val apiKey: String = "",
     /** An OpenRouter management key, used only to read and change workspaces and their guardrails. */
     val managementKey: String = "",
+    /** Activity can use a management key scoped to read-only usage access. */
+    @kotlinx.serialization.Transient
+    val activityManagementKey: String = "",
     /** The OpenRouter workspace chosen in Workspaces. Empty follows the API key's own workspace. */
     val workspaceId: String = "",
     /** API keys saved per workspace ID, so switching workspace also switches where chats are billed. */
