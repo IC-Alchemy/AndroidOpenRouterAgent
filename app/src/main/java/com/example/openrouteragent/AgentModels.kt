@@ -153,6 +153,8 @@ data class ChatEntry(
     val toolActivity: List<ToolActivity> = emptyList(),
     /** Photos and files the user attached, or images the model made. */
     val media: List<ChatMedia> = emptyList(),
+    /** Output tokens per second over the reply's generation time, reasoning included. */
+    val tokensPerSecond: Double? = null,
 )
 
 @Serializable

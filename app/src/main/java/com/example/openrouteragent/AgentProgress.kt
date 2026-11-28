@@ -52,6 +52,8 @@ internal data class AgentProgress(
     val lastOutputAt: Long? = null,
     /** Time spent streaming text. Gaps longer than [STREAM_GAP_MS], such as tool runs, are left out. */
     val streamingMillis: Long = 0,
+    /** Tokens per second and tokens so far, per model call and for the whole run. */
+    val rate: TokenRate = TokenRate(),
     val revision: Int = 0,
 ) {
     /** Output tokens so far: the reported count when the provider sent one, else an estimate. */
@@ -71,14 +73,16 @@ internal data class AgentProgress(
         for (update in updates) {
             result = when (update) {
                 RunUpdate.Pulse -> result
-                is RunUpdate.Phase -> result.copy(phase = update.phase, detail = update.detail,
+                is RunUpdate.Phase -> result.copy(rate = result.rate.phase(update.phase, update.detail, now),
+                    phase = update.phase, detail = update.detail,
                     step = update.step ?: result.step,
                     model = if (update.phase == "waiting") update.detail ?: result.model else result.model)
                 is RunUpdate.Text -> {
                     val gap = result.lastOutputAt?.let { now - it }?.takeIf { it in 0..STREAM_GAP_MS } ?: 0
                     val streamed = result.copy(streamedChars = result.streamedChars + update.text.length,
                         firstOutputAt = result.firstOutputAt ?: now, lastOutputAt = now,
-                        streamingMillis = result.streamingMillis + gap).withTimeline(result.timeline.append(update))
+                        streamingMillis = result.streamingMillis + gap,
+                        rate = result.rate.text(update.text.length, now)).withTimeline(result.timeline.append(update))
                     if (update.summary) {
                         streamed.copy(summary = (result.summary + update.text).takeLast(MAX_SUMMARY), phase = "reasoning")
                     } else {
@@ -94,7 +98,8 @@ internal data class AgentProgress(
                     if (index < 0) result.copy(tools = tools).withTimeline(result.timeline + LiveBlock.ToolCall(next.id))
                     else result.copy(tools = tools)
                 }
-                is RunUpdate.Usage -> result.copy(usage = update.value)
+                is RunUpdate.Usage -> result.copy(usage = update.value,
+                    rate = result.rate.usage(update.value.outputTokens, update.value.totalTokens, now))
                 is RunUpdate.Source -> result.copy(sources = (result.sources + update.value).distinctBy { it.url }.take(32))
                 is RunUpdate.Files -> result.copy(files = (result.files + update.value)
                     .distinctBy { it.containerId to it.file.fileId }.takeLast(48))
@@ -104,7 +109,7 @@ internal data class AgentProgress(
     }
 }
 
-private const val STREAM_GAP_MS = 2_000L
+private const val STREAM_GAP_MS = RATE_STREAM_GAP_MS
 
 private val runningToolStates = setOf("preparing", "in_progress", "searching", "running", "running in background",
     "generating", "awaiting approval")

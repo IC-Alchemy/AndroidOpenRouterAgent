@@ -179,7 +179,7 @@ internal fun AgentResponseCard(
                 thickness = StudioHairlineWidth,
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
-            val usageDetails = replyUsageDetails(entry.modelUsed, entry.usage)
+            val usageDetails = replyUsageDetails(entry.modelUsed, entry.usage, entry.tokensPerSecond)
             var showUsageDetails by rememberSaveable(entry.id) { mutableStateOf(false) }
             val footerTextColor = if (isWarningCard) MaterialTheme.colorScheme.onErrorContainer
                 else MaterialTheme.colorScheme.onSurfaceVariant
@@ -192,7 +192,7 @@ internal fun AgentResponseCard(
                     // Unweighted actions are measured first, so the cost line takes what's left
                     // and never pushes the buttons off a narrow phone.
                     ReplyUsageToggle(
-                        summary = replyUsageSummary(entry.usage),
+                        summary = replyUsageSummary(entry.usage, entry.tokensPerSecond),
                         expanded = showUsageDetails,
                         color = footerTextColor,
                         onToggle = { showUsageDetails = !showUsageDetails },
