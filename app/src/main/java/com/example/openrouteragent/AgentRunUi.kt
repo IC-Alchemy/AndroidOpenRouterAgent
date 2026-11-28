@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
@@ -86,18 +87,14 @@ internal fun AgentRunStatus(
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
             Column(Modifier.weight(1f)) {
+                RunMeter(progress.rate, now)
                 Text(status, style = MaterialTheme.typography.labelMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val duration = if (runningTime < 60) "${runningTime}s"
                     else "${runningTime / 60}m ${runningTime % 60}s"
                 val model = progress.model?.let { " · $it" }.orEmpty()
-                val tokens = progress.outputTokens.takeIf { it > 0 }?.let { count ->
-                    val estimate = if ((progress.usage?.outputTokens ?: 0) >= count) "" else "~"
-                    val speed = progress.tokensPerSecond()?.let { " · ${it.toInt()} tok/s" }.orEmpty()
-                    " · $estimate${compactCount(count)} tokens$speed"
-                }.orEmpty()
                 Text(
-                    "Step ${progress.step} · $duration$tokens$model",
+                    "Step ${progress.step} · $duration$model",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelSmall,
@@ -111,6 +108,37 @@ internal fun AgentRunStatus(
         if (!waitingForApproval && idle >= 12) {
             Text("No new events for ${idle}s", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
+        }
+    }
+}
+
+/**
+ * The run's speed and size, read first while it streams: tokens per second for the current model call (or the last
+ * one between calls) and the tokens used so far. A run of several calls also shows its call count and average.
+ */
+@Composable
+internal fun RunMeter(rate: TokenRate, now: Long) {
+    val speed = rate.tokensPerSecond
+    val total = rate.totalTokens
+    val approx = if (rate.estimated && total > 0) "~" else ""
+    val description = (if (speed == null) "Measuring tokens per second" else "${formatRateNumber(speed)} tokens per second") +
+        ", ${if (approx.isEmpty()) "" else "about "}${compactCount(total)} tokens so far"
+    Row(Modifier.semantics(mergeDescendants = true) { contentDescription = description },
+        verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(formatRateNumber(speed), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            color = if (rate.streaming(now)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+        Text("tok/s", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp, end = 10.dp))
+        Text(approx + compactCount(total), style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+        Text("tokens", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 2.dp))
+        if (rate.calls > 1) {
+            val average = rate.averageTokensPerSecond?.let { " · avg ${formatRateNumber(it)}" }.orEmpty()
+            Text("call ${rate.calls}$average", style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp, bottom = 3.dp))
         }
     }
 }
@@ -319,15 +347,20 @@ internal fun formatCost(value: Double): String =
  * The one short line shown under a reply: its cost, or its token total when the
  * provider reported no cost, or a dash when there is no usage at all.
  */
-internal fun replyUsageSummary(usage: TokenUsage?): String = when {
-    usage == null -> "–"
-    usage.cost != null -> formatCost(usage.cost)
-    else -> "${usage.totalTokens} tokens"
+internal fun replyUsageSummary(usage: TokenUsage?, tokensPerSecond: Double? = null): String {
+    val main = when {
+        usage == null -> if (tokensPerSecond != null) null else "–"
+        usage.cost != null -> formatCost(usage.cost)
+        else -> "${usage.totalTokens} tokens"
+    }
+    // The reply's speed reads first, as it did while the reply streamed.
+    return listOfNotNull(tokensPerSecond?.let(::formatRate), main).joinToString(" · ")
 }
 
 /** The full details shown when the reply's usage line is expanded, one fact per line. */
-internal fun replyUsageDetails(model: String?, usage: TokenUsage?): List<String> = buildList {
+internal fun replyUsageDetails(model: String?, usage: TokenUsage?, tokensPerSecond: Double? = null): List<String> = buildList {
     model?.takeIf { it.isNotBlank() }?.let { add("Model: $it") }
+    tokensPerSecond?.let { add("Speed: ${formatRate(it)}") }
     usage?.let {
         add("Tokens: ${it.totalTokens} total · ${it.inputTokens} in / ${it.outputTokens} out")
         if (it.cachedTokens > 0) add("Cached: ${it.cachedTokens} tokens")

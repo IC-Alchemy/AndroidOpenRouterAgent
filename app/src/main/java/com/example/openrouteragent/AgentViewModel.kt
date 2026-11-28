@@ -853,6 +853,7 @@ class AgentViewModel internal constructor(
                         usage = result.usage, modelUsed = result.modelUsed,
                         notice = result.notice,
                         media = result.media,
+                        tokensPerSecond = progress?.rate?.finished(SystemClock.elapsedRealtime())?.averageTokensPerSecond,
                         toolActivity = progress?.tools.orEmpty().map {
                             ToolActivity(it.name, it.status, it.detail)
                         }

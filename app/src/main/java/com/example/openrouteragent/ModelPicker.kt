@@ -28,6 +28,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
@@ -92,15 +95,19 @@ internal fun ModelPicker(
                 LazyColumn(Modifier.heightIn(max = 330.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(visible, key = { it.id }) { model ->
                         val current = selected?.id == model.id
-                        OutlinedSection(highlighted = current) {
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                .clickable(role = Role.Button, onClickLabel = "Select model") { onSelect(model) },
+                        // The whole card is the tap target. Its text is plain, not selectable, because selectable
+                        // text takes the tap for itself and the model was only picked from the name line.
+                        OutlinedSection(
+                            modifier = Modifier.modelCardTap(current) { onSelect(model) },
+                            highlighted = current,
+                        ) {
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(model.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                                 if (current) Icon(Icons.Default.Check, "Selected model")
                             }
-                            CopyableText(model.id, style = MaterialTheme.typography.bodySmall)
+                            Text(model.id, style = MaterialTheme.typography.bodySmall)
                             val details = listOfNotNull(
                                 model.contextLength.takeIf { it > 0 }?.let {
                                     NumberFormat.getIntegerInstance().format(it) + " context tokens"
@@ -128,6 +135,13 @@ internal fun ModelPicker(
         dismissButton = { SymbolAction("Refresh", Icons.Default.Refresh, onRefresh, enabled = !loading) },
     )
 }
+
+/** Makes a model card one button: rounded ripple, picked on a single tap anywhere on it. */
+@Composable
+private fun Modifier.modelCardTap(current: Boolean, onTap: () -> Unit): Modifier =
+    clip(MaterialTheme.shapes.medium)
+        .clickable(role = Role.Button, onClickLabel = "Select model", onClick = onTap)
+        .semantics { selected = current }
 
 /**
  * One line with the price OpenRouter would charge for the chosen provider, model and routing mode, loaded
